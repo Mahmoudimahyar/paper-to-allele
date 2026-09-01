@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p C:/Users/Mahyar/AppData/Local/Temp/claude/C--Users-Mahyar-kidneymatch/5f614b9d-d97f-460d-971d-3c38be523745/scratchpad/sb/scripts C:/Users/Mahyar/AppData/Local/Temp/claude/C--Users-Mahyar-kidneymatch/5f614b9d-d97f-460d-971d-3c38be523745/scratchpad/sb/docs/work)",
+      "Bash(cp scripts/taskctl.py C:/Users/Mahyar/AppData/Local/Temp/claude/C--Users-Mahyar-kidneymatch/5f614b9d-d97f-460d-971d-3c38be523745/scratchpad/sb/scripts/)",
+      "Bash(cp scripts/acceptance.py C:/Users/Mahyar/AppData/Local/Temp/claude/C--Users-Mahyar-kidneymatch/5f614b9d-d97f-460d-971d-3c38be523745/scratchpad/sb/scripts/)"
+    ]
+  }
+}

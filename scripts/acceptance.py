@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -180,6 +181,37 @@ def cmd_mark(args: argparse.Namespace) -> int:
         print(
             f"acceptance: refusing to mark a pass. Evidence file {args.evidence} is "
             f"missing or empty. Run `acceptance.py run {args.task}` first."
+        )
+        return 2
+
+    # The evidence must belong to THIS task. Otherwise one task's passing log
+    # could be replayed to certify a different, unfinished task.
+    try:
+        relative = evidence.resolve().relative_to((ARTIFACTS / args.task).resolve())
+    except ValueError:
+        print(
+            f"acceptance: refusing to mark a pass. Evidence must live under "
+            f".artifacts/{args.task}/ and be produced by "
+            f"`acceptance.py run {args.task}`. Got: {args.evidence}"
+        )
+        return 2
+    del relative
+
+    # The evidence must record a PASSING run. `run` writes a log whether the
+    # command passed or failed, so without this check the log of a FAILED run
+    # is accepted as proof of a pass.
+    recorded = evidence.read_text(encoding="utf-8", errors="replace")
+    exits = re.findall(r"^exit=(-?\d+)$", recorded, flags=re.MULTILINE)
+    if not exits:
+        print(
+            f"acceptance: refusing to mark a pass. {args.evidence} records no exit "
+            f"code, so it is not output from `acceptance.py run`."
+        )
+        return 2
+    if any(code != "0" for code in exits):
+        print(
+            f"acceptance: refusing to mark a pass. {args.evidence} records a FAILED "
+            f"run (exit={', '.join(exits)}). Fix the work, re-run, then mark."
         )
         return 2
 

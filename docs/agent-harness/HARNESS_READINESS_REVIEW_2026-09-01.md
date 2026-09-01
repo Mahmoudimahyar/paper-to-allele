@@ -3,6 +3,12 @@
 **Reviewer:** Claude (Opus 5) · **Scope:** whole repository, before first product task
 **Verdict:** the *design* is strong; the *mechanism* is not yet built. Fix P0/P1 before the first long autonomous run.
 
+> **Status — 2026-09-01.** **P0 done** (commit `green baseline`) and **P1 done**
+> (commits `P1 autonomy batch` onward). `verify_repo.py` passes 8 mandatory steps
+> with 36 tests, from a fresh clone. P1 mechanisms are documented in
+> `OPERATOR_CONTROLS.md` and covered by `tests/contracts/test_hooks.py`.
+> **P2 (test depth) remains outstanding** and is the next batch.
+
 ## Evidence baseline (commands actually run)
 
 | Command | Result |
