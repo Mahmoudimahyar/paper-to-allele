@@ -44,7 +44,19 @@ If two higher-priority sources conflict, STOP, record the conflict in `docs/agen
 - Secret values live in ignored `.env`/secret stores, never in Markdown or memory files.
 
 ## Verification before completion
-Run `python scripts/verify_repo.py`. For changed behavior, also run the feature-specific acceptance command from its spec. Completion requires passing tests, migrations where relevant, docs/traceability, security checks, and rollback notes.
+Run `python scripts/verify_repo.py` (8 mandatory steps, identical to CI, nothing skipped). For changed behavior, also run the task's acceptance command.
+
+Completion is gated, not asserted:
+1. `python scripts/acceptance.py run <TASK>` — runs the acceptance commands and writes evidence to `.artifacts/<TASK>/`.
+2. `python scripts/acceptance.py mark <TASK> <N> --evidence <log>` — a criterion cannot be marked met without a real, non-empty evidence file.
+3. `python scripts/taskctl.py set <TASK> COMPLETE` — refuses unless every criterion is met with existing evidence, and re-runs the acceptance commands rather than trusting the ledger.
+
+`docs/work/acceptance.json` starts every criterion at `false` and must not be edited by hand; a hook blocks that. Never use `--force` to unblock yourself — it is a human override.
+
+## Operator controls
+- `AGENT_STOP` at the repo root halts every tool call. Do not delete it; stop and report to the user.
+- `STEER.md` delivers a one-shot operator message, then clears itself. Treat it as higher priority than your current plan.
+See `docs/agent-harness/OPERATOR_CONTROLS.md`.
 
 ## Long-running work and memory
 - Durable facts belong in code/specs/ADRs/docs, not chat history.

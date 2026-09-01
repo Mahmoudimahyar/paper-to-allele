@@ -1,3 +1,129 @@
 {
-  "autoMemoryEnabled": true
+  "autoMemoryEnabled": true,
+
+  "permissions": {
+    "allow": [
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(python scripts/*)",
+      "Bash(python3 scripts/*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(mypy:*)",
+      "Bash(just:*)",
+      "Bash(make:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git switch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git stash:*)",
+      "Bash(git worktree:*)",
+      "Edit(src/**)",
+      "Edit(tests/**)",
+      "Edit(scripts/**)",
+      "Edit(specs/**)",
+      "Edit(docs/**)",
+      "Edit(config/**)",
+      "Edit(schemas/**)"
+    ],
+
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh:*)",
+      "Bash(docker:*)",
+      "Bash(rm -rf:*)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Edit(.github/**)"
+    ],
+
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(data/raw/**)",
+      "Read(data/gold/**)",
+      "Read(data/review/**)",
+      "Edit(data/raw/**)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ]
+  },
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/guard_session.sh\"",
+            "timeout": 10,
+            "statusMessage": "operator control check"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/guard_ledger.sh\"",
+            "timeout": 15,
+            "statusMessage": "acceptance ledger guard"
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/post_edit_check.sh\"",
+            "timeout": 120,
+            "statusMessage": "ruff on touched file"
+          }
+        ]
+      }
+    ],
+
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/stop_checkpoint.sh\"",
+            "timeout": 60,
+            "statusMessage": "wip checkpoint commit"
+          }
+        ]
+      }
+    ],
+
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/session_start.sh\"",
+            "timeout": 60,
+            "statusMessage": "orientation"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -1,7 +1,12 @@
 from pathlib import Path
 
+import pytest
+
 from kidneymatch.domain.evidence import MediaQuality
 from kidneymatch.ingestion.media import resolve_best_available_media
+
+# Acceptance for MEDIA-001 selects on this marker: pytest --task MEDIA-001
+pytestmark = pytest.mark.task("MEDIA-001")
 
 
 def test_thumbnail_is_used_when_linked_higher_quality_file_is_absent(tmp_path: Path) -> None:

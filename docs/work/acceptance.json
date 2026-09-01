@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "note": "Default-FAIL contract. Every criterion starts false and may only be set true via `python scripts/acceptance.py mark` with a real evidence file. taskctl re-runs the commands regardless of what this file claims.",
+  "tasks": {
+    "HIST-001": {
+      "spec": "specs/features/HIST-001-telegram-html-ingestion.json",
+      "commands": [
+        "uv run --frozen pytest --task HIST-001 -q"
+      ],
+      "criteria": [
+        {
+          "criterion": "normal/joined/forwarded/reply/image-only/text-only/service fixtures parse",
+          "passes": false,
+          "evidence": null
+        },
+        {
+          "criterion": "same export imported twice produces no duplicate source records",
+          "passes": false,
+          "evidence": null
+        },
+        {
+          "criterion": "unparsed source fragments are preserved or explicitly classified",
+          "passes": false,
+          "evidence": null
+        }
+      ]
+    },
+    "HIST-002": {
+      "spec": "specs/features/HIST-002-message-bundles.json",
+      "commands": [
+        "uv run --frozen pytest --task HIST-002 -q"
+      ],
+      "criteria": [
+        {
+          "criterion": "multi-image joined submission bundles once",
+          "passes": false,
+          "evidence": null
+        },
+        {
+          "criterion": "reply context links without overwriting primary sender",
+          "passes": false,
+          "evidence": null
+        },
+        {
+          "criterion": "ambiguous adjacency yields review suggestion not automatic merge",
+          "passes": false,
+          "evidence": null
+        }
+      ]
+    },
+    "MEDIA-001": {
+      "spec": "specs/features/DEDUPE-001-media-dedupe.json",
+      "commands": [
+        "uv run --frozen pytest --task MEDIA-001 -q"
+      ],
+      "criteria": [
+        {
+          "criterion": "THUMBNAIL_ONLY is assigned when no better file exists",
+          "passes": false,
+          "evidence": null
+        }
+      ]
+    },
+    "DEDUPE-001": {
+      "spec": "specs/features/DEDUPE-001-media-dedupe.json",
+      "commands": [
+        "uv run --frozen pytest --task DEDUPE-001 -q"
+      ],
+      "criteria": [
+        {
+          "criterion": "byte-identical renamed thumbnails dedupe",
+          "passes": false,
+          "evidence": null
+        },
+        {
+          "criterion": "source provenance count survives dedupe",
+          "passes": false,
+          "evidence": null
+        }
+      ]
+    }
+  }
+}

@@ -36,9 +36,12 @@
         "docs/architecture/DATA_MODEL.md"
       ],
       "acceptance": [
-        "pytest tests/unit tests/contracts -q",
-        "python scripts/spec_lint.py",
-        "python scripts/docs_lint.py"
+        "uv run --frozen pytest --task HIST-001 -q"
+      ],
+      "spec_criteria": [
+        "normal/joined/forwarded/reply/image-only/text-only/service fixtures parse",
+        "same export imported twice produces no duplicate source records",
+        "unparsed source fragments are preserved or explicitly classified"
       ]
     },
     {
@@ -63,6 +66,14 @@
       "context": [
         "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
         "docs/architecture/DATA_MODEL.md"
+      ],
+      "acceptance": [
+        "uv run --frozen pytest --task HIST-002 -q"
+      ],
+      "spec_criteria": [
+        "multi-image joined submission bundles once",
+        "reply context links without overwriting primary sender",
+        "ambiguous adjacency yields review suggestion not automatic merge"
       ]
     },
     {
@@ -76,6 +87,12 @@
       ],
       "context": [
         "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+      ],
+      "acceptance": [
+        "uv run --frozen pytest --task MEDIA-001 -q"
+      ],
+      "spec_criteria": [
+        "THUMBNAIL_ONLY is assigned when no better file exists"
       ]
     },
     {
@@ -86,6 +103,13 @@
       "spec": "specs/features/DEDUPE-001-media-dedupe.json",
       "depends_on": [
         "MEDIA-001"
+      ],
+      "acceptance": [
+        "uv run --frozen pytest --task DEDUPE-001 -q"
+      ],
+      "spec_criteria": [
+        "byte-identical renamed thumbnails dedupe",
+        "source provenance count survives dedupe"
       ]
     },
     {

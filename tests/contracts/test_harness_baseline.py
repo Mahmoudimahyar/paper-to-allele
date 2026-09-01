@@ -11,6 +11,11 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+
+# Acceptance for BOOT-001 selects on this marker: pytest --task BOOT-001
+pytestmark = pytest.mark.task("BOOT-001")
+
 ROOT = Path(__file__).resolve().parents[2]
 
 LINE_CONTINUATION = "\\\n"

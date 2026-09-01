@@ -41,3 +41,7 @@ data/gold/*
 .idea/
 .DS_Store
 Thumbs.db
+
+# operator control channel (runtime only, never committed)
+AGENT_STOP
+STEER.md

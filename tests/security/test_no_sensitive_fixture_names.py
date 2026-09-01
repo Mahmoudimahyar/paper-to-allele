@@ -1,5 +1,10 @@
 from pathlib import Path
 
+import pytest
+
+# Acceptance for BOOT-001 selects on this marker: pytest --task BOOT-001
+pytestmark = pytest.mark.task("BOOT-001")
+
 ROOT = Path(__file__).resolve().parents[2]
 THIS_FILE = Path(__file__).resolve()
 
