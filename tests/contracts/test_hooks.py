@@ -123,6 +123,43 @@ def test_the_sanctioned_acceptance_script_is_allowed_through_bash() -> None:
     assert code == ALLOW
 
 
+def test_reading_the_ledger_through_bash_is_allowed() -> None:
+    """Regression: an early heuristic scanned the whole command for mutator
+    tokens, so a multi-line script that merely READ the ledger was blocked
+    because an unrelated `rm -rf` appeared elsewhere in it, and because plain
+    `open(` was treated as a write. Both are read paths and must pass.
+    """
+    for command in (
+        "cat docs/work/acceptance.json",
+        "git diff docs/work/acceptance.json",
+        "grep passes docs/work/acceptance.json",
+        'rm -rf /tmp/scratch\npython -c "import json; '
+        "d=json.load(open('docs/work/acceptance.json', encoding='utf-8')); print(len(d))\"",
+    ):
+        code = run_hook(
+            "guard_ledger.sh",
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+            },
+        )
+        assert code == ALLOW, f"read wrongly blocked: {command}"
+
+
+def test_write_mode_open_on_the_ledger_is_still_blocked() -> None:
+    command = "python -c \"import json; json.dump({}, open('docs/work/acceptance.json', 'w'))\""
+    code = run_hook(
+        "guard_ledger.sh",
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        },
+    )
+    assert code == BLOCK
+
+
 def test_unparseable_payload_fails_closed() -> None:
     """An exception must not fall through to exit 1, which would fail OPEN."""
     assert run_hook("guard_ledger.sh", "this is not json") == BLOCK

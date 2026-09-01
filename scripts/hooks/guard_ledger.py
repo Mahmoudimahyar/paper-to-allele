@@ -21,6 +21,7 @@ Two deliberate differences from the reference implementation:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -49,15 +50,31 @@ MUTATORS = (
     "cp ",
     "rm ",
     "truncate",
-    "open(",
     "write_text",
     "json.dump",
     "dd ",
 )
 
+# open(...) is NOT a mutator on its own: reading the ledger uses open() too.
+# Only a write/append/exclusive mode counts.
+WRITE_OPEN = re.compile(r"""open\s*\([^)]*['"][wax]\+?b?['"]""")
 
-def mutates(command: str) -> bool:
-    return any(token in command for token in MUTATORS)
+# Split on shell separators AND newlines so that an unrelated `rm -rf` elsewhere
+# in a multi-line script does not incriminate a segment that merely reads the
+# ledger. Scanning the whole command text produced exactly that false positive.
+SEGMENT = re.compile(r"[\n;]|&&|\|\||\|")
+
+
+def mutates_ledger(command: str) -> bool:
+    """True only if a segment that references the ledger also modifies something."""
+    for segment in SEGMENT.split(command):
+        if LEDGER_NAME not in segment:
+            continue
+        if SANCTIONED in segment:
+            continue
+        if WRITE_OPEN.search(segment) or any(token in segment for token in MUTATORS):
+            return True
+    return False
 
 
 def targets_ledger(path_text: str) -> bool:
@@ -96,7 +113,7 @@ def main() -> int:
 
     elif tool == "Bash":
         command = str(tool_input.get("command") or "")
-        if LEDGER_NAME in command and SANCTIONED not in command and mutates(command):
+        if mutates_ledger(command):
             block(
                 f"BLOCKED: this command would modify {LEDGER_REL} without going through "
                 f"scripts/{SANCTIONED}.\n"
