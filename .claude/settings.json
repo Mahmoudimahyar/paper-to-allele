@@ -75,7 +75,8 @@
             "timeout": 15,
             "statusMessage": "acceptance ledger guard"
           }
-        ]
+        ],
+        "statusMessage": "contract file guard"
       }
     ],
     "PostToolUse": [

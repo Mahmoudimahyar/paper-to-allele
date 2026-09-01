@@ -25,6 +25,12 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
 ## Harness work still outstanding
 **P1 (autonomy) is done** (2026-09-01): hooks, permissions allow/ask/deny, default-FAIL acceptance ledger with a gated `taskctl`, per-task acceptance commands, and the `AGENT_STOP`/`STEER.md` operator channel. See `docs/agent-harness/OPERATOR_CONTROLS.md`.
 
+P1 was then adversarially audited; 8 confirmed defects were fixed, including a
+guard that failed **open** on non-object payloads, a comment that disabled the
+ledger guard entirely, an unprotected `WORK_QUEUE.json` that made the whole
+COMPLETE gate optional, and a hook that edited files outside the repository.
+Residual limits and unverified claims: `KNOWN_ISSUES.md` KI-005/KI-006.
+
 **P2 (test depth) is NOT done.** `TEST_PLAN.md` lists ten test layers; four exist. Remaining, in priority order:
 - P2-1 invariant→test markers plus a lint that fails when a live spec invariant has no covering test (the `invariant` marker is already registered in `tests/conftest.py`, unused);
 - P2-2 property tests (`hypothesis` installed, `tests/property/` still empty);

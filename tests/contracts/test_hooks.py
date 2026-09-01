@@ -204,6 +204,68 @@ def test_redirect_direction_is_read_not_guessed() -> None:
         assert code == ALLOW, f"read wrongly blocked: {command}"
 
 
+def test_the_work_queue_is_protected_too() -> None:
+    """WORK_QUEUE.json holds the `status` field the COMPLETE gate protects.
+
+    Guarding only the acceptance ledger made the whole gate optional: an agent
+    could edit the queue directly and set status to COMPLETE without ever
+    invoking taskctl. Reproduced during the audit, then closed.
+    """
+    edit = run_hook(
+        "guard_ledger.sh",
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": "docs/work/WORK_QUEUE.json"},
+        },
+    )
+    assert edit == BLOCK
+
+    shell = run_hook(
+        "guard_ledger.sh",
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "sed -i s/READY/COMPLETE/ docs/work/WORK_QUEUE.json"},
+        },
+    )
+    assert shell == BLOCK
+
+
+def test_taskctl_and_reads_of_the_queue_remain_allowed() -> None:
+    for command in (
+        "python scripts/taskctl.py set HIST-002 ACTIVE",
+        "cat docs/work/WORK_QUEUE.json",
+        "python scripts/context_pack.py --task HIST-001",
+    ):
+        code = run_hook(
+            "guard_ledger.sh",
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+            },
+        )
+        assert code == ALLOW, f"wrongly blocked: {command}"
+
+
+def test_the_powershell_tool_is_guarded_like_bash() -> None:
+    """The matcher was Edit|Write|Bash, but PowerShell also takes a `command`.
+
+    I used this bypass inadvertently to recover from a lockout, which is exactly
+    the route an agent could take deliberately.
+    """
+    code = run_hook(
+        "guard_ledger.sh",
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "PowerShell",
+            "tool_input": {"command": "sed -i 's/false/true/' docs/work/acceptance.json"},
+        },
+    )
+    assert code == BLOCK
+
+
 def test_unparseable_payload_fails_closed() -> None:
     """An exception must not fall through to exit 1, which would fail OPEN."""
     assert run_hook("guard_ledger.sh", "this is not json") == BLOCK

@@ -103,3 +103,64 @@ def test_evidence_from_a_passing_run_is_accepted(sandbox) -> None:
     log = write_log(sandbox, "T-1", exit_code=0)
     assert mark(sandbox, "T-1", 0, log) == 0
     assert passes(sandbox) is True
+
+
+def test_force_records_the_override_in_the_queue(tmp_path: Path) -> None:
+    """A bypass that leaves no trace is indistinguishable from a passing gate.
+
+    Audit finding: --force required a reason but only printed it, so the
+    override vanished with the session.
+    """
+    import subprocess
+    import sys
+
+    queue = {
+        "version": 2,
+        "active_task": "T-1",
+        "status_values": ["COMPLETE", "ACTIVE", "READY", "BACKLOG", "BLOCKED"],
+        "tasks": [{"id": "T-1", "status": "READY", "title": "t", "phase": "P"}],
+    }
+    work = tmp_path / "docs" / "work"
+    work.mkdir(parents=True)
+    (work / "WORK_QUEUE.json").write_text(json.dumps(queue), encoding="utf-8")
+
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("taskctl.py", "acceptance.py"):
+        (scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(scripts / "taskctl.py"),
+            "set",
+            "T-1",
+            "COMPLETE",
+            "--force",
+            "--reason",
+            "human override for a cancelled task",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+    written = json.loads((work / "WORK_QUEUE.json").read_text(encoding="utf-8"))
+    task = written["tasks"][0]
+    assert task["status"] == "COMPLETE"
+    assert task["forced_complete"]["reason"] == "human override for a cancelled task"
+    assert "WARNING" in proc.stdout
+
+
+def test_force_without_a_reason_is_refused(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/taskctl.py"), "set", "T-1", "COMPLETE", "--force"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert proc.returncode != 0
+    assert "requires --reason" in (proc.stdout + proc.stderr)

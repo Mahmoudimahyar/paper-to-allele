@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,6 +102,20 @@ def main() -> int:
                 f"{args.task}` and mark each criterion with its evidence file."
             )
             return 2
+
+    if args.status == "COMPLETE" and args.force:
+        # A bypass that leaves no trace is indistinguishable from a task that
+        # passed its gate. Record it in the queue so the override survives the
+        # session and shows up in review and in `git log`.
+        target["forced_complete"] = {
+            "reason": args.reason,
+            "utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
+        print("=" * 72)
+        print(f"WARNING: {args.task} marked COMPLETE with --force, bypassing the gate.")
+        print(f"Reason: {args.reason}")
+        print("This override is recorded in WORK_QUEUE.json as 'forced_complete'.")
+        print("=" * 72)
 
     target["status"] = args.status
     if args.status == "ACTIVE":

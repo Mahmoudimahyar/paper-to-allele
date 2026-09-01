@@ -23,11 +23,17 @@ from __future__ import annotations
 import json
 import re
 import sys
-from pathlib import Path
 
-LEDGER_NAME = "acceptance.json"
-LEDGER_REL = "docs/work/acceptance.json"
-SANCTIONED = "acceptance.py"
+# Contract files that may only change through their sanctioned script.
+#
+# WORK_QUEUE.json is here because it holds the `status` field that the COMPLETE
+# gate protects. Guarding only the acceptance ledger left the gate optional: an
+# agent could edit the queue directly and set status to COMPLETE without ever
+# invoking taskctl. Found by adversarial audit and reproduced.
+PROTECTED: dict[str, tuple[str, str]] = {
+    "acceptance.json": ("docs/work/acceptance.json", "acceptance.py"),
+    "WORK_QUEUE.json": ("docs/work/WORK_QUEUE.json", "taskctl.py"),
+}
 
 EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 # PowerShell takes a `command` just like Bash. Omitting it left an open
@@ -66,11 +72,11 @@ COPY_CMD = re.compile(r"^\s*(?:cp|mv|install|rsync)\b(.*)$")
 SEGMENT = re.compile(r"[\n;]|&&|\|\||\|")
 
 
-def _writes_ledger(segment: str) -> bool:
-    """True when this segment would modify the ledger, not merely read it."""
+def _writes_file(segment: str, name: str) -> bool:
+    """True when this segment would modify `name`, not merely read it."""
     # Redirection writes only the target that follows > or >>.
     for match in REDIRECT_TARGET.finditer(segment):
-        if LEDGER_NAME in match.group(1):
+        if name in match.group(1):
             return True
 
     # In-place editors rewrite whatever file they are handed.
@@ -81,7 +87,7 @@ def _writes_ledger(segment: str) -> bool:
     copy = COPY_CMD.match(segment)
     if copy:
         positional = [a for a in copy.group(1).split() if not a.startswith("-")]
-        if positional and LEDGER_NAME in positional[-1]:
+        if positional and name in positional[-1]:
             return True
 
     # git checkout/restore overwrite the working-tree copy.
@@ -91,23 +97,34 @@ def _writes_ledger(segment: str) -> bool:
     return bool(WRITE_OPEN.search(segment) or PY_WRITE.search(segment))
 
 
-def mutates_ledger(command: str) -> bool:
-    """True only if a segment referencing the ledger would also write to it."""
+def mutated_contract(command: str) -> tuple[str, str] | None:
+    """Return (relative path, sanctioned script) for a contract this would write."""
     for segment in SEGMENT.split(COMMENT.sub("", command)):
-        if LEDGER_NAME not in segment:
-            continue
-        if SANCTIONED_CALL.search(segment):
-            continue
-        if _writes_ledger(segment):
-            return True
-    return False
+        for name, (relative, script) in PROTECTED.items():
+            if name not in segment:
+                continue
+            if re.search(rf"\bscripts[/\\]{re.escape(script)}\b", segment):
+                continue
+            if _writes_file(segment, name):
+                return relative, script
+    return None
 
 
-def targets_ledger(path_text: str) -> bool:
+def targeted_contract(path_text: str) -> tuple[str, str] | None:
+    """Match the real contract file, not merely a file with the same basename.
+
+    Matching on basename alone made every `acceptance.json` in the tree
+    unwritable, including sandbox fixtures that tests legitimately create.
+    Claude Code passes absolute paths for edits, so the repo-relative suffix is
+    both sufficient and precise.
+    """
     if not path_text:
-        return False
+        return None
     normalized = path_text.replace("\\", "/")
-    return Path(normalized).name == LEDGER_NAME or normalized.endswith(LEDGER_REL)
+    for _name, (relative, script) in PROTECTED.items():
+        if normalized == relative or normalized.endswith("/" + relative):
+            return relative, script
+    return None
 
 
 def main() -> int:
@@ -136,26 +153,30 @@ def main() -> int:
 
     if tool in EDIT_TOOLS:
         path_text = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
-        if targets_ledger(path_text):
+        hit = targeted_contract(path_text)
+        if hit:
+            relative, script = hit
             block(
-                f"BLOCKED: {LEDGER_REL} may not be edited directly.\n"
-                "It is a default-FAIL contract: a criterion may only be marked met via\n"
+                f"BLOCKED: {relative} may not be edited directly.\n"
+                f"It is a gated contract file; change it through scripts/{script}.\n"
                 "  python scripts/acceptance.py run <TASK>\n"
                 "  python scripts/acceptance.py mark <TASK> <N> --evidence <log>\n"
-                "which requires a non-empty evidence file from a real command run.\n"
-                "Editing this file by hand would let you certify your own work."
+                "  python scripts/taskctl.py set <TASK> <STATUS>\n"
+                "Editing it by hand would let you certify your own work: the task\n"
+                "status and the acceptance criteria are exactly what the gate checks."
             )
 
     elif tool in SHELL_TOOLS:
         command = str(tool_input.get("command") or "")
-        if mutates_ledger(command):
+        hit = mutated_contract(command)
+        if hit:
+            relative, script = hit
             block(
-                f"BLOCKED: this command would modify {LEDGER_REL} without going through "
-                f"scripts/{SANCTIONED}.\n"
-                "Rewriting the acceptance ledger with a redirect, sed, or a Python "
-                "one-liner bypasses the evidence requirement.\n"
-                "Mark criteria with:\n"
-                "  python scripts/acceptance.py mark <TASK> <N> --evidence <log>\n"
+                f"BLOCKED: this command would modify {relative} without going through "
+                f"scripts/{script}.\n"
+                "Rewriting a contract file with a redirect, sed, cp, git checkout or a\n"
+                "Python one-liner bypasses the evidence requirement.\n"
+                f"Use scripts/{script} instead.\n"
                 f"Command was: {command}"
             )
 
