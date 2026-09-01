@@ -15,7 +15,6 @@ def test_canonical_memory_files_exist() -> None:
 
 def test_matching_source_does_not_reference_compensation() -> None:
     source = "\n".join(
-        p.read_text(encoding="utf-8")
-        for p in (ROOT / "src/kidneymatch/matching").glob("*.py")
+        p.read_text(encoding="utf-8") for p in (ROOT / "src/kidneymatch/matching").glob("*.py")
     )
     assert "kidneymatch.compensation" not in source

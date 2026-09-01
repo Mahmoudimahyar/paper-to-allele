@@ -3,6 +3,7 @@
 V1 implementation must remain deterministic and may not import compensation.
 The active MVP-HIST phase intentionally does not implement clinical ranking yet.
 """
+
 from __future__ import annotations
 
 

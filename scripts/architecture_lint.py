@@ -1,10 +1,11 @@
-\
 #!/usr/bin/env python3
 """Small structural guardrails that should work for both Codex and Claude Code."""
+
 from __future__ import annotations
-from pathlib import Path
+
 import ast
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 errors: list[str] = []

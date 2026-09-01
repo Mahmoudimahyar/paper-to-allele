@@ -12,12 +12,19 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev
-      - run: uv run python scripts/sync_agent_skills.py --check
-      - run: uv run python scripts/docs_lint.py
-      - run: uv run python scripts/spec_lint.py
-      - run: uv run python scripts/architecture_lint.py
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy src
-      - run: uv run pytest
+
+      # --frozen fails if uv.lock is stale rather than silently re-resolving,
+      # so CI can never install a dependency set the lockfile does not describe.
+      - run: uv sync --frozen --extra dev
+
+      # Single source of truth for "green". CI must not maintain its own copy of
+      # the step list: a local `verify_repo.py` PASS has to mean CI passes too.
+      - run: uv run --frozen python scripts/verify_repo.py
+
+      - name: Upload verification artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: .artifacts/verify/
+          if-no-files-found: ignore

@@ -1,0 +1,11 @@
+# Normalize to LF in the repository on every platform.
+# Prevents CRLF churn between Windows dev machines and Linux CI, and keeps
+# sync_agent_skills.py --check (byte-exact filecmp) from failing spuriously.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+*.sqlite3 binary

@@ -1,25 +1,34 @@
 set shell := ["bash", "-cu"]
 
+# Every recipe runs through the locked environment so local results match CI.
+# `--frozen` fails loudly on a stale uv.lock instead of silently re-resolving.
+uv := "uv run --frozen"
+
 doctor:
-    python scripts/doctor.py
+    {{uv}} python scripts/doctor.py
 
 context task="HIST-001":
-    python scripts/context_pack.py --task {{task}}
+    {{uv}} python scripts/context_pack.py --task {{task}}
 
 lint:
-    python scripts/docs_lint.py
-    python scripts/spec_lint.py
-    python scripts/architecture_lint.py
-    ruff check .
+    {{uv}} python scripts/docs_lint.py
+    {{uv}} python scripts/spec_lint.py
+    {{uv}} python scripts/architecture_lint.py
+    {{uv}} ruff check .
+    {{uv}} ruff format --check .
+
+types:
+    {{uv}} mypy src
 
 unit:
-    pytest tests/unit tests/contracts
+    {{uv}} pytest tests/unit tests/contracts
 
+# Full gate. Identical to what CI runs.
 verify:
-    python scripts/verify_repo.py
+    {{uv}} python scripts/verify_repo.py
 
 handoff agent task summary next="":
-    python scripts/handoff.py --agent {{agent}} --task {{task}} --summary {{summary}} --next {{next}}
+    {{uv}} python scripts/handoff.py --agent {{agent}} --task {{task}} --summary {{summary}} --next {{next}}
 
 sync-agent-skills:
-    python scripts/sync_agent_skills.py
+    {{uv}} python scripts/sync_agent_skills.py

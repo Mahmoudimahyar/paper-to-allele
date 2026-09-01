@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from kidneymatch.domain.evidence import MediaQuality
 from kidneymatch.ingestion.media import resolve_best_available_media
 
@@ -25,7 +26,9 @@ def test_href_is_preferred_only_when_it_physically_exists(tmp_path: Path) -> Non
     original.write_bytes(b"best")
     (tmp_path / "photos/report_thumb.jpg").write_bytes(b"thumb")
 
-    resolved = resolve_best_available_media(tmp_path, "photos/report.jpg", "photos/report_thumb.jpg")
+    resolved = resolve_best_available_media(
+        tmp_path, "photos/report.jpg", "photos/report_thumb.jpg"
+    )
 
     assert resolved is not None
     assert resolved.path == original.resolve()

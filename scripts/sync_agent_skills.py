@@ -1,11 +1,11 @@
-\
 #!/usr/bin/env python3
 from __future__ import annotations
+
 import argparse
 import filecmp
-from pathlib import Path
 import shutil
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / ".agents/skills"

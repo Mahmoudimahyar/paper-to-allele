@@ -1,14 +1,17 @@
-\
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json
+
+import argparse
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATH = ROOT / "docs/work/WORK_QUEUE.json"
 
+
 def load() -> dict[str, object]:
     return json.loads(PATH.read_text(encoding="utf-8"))
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -46,6 +49,7 @@ def main() -> int:
     PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"{args.task} -> {args.status}")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,21 +1,54 @@
-\
 #!/usr/bin/env python3
 """Token-efficient environment/credential doctor. Never prints secret values."""
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
-from pathlib import Path
 import platform
 import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CREDENTIALS = json.loads((ROOT / "config/credentials.json").read_text(encoding="utf-8"))
 
 PHASE_ORDER = ["MVP-HIST", "V1-MATCH", "V2-SYNC", "V3-BOT-INTAKE", "V4-BOT-MATCH", "V5-WEB"]
 CURRENT_PHASE = "MVP-HIST"
+
+
+def project_python() -> dict[str, object]:
+    """Report the interpreter the project actually builds/tests with.
+
+    Verification runs through `uv run --frozen`, i.e. the pinned `.venv`, so the
+    interpreter that happens to launch this script is irrelevant. Checking
+    `sys.version_info` here made the doctor emit HUMAN ACTION REQUIRED on every
+    run whenever a newer system Python was first on PATH, which trains agents to
+    ignore the one channel reserved for genuine blockers.
+    """
+    venv = ROOT / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+    if venv.is_file():
+        proc = subprocess.run(
+            [str(venv), "-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])"],
+            text=True,
+            capture_output=True,
+        )
+        version = proc.stdout.strip()
+        if version:
+            return {
+                "version": version,
+                "expected": "3.12.x",
+                "ok": version.startswith("3.12."),
+                "source": "project .venv",
+            }
+    return {
+        "version": platform.python_version(),
+        "expected": "3.12.x",
+        "ok": sys.version_info[:2] == (3, 12),
+        "source": "current interpreter (no project .venv found)",
+    }
 
 
 def command_info(name: str) -> dict[str, object]:
@@ -52,13 +85,12 @@ def check_env_item(item: dict[str, object]) -> dict[str, object]:
 
 
 def report() -> dict[str, object]:
-    py_ok = sys.version_info[:2] == (3, 12)
     commands = [command_info(x) for x in ("git", "uv", "docker", "tesseract")]
     env_items = [check_env_item(x) for x in current_phase_items()]
     return {
         "project": "kidneymatch-iran",
         "phase": CURRENT_PHASE,
-        "python": {"version": platform.python_version(), "expected": "3.12.x", "ok": py_ok},
+        "python": project_python(),
         "commands": commands,
         "environment": env_items,
     }
@@ -67,7 +99,9 @@ def report() -> dict[str, object]:
 def human_actions(data: dict[str, object]) -> list[str]:
     actions: list[str] = []
     if not data["python"]["ok"]:  # type: ignore[index]
-        actions.append("Install/use Python 3.12 for the project environment.")
+        actions.append(
+            "Create the pinned project environment: `uv sync --python 3.12 --extra dev`."
+        )
     commands = {x["name"]: x for x in data["commands"]}  # type: ignore[index]
     if not commands["git"]["present"]:
         actions.append("Install Git.")
@@ -76,7 +110,10 @@ def human_actions(data: dict[str, object]) -> list[str]:
     for item in data["environment"]:  # type: ignore[index]
         if item["env"] == "KM_TELEGRAM_EXPORT_DIR" and not item["present"]:
             # Not a hard failure for synthetic tests.
-            actions.append("For a real-data smoke test, set KM_TELEGRAM_EXPORT_DIR in local .env; synthetic tests can proceed without it.")
+            actions.append(
+                "For a real-data smoke test, set KM_TELEGRAM_EXPORT_DIR in local .env; "
+                "synthetic tests can proceed without it."
+            )
         if item.get("status") == "INVALID_PATH":
             actions.append(f"Fix local path in {item['env']}; the current value does not exist.")
     return actions
@@ -99,7 +136,12 @@ def main() -> int:
     if missing and not args.brief:
         print("tools absent/optional depending on task:", ", ".join(missing))
     for action in actions:
-        print("HUMAN ACTION REQUIRED:" if "real-data" not in action.lower() else "HUMAN ACTION LATER:", action)
+        print(
+            "HUMAN ACTION REQUIRED:"
+            if "real-data" not in action.lower()
+            else "HUMAN ACTION LATER:",
+            action,
+        )
     return 0
 
 

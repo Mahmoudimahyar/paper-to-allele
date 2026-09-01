@@ -1,6 +1,6 @@
-\
 #!/usr/bin/env python3
 """Return the smallest high-signal repo context for one task."""
+
 from __future__ import annotations
 
 import argparse
@@ -30,7 +30,11 @@ def main() -> int:
     args = parser.parse_args()
     task = task_by_id(args.task)
     paths: list[str] = []
-    for path in ALWAYS + [str(task.get("spec", "")), str(task.get("plan", ""))] + list(task.get("context", [])):
+    for path in (
+        ALWAYS
+        + [str(task.get("spec", "")), str(task.get("plan", ""))]
+        + list(task.get("context", []))
+    ):
         if path and path not in paths:
             paths.append(path)
     missing = [p for p in paths if not (ROOT / p).exists()]
@@ -41,7 +45,10 @@ def main() -> int:
         "read_in_order": paths,
         "missing": missing,
         "acceptance": task.get("acceptance", []),
-        "instruction": "Read these files first. Retrieve more context only when the task requires it; do not preload the consolidated technical bible.",
+        "instruction": (
+            "Read these files first. Retrieve more context only when the task requires it; "
+            "do not preload the consolidated technical bible."
+        ),
     }
     if args.json:
         print(json.dumps(payload, indent=2))

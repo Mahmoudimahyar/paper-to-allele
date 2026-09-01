@@ -1,17 +1,28 @@
-.PHONY: doctor context verify lint test
+.PHONY: doctor context lint types unit verify
 TASK ?= HIST-001
 
+# Mirrors the justfile. Every target runs through the locked environment so that
+# local results match CI; --frozen fails on a stale uv.lock rather than resolving.
+UV = uv run --frozen
+
 doctor:
-	python scripts/doctor.py
+	$(UV) python scripts/doctor.py
 
 context:
-	python scripts/context_pack.py --task $(TASK)
+	$(UV) python scripts/context_pack.py --task $(TASK)
 
 lint:
-	python scripts/docs_lint.py && python scripts/spec_lint.py && python scripts/architecture_lint.py
+	$(UV) python scripts/docs_lint.py
+	$(UV) python scripts/spec_lint.py
+	$(UV) python scripts/architecture_lint.py
+	$(UV) ruff check .
+	$(UV) ruff format --check .
 
-test:
-	pytest
+types:
+	$(UV) mypy src
+
+unit:
+	$(UV) pytest tests/unit tests/contracts
 
 verify:
-	python scripts/verify_repo.py
+	$(UV) python scripts/verify_repo.py
