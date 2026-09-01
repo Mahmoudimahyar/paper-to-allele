@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "topics": {
+    "project-constitution": [
+      "docs/product/PRODUCT_CONSTITUTION.md"
+    ],
+    "roadmap": [
+      "docs/product/ROADMAP.md"
+    ],
+    "historical-ingestion": [
+      "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
+      "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+    ],
+    "ocr": [
+      "docs/ingestion/OCR_SPEC.md",
+      "docs/clinical/HLA_VALIDATION_SPEC.md",
+      "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+    ],
+    "matching": [
+      "docs/clinical/MATCHING_POLICY_V1.md",
+      "docs/clinical/HLA_VALIDATION_SPEC.md"
+    ],
+    "security": [
+      "docs/security/SECURITY_TRUST_SAFETY.md"
+    ],
+    "testing": [
+      "docs/operations/TEST_PLAN.md"
+    ],
+    "dependencies": [
+      "docs/operations/OSS_DEPENDENCIES.md"
+    ],
+    "agent-harness": [
+      "docs/agent-harness/SESSION_PROTOCOL.md",
+      "docs/agent-harness/CREDENTIAL_PROTOCOL.md",
+      "docs/agent-harness/AUTONOMY_POLICY.md",
+      "docs/agent-harness/TOKEN_EFFICIENCY.md",
+      "docs/agent-harness/CODEX_CLAUDE_COMPATIBILITY.md",
+      "docs/agent-memory/CURRENT.md"
+    ],
+    "quality": [
+      "docs/operations/QUALITY_GATES.md",
+      "docs/operations/TEST_PLAN.md"
+    ],
+    "adrs": [
+      "docs/architecture/decisions/0001-agent-first-repository.md",
+      "docs/architecture/decisions/0002-cross-agent-instructions.md",
+      "docs/architecture/decisions/0003-repo-memory.md",
+      "docs/architecture/decisions/0004-low-resolution-historical-media.md",
+      "docs/architecture/decisions/0005-separate-generator-and-reviewer.md"
+    ]
+  }
+}

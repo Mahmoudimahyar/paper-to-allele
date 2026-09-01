@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FieldClaim",
+  "type": "object",
+  "required": [
+    "field",
+    "raw_value",
+    "source_type",
+    "source_id",
+    "verification_state"
+  ],
+  "properties": {
+    "field": {
+      "type": "string"
+    },
+    "raw_value": {},
+    "normalized_value": {},
+    "source_type": {
+      "enum": [
+        "telegram_text",
+        "document_image",
+        "ocr",
+        "user_entry",
+        "human_review",
+        "laboratory",
+        "transplant_center"
+      ]
+    },
+    "source_id": {
+      "type": "string"
+    },
+    "page": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "bbox": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "number"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "extraction_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "verification_state": {
+      "enum": [
+        "SELF_REPORTED",
+        "OCR_PROPOSED",
+        "USER_CONFIRMED",
+        "HUMAN_REVIEWED",
+        "LAB_VERIFIED",
+        "CENTER_VERIFIED",
+        "CONFLICT",
+        "UNKNOWN"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

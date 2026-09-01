@@ -1,0 +1,42 @@
+{
+  "policy_id": "IR-OCR-1.0.0",
+  "archive_assumption": "LOW_RES_BEST_AVAILABLE",
+  "critical_fields": [
+    "abo",
+    "hla_a",
+    "hla_b",
+    "hla_c",
+    "hla_drb1",
+    "hla_dqb1",
+    "hla_dqa1",
+    "hla_dpa1",
+    "hla_dpb1",
+    "pra",
+    "cPRA",
+    "dsa",
+    "crossmatch"
+  ],
+  "quality_states": [
+    "HIGH_RES_AVAILABLE",
+    "MEDIUM_RES_AVAILABLE",
+    "THUMBNAIL_ONLY",
+    "CROPPED",
+    "OCCLUDED",
+    "SCREENSHOT",
+    "UNREADABLE"
+  ],
+  "acceptance": {
+    "geometry_defines_hla_locus": true,
+    "multi_engine_majority_vote_alone": false,
+    "human_review_required_for_thumbnail_critical_fields": true,
+    "invalid_hla_must_abstain": true,
+    "engine_disagreement_requires_review": true,
+    "unknown_is_allowed": true
+  },
+  "engines": {
+    "primary": "PaddleOCR PP-OCRv5 fa benchmark target",
+    "secondary": "Tesseract 5 fas+eng / eng cell crop",
+    "fallback": "PaddleOCR-VL benchmark target",
+    "benchmark_candidate": "Surya"
+  }
+}

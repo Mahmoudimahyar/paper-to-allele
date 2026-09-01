@@ -1,0 +1,27 @@
+{
+  "id": "REVIEW-001",
+  "version": "1.0.0",
+  "status": "BACKLOG",
+  "risk": "CRITICAL",
+  "goal": "Let reviewers confirm or reject critical extraction proposals against exact source crops and retain the full audit trail.",
+  "non_goals": [
+    "inventing unreadable values"
+  ],
+  "actors": [
+    "document_reviewer"
+  ],
+  "preconditions": [
+    "OCR proposal"
+  ],
+  "invariants": [
+    "original OCR is preserved",
+    "review correction records reviewer/time/source",
+    "unreadable can be UNKNOWN",
+    "review does not establish lab authenticity"
+  ],
+  "acceptance": [
+    "reviewer can inspect crop+page+caption conflict",
+    "correction does not delete OCR proposal",
+    "thumbnail critical fields cannot publish Gold without review"
+  ]
+}

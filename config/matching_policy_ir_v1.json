@@ -1,0 +1,38 @@
+{
+  "policy_id": "IR-KIDNEY-MATCH-1.0.0",
+  "status": "PRE_SCREENING_ONLY",
+  "hard_gates_order": [
+    "identity_role_consent",
+    "data_completeness",
+    "abo_route",
+    "known_dsa_or_unacceptable_antigen",
+    "virtual_crossmatch_if_available",
+    "physical_crossmatch_if_available",
+    "donor_medical_clearance"
+  ],
+  "hla_tiebreak_priority": [
+    "DQ/DQB1",
+    "DRB1",
+    "class_II_total",
+    "B",
+    "A",
+    "C",
+    "overall_mismatch",
+    "evidence_quality",
+    "freshness"
+  ],
+  "heuristic_penalty_per_mismatch": {
+    "DQB1": 5,
+    "DRB1": 4,
+    "B": 2,
+    "A": 1,
+    "C": 1,
+    "DRB3_4_5": 1
+  },
+  "warnings": [
+    "Heuristic weights are a versioned project pre-screening policy, not a universal clinical standard.",
+    "No compatibility percentage is displayed.",
+    "Low-resolution HLA is never promoted to high-resolution.",
+    "Compensation is inaccessible to the matching core."
+  ]
+}

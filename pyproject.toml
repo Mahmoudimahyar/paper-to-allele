@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kidneymatch-iran"
+version = "0.0.1"
+description = "Evidence-first kidney donor/recipient ingestion and matching platform for Iran"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pydantic>=2.10,<3",
+]
+
+[project.optional-dependencies]
+hist = [
+  "beautifulsoup4>=4.12,<5",
+  "lxml>=5,<7",
+  "polars>=1,<2",
+  "rapidfuzz>=3,<4",
+]
+image = [
+  "Pillow>=11,<13",
+  "opencv-python-headless>=4.10,<5",
+  "ImageHash>=4.3,<5",
+]
+hla = [
+  "py-ard>=1,<2",
+]
+web = [
+  "Django>=5.2,<5.3",
+  "psycopg[binary]>=3.2,<4",
+  "django-allauth>=65,<66",
+]
+dev = [
+  "pytest>=8,<9",
+  "pytest-cov>=6,<8",
+  "pytest-django>=4.11,<5",
+  "hypothesis>=6,<7",
+  "ruff>=0.12,<1",
+  "mypy>=1.17,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kidneymatch"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["kidneymatch"]

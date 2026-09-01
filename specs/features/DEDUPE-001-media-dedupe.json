@@ -1,0 +1,28 @@
+{
+  "id": "DEDUPE-001",
+  "version": "1.0.0",
+  "status": "READY",
+  "risk": "HIGH",
+  "goal": "Inventory best-available media and deduplicate exact/near-duplicate files without merging people.",
+  "non_goals": [
+    "person dedupe solely from HLA"
+  ],
+  "actors": [
+    "historical_importer",
+    "reviewer"
+  ],
+  "preconditions": [
+    "HIST-001"
+  ],
+  "invariants": [
+    "same path or SHA256 maps to one MediaAsset",
+    "all source-message links are retained",
+    "HLA similarity alone never merges people",
+    "missing higher-resolution asset is not treated as an error"
+  ],
+  "acceptance": [
+    "byte-identical renamed thumbnails dedupe",
+    "THUMBNAIL_ONLY is assigned when no better file exists",
+    "source provenance count survives dedupe"
+  ]
+}

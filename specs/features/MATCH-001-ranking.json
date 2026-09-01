@@ -1,0 +1,32 @@
+{
+  "id": "MATCH-001",
+  "version": "1.0.0",
+  "status": "BACKLOG",
+  "risk": "CRITICAL",
+  "goal": "Given a recipient snapshot, return reproducible top-N donor pre-screen matches with transparent gates, locus mismatches, uncertainty, and policy version.",
+  "non_goals": [
+    "transplant clearance",
+    "compatibility percentage",
+    "compensation-based ranking"
+  ],
+  "actors": [
+    "administrator",
+    "recipient_later"
+  ],
+  "preconditions": [
+    "Gold donor data",
+    "recipient data"
+  ],
+  "invariants": [
+    "ABO/DSA/crossmatch gates precede HLA heuristic",
+    "missing locus is UNKNOWN",
+    "DQ/DR priority is versioned policy",
+    "matching core cannot read compensation",
+    "same input snapshot+policy gives same output"
+  ],
+  "acceptance": [
+    "positive physical crossmatch hard-stops direct pathway",
+    "amount changes do not change ordering",
+    "rank explanation exactly reconstructs sort keys"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "OCR-001",
+  "version": "1.0.0",
+  "status": "BLOCKED",
+  "risk": "CRITICAL",
+  "goal": "Extract HLA and document metadata from low-resolution best-available images with safe abstention and provenance.",
+  "non_goals": [
+    "automatic laboratory verification",
+    "free-form LLM medical transcription"
+  ],
+  "actors": [
+    "ocr_worker",
+    "human_reviewer"
+  ],
+  "preconditions": [
+    "deduped relevant medical document",
+    "OCR golden benchmark approved"
+  ],
+  "invariants": [
+    "geometry defines locus",
+    "invalid/reference-inconsistent allele cannot auto-accept",
+    "engine majority vote alone cannot auto-accept",
+    "thumbnail critical field requires human review",
+    "unknown is valid output",
+    "every accepted field has source crop/bbox"
+  ],
+  "acceptance": [
+    "wrong-locus false acceptance is zero on release golden set",
+    "engine disagreement routes to review",
+    "known templates crop cell-by-cell",
+    "low-resolution first-field is never expanded to second-field"
+  ]
+}

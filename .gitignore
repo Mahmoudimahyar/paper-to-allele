@@ -1,0 +1,43 @@
+# secrets / local config
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# agent/runtime artifacts
+.artifacts/*
+!.artifacts/.gitkeep
+.codex-local/
+.claude/local/
+
+# sensitive project data - NEVER COMMIT
+data/raw/*
+data/derived/*
+data/review/*
+data/gold/*
+!data/raw/.gitkeep
+!data/golden/.gitkeep
+!data/README.md
+*.sqlite3
+
+# OCR/model/cache
+.paddleocr/
+.tesseract-cache/
+.models/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

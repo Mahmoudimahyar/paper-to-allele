@@ -1,0 +1,30 @@
+{
+  "id": "BOT-INTAKE-001",
+  "version": "1.0.0",
+  "status": "BACKLOG",
+  "risk": "CRITICAL",
+  "goal": "Collect one canonical person's donor/recipient information through Telegram, ask about uncertain OCR values, and require completeness before database browsing.",
+  "non_goals": [
+    "one account operating unrelated people",
+    "automatic identity verification from Telegram username"
+  ],
+  "actors": [
+    "donor",
+    "recipient",
+    "authorized_recipient_representative"
+  ],
+  "preconditions": [
+    "V3 identity/consent services"
+  ],
+  "invariants": [
+    "one normal end-user account maps to one canonical person",
+    "multiple documents allowed only for same person",
+    "critical OCR values are explicitly confirmed",
+    "identity conflict pauses profile"
+  ],
+  "acceptance": [
+    "second person's document triggers identity conflict",
+    "uncertain HLA asks user rather than guesses",
+    "incomplete profile cannot browse matches"
+  ]
+}

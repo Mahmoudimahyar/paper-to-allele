@@ -1,0 +1,27 @@
+{
+  "id": "HIST-002",
+  "version": "1.0.0",
+  "status": "READY",
+  "risk": "HIGH",
+  "goal": "Reconstruct logical MessageBundles using explicit Telegram structure before weak adjacency heuristics.",
+  "non_goals": [
+    "medical subject identity conclusion"
+  ],
+  "actors": [
+    "historical_importer",
+    "reviewer"
+  ],
+  "preconditions": [
+    "HIST-001 source records"
+  ],
+  "invariants": [
+    "joined/reply/media-group relations outrank adjacency",
+    "adjacent unrelated messages must not silently merge",
+    "current poster, forwarded actor, advertised contact, medical subject remain separate"
+  ],
+  "acceptance": [
+    "multi-image joined submission bundles once",
+    "reply context links without overwriting primary sender",
+    "ambiguous adjacency yields review suggestion not automatic merge"
+  ]
+}

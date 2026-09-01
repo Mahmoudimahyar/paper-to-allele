@@ -1,0 +1,36 @@
+{
+  "id": "HIST-001",
+  "version": "1.0.0",
+  "status": "ACTIVE",
+  "risk": "HIGH",
+  "goal": "Parse Telegram HTML into immutable source messages and media references without medical interpretation.",
+  "non_goals": [
+    "OCR",
+    "candidate identity merge",
+    "matching",
+    "fraud finding"
+  ],
+  "actors": [
+    "historical_importer",
+    "reviewer"
+  ],
+  "preconditions": [
+    "local export path for real-data run or synthetic fixture"
+  ],
+  "invariants": [
+    "message ID is not user ID",
+    "current and forwarded actor remain distinct",
+    "raw source text is immutable",
+    "re-ingestion is idempotent",
+    "phone/username links are unverified contact evidence"
+  ],
+  "acceptance": [
+    "normal/joined/forwarded/reply/image-only/text-only/service fixtures parse",
+    "same export imported twice produces no duplicate source records",
+    "unparsed source fragments are preserved or explicitly classified"
+  ],
+  "context": [
+    "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
+    "docs/architecture/DATA_MODEL.md"
+  ]
+}

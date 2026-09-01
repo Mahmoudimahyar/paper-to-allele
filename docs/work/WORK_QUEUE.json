@@ -1,0 +1,471 @@
+{
+  "version": 2,
+  "active_task": "HIST-001",
+  "status_values": [
+    "COMPLETE",
+    "ACTIVE",
+    "READY",
+    "BACKLOG",
+    "BLOCKED",
+    "BLOCKED_BY_BENCHMARK"
+  ],
+  "tasks": [
+    {
+      "id": "BOOT-001",
+      "status": "COMPLETE",
+      "title": "Agentic repository scaffold and quality harness",
+      "phase": "MVP-HIST",
+      "context": [
+        "docs/agent-harness/SESSION_PROTOCOL.md",
+        "docs/operations/QUALITY_GATES.md"
+      ]
+    },
+    {
+      "id": "HIST-001",
+      "status": "ACTIVE",
+      "title": "Telegram HTML source parser",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/HIST-001-telegram-html-ingestion.json",
+      "plan": "docs/exec-plans/active/MVP-HIST-001-bootstrap-ingestion.md",
+      "depends_on": [
+        "BOOT-001"
+      ],
+      "context": [
+        "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
+        "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
+        "docs/architecture/DATA_MODEL.md"
+      ],
+      "acceptance": [
+        "pytest tests/unit tests/contracts -q",
+        "python scripts/spec_lint.py",
+        "python scripts/docs_lint.py"
+      ]
+    },
+    {
+      "id": "HIST-JSON-001",
+      "status": "BACKLOG",
+      "title": "Optional Telegram JSON adapter and stable actor IDs",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "HIST-001"
+      ],
+      "source_doc": "docs/ingestion/HISTORICAL_INGESTION_MVP.md"
+    },
+    {
+      "id": "HIST-002",
+      "status": "READY",
+      "title": "MessageBundle reconstruction",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/HIST-002-message-bundles.json",
+      "depends_on": [
+        "HIST-001"
+      ],
+      "context": [
+        "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
+        "docs/architecture/DATA_MODEL.md"
+      ]
+    },
+    {
+      "id": "MEDIA-001",
+      "status": "READY",
+      "title": "Best-available media resolution and quality classification",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/DEDUPE-001-media-dedupe.json",
+      "depends_on": [
+        "HIST-001"
+      ],
+      "context": [
+        "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+      ]
+    },
+    {
+      "id": "DEDUPE-001",
+      "status": "READY",
+      "title": "Exact media/path/SHA-256 deduplication",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/DEDUPE-001-media-dedupe.json",
+      "depends_on": [
+        "MEDIA-001"
+      ]
+    },
+    {
+      "id": "DEDUPE-002",
+      "status": "BACKLOG",
+      "title": "Perceptual/crop duplicate clustering with human-safe thresholds",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "DEDUPE-001"
+      ],
+      "source_doc": "docs/ingestion/HISTORICAL_INGESTION_MVP.md"
+    },
+    {
+      "id": "CLASS-001",
+      "status": "BACKLOG",
+      "title": "Rule-first relevance and message/document classification",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "HIST-002",
+        "DEDUPE-001"
+      ],
+      "source_doc": "docs/ingestion/HISTORICAL_INGESTION_MVP.md"
+    },
+    {
+      "id": "CLAIM-001",
+      "status": "BACKLOG",
+      "title": "Caption/contact/demographic claim extraction with raw+normalized evidence",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "CLASS-001"
+      ],
+      "source_doc": "docs/architecture/DATA_MODEL.md"
+    },
+    {
+      "id": "OCR-BENCH-001",
+      "status": "BACKLOG",
+      "title": "Low-resolution golden corpus and OCR engine benchmark",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "DEDUPE-001",
+        "CLASS-001"
+      ],
+      "source_doc": "docs/ingestion/OCR_SPEC.md"
+    },
+    {
+      "id": "OCR-TEMPLATE-001",
+      "status": "BACKLOG",
+      "title": "Laboratory template registry and geometry alignment",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "OCR-BENCH-001"
+      ],
+      "source_doc": "docs/ingestion/OCR_SPEC.md"
+    },
+    {
+      "id": "OCR-001",
+      "status": "BLOCKED_BY_BENCHMARK",
+      "title": "Template/cell HLA extraction cascade",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/OCR-001-hla-extraction.json",
+      "depends_on": [
+        "OCR-TEMPLATE-001"
+      ],
+      "context": [
+        "docs/ingestion/OCR_SPEC.md",
+        "docs/clinical/HLA_VALIDATION_SPEC.md",
+        "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+      ]
+    },
+    {
+      "id": "HLA-VALIDATE-001",
+      "status": "BACKLOG",
+      "title": "Pinned IPD/IMGT-HLA + py-ard validity adapter",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "OCR-001"
+      ],
+      "source_doc": "docs/clinical/HLA_VALIDATION_SPEC.md"
+    },
+    {
+      "id": "CONFLICT-001",
+      "status": "BACKLOG",
+      "title": "Caption/document/OCR evidence conflict engine",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "CLAIM-001",
+        "OCR-001"
+      ],
+      "source_doc": "docs/architecture/DATA_MODEL.md"
+    },
+    {
+      "id": "REVIEW-001",
+      "status": "BACKLOG",
+      "title": "Human critical-field review workflow",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/REVIEW-001-human-review.json",
+      "depends_on": [
+        "CONFLICT-001",
+        "HLA-VALIDATE-001"
+      ]
+    },
+    {
+      "id": "ENTITY-001",
+      "status": "BACKLOG",
+      "title": "Conservative person/candidate entity-resolution suggestions",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "REVIEW-001"
+      ],
+      "source_doc": "docs/architecture/DATA_MODEL.md"
+    },
+    {
+      "id": "TS-HIST-001",
+      "status": "BACKLOG",
+      "title": "Historical scam/broker allegation event extraction without auto-verdict",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "HIST-002",
+        "CLAIM-001"
+      ],
+      "source_doc": "docs/security/SECURITY_TRUST_SAFETY.md"
+    },
+    {
+      "id": "GOLD-001",
+      "status": "BACKLOG",
+      "title": "Canonical Gold database publication",
+      "phase": "MVP-HIST",
+      "spec": "specs/features/GOLD-001-canonical-db.json",
+      "depends_on": [
+        "REVIEW-001",
+        "ENTITY-001"
+      ]
+    },
+    {
+      "id": "MVP-HIST-QA-001",
+      "status": "BACKLOG",
+      "title": "Full archive dry run, sampling audit, reproducibility and failure report",
+      "phase": "MVP-HIST",
+      "depends_on": [
+        "GOLD-001"
+      ],
+      "source_doc": "docs/operations/TEST_PLAN.md"
+    },
+    {
+      "id": "MATCH-DOMAIN-001",
+      "status": "BACKLOG",
+      "title": "Immutable recipient/donor MatchSnapshot and policy-version model",
+      "phase": "V1-MATCH",
+      "depends_on": [
+        "MVP-HIST-QA-001"
+      ],
+      "source_doc": "docs/clinical/MATCHING_POLICY_V1.md"
+    },
+    {
+      "id": "MATCH-ABO-001",
+      "status": "BACKLOG",
+      "title": "ABO direct-route gate and UNKNOWN/conflict handling",
+      "phase": "V1-MATCH",
+      "depends_on": [
+        "MATCH-DOMAIN-001"
+      ],
+      "source_doc": "docs/clinical/MATCHING_POLICY_V1.md"
+    },
+    {
+      "id": "MATCH-HLA-001",
+      "status": "BACKLOG",
+      "title": "Conventional locus-specific donor mismatch vectors",
+      "phase": "V1-MATCH",
+      "depends_on": [
+        "MATCH-DOMAIN-001"
+      ],
+      "source_doc": "docs/clinical/MATCHING_POLICY_V1.md"
+    },
+    {
+      "id": "MATCH-IMMUNE-001",
+      "status": "BACKLOG",
+      "title": "Antibody/DSA/vXM/physical-crossmatch pair gates when evidence exists",
+      "phase": "V1-MATCH",
+      "depends_on": [
+        "MATCH-DOMAIN-001"
+      ],
+      "source_doc": "docs/clinical/MATCHING_POLICY_V1.md"
+    },
+    {
+      "id": "MATCH-001",
+      "status": "BACKLOG",
+      "title": "Top-N scientific pre-screen ranking",
+      "phase": "V1-MATCH",
+      "spec": "specs/features/MATCH-001-ranking.json",
+      "depends_on": [
+        "MATCH-ABO-001",
+        "MATCH-HLA-001",
+        "MATCH-IMMUNE-001"
+      ],
+      "context": [
+        "docs/clinical/MATCHING_POLICY_V1.md",
+        "docs/clinical/HLA_VALIDATION_SPEC.md"
+      ]
+    },
+    {
+      "id": "MATCH-EXPLAIN-001",
+      "status": "BACKLOG",
+      "title": "Transparent rank explanation and missing-evidence output",
+      "phase": "V1-MATCH",
+      "depends_on": [
+        "MATCH-001"
+      ],
+      "source_doc": "docs/clinical/MATCHING_POLICY_V1.md"
+    },
+    {
+      "id": "MATCH-EVAL-001",
+      "status": "BACKLOG",
+      "title": "Scientific policy tests, counterexamples and clinician-review packet",
+      "phase": "V1-MATCH",
+      "depends_on": [
+        "MATCH-EXPLAIN-001"
+      ],
+      "source_doc": "docs/operations/TEST_PLAN.md"
+    },
+    {
+      "id": "SYNC-001",
+      "status": "BACKLOG",
+      "title": "Authorized Telegram incremental ingestion adapter",
+      "phase": "V2-SYNC",
+      "depends_on": [
+        "MVP-HIST-QA-001"
+      ],
+      "source_doc": "docs/product/ROADMAP.md"
+    },
+    {
+      "id": "SYNC-EDIT-001",
+      "status": "BACKLOG",
+      "title": "Edited-message/delete/repost handling and idempotent checkpoints",
+      "phase": "V2-SYNC",
+      "depends_on": [
+        "SYNC-001"
+      ],
+      "source_doc": "docs/product/TELEGRAM_V2_V4.md"
+    },
+    {
+      "id": "SYNC-JOBS-001",
+      "status": "BACKLOG",
+      "title": "Scheduled ingestion/review queue/recalculation jobs",
+      "phase": "V2-SYNC",
+      "depends_on": [
+        "SYNC-EDIT-001"
+      ],
+      "source_doc": "docs/architecture/ARCHITECTURE.md"
+    },
+    {
+      "id": "AUTH-001",
+      "status": "BACKLOG",
+      "title": "Telegram/web authentication foundation and session security",
+      "phase": "V3-BOT-INTAKE",
+      "source_doc": "docs/product/TELEGRAM_V2_V4.md"
+    },
+    {
+      "id": "IDENTITY-001",
+      "status": "BACKLOG",
+      "title": "One-account-one-person identity assurance and duplicate controls",
+      "phase": "V3-BOT-INTAKE",
+      "depends_on": [
+        "AUTH-001"
+      ],
+      "source_doc": "docs/security/SECURITY_TRUST_SAFETY.md"
+    },
+    {
+      "id": "CONSENT-001",
+      "status": "BACKLOG",
+      "title": "Versioned health/genetic processing and matching consent",
+      "phase": "V3-BOT-INTAKE",
+      "depends_on": [
+        "AUTH-001"
+      ],
+      "source_doc": "docs/product/PRODUCT_CONSTITUTION.md"
+    },
+    {
+      "id": "BOT-INTAKE-001",
+      "status": "BACKLOG",
+      "title": "Telegram self-registration and uncertain-field confirmation",
+      "phase": "V3-BOT-INTAKE",
+      "spec": "specs/features/BOT-INTAKE-001.json",
+      "depends_on": [
+        "IDENTITY-001",
+        "CONSENT-001",
+        "OCR-001"
+      ]
+    },
+    {
+      "id": "PROFILE-001",
+      "status": "BACKLOG",
+      "title": "Donor/recipient profile completeness and evidence verification states",
+      "phase": "V3-BOT-INTAKE",
+      "depends_on": [
+        "BOT-INTAKE-001"
+      ],
+      "source_doc": "docs/product/ROADMAP.md"
+    },
+    {
+      "id": "BOT-SECURITY-001",
+      "status": "BACKLOG",
+      "title": "Abuse/rate-limit/account-takeover/representative safeguards",
+      "phase": "V3-BOT-INTAKE",
+      "depends_on": [
+        "PROFILE-001"
+      ],
+      "source_doc": "docs/security/SECURITY_TRUST_SAFETY.md"
+    },
+    {
+      "id": "BOT-MATCH-001",
+      "status": "BACKLOG",
+      "title": "Recipient top matches and connection request",
+      "phase": "V4-BOT-MATCH",
+      "spec": "specs/features/BOT-MATCH-001.json",
+      "depends_on": [
+        "MATCH-EVAL-001",
+        "PROFILE-001"
+      ]
+    },
+    {
+      "id": "COMP-001",
+      "status": "BACKLOG",
+      "title": "Fixed donor-confirmed compensation display isolated from ranking",
+      "phase": "V4-BOT-MATCH",
+      "depends_on": [
+        "PROFILE-001"
+      ],
+      "source_doc": "docs/product/PRODUCT_CONSTITUTION.md"
+    },
+    {
+      "id": "CONNECT-001",
+      "status": "BACKLOG",
+      "title": "Mutual proceed, one-active-referral and controlled introduction",
+      "phase": "V4-BOT-MATCH",
+      "depends_on": [
+        "BOT-MATCH-001",
+        "COMP-001"
+      ],
+      "source_doc": "docs/product/ROADMAP.md"
+    },
+    {
+      "id": "TRUST-001",
+      "status": "BACKLOG",
+      "title": "Broker/scam graph signals, quarantine, human review and appeal",
+      "phase": "V4-BOT-MATCH",
+      "depends_on": [
+        "BOT-SECURITY-001",
+        "CONNECT-001"
+      ],
+      "source_doc": "docs/security/SECURITY_TRUST_SAFETY.md"
+    },
+    {
+      "id": "WEB-001",
+      "status": "BACKLOG",
+      "title": "Persian RTL public informational website and Telegram CTA",
+      "phase": "V5-WEB",
+      "depends_on": [
+        "CONNECT-001"
+      ],
+      "source_doc": "docs/product/ROADMAP.md"
+    },
+    {
+      "id": "WEB-SECURITY-001",
+      "status": "BACKLOG",
+      "title": "ASVS web hardening, privacy dashboard and production deployment gates",
+      "phase": "V5-WEB",
+      "depends_on": [
+        "WEB-001"
+      ],
+      "source_doc": "docs/security/SECURITY_TRUST_SAFETY.md"
+    },
+    {
+      "id": "OPS-PROD-001",
+      "status": "BACKLOG",
+      "title": "Backups/restore/monitoring/incident runbooks and release evidence",
+      "phase": "V5-WEB",
+      "depends_on": [
+        "WEB-SECURITY-001"
+      ],
+      "source_doc": "docs/operations/QUALITY_GATES.md"
+    }
+  ]
+}

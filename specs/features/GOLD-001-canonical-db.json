@@ -1,0 +1,28 @@
+{
+  "id": "GOLD-001",
+  "version": "1.0.0",
+  "status": "BACKLOG",
+  "risk": "CRITICAL",
+  "goal": "Publish reviewed canonical historical donor/recipient evidence into a Gold database without losing source provenance or uncertainty.",
+  "non_goals": [
+    "calling historical person an active verified platform user"
+  ],
+  "actors": [
+    "historical_importer",
+    "reviewer"
+  ],
+  "preconditions": [
+    "reviewed critical fields"
+  ],
+  "invariants": [
+    "historical profile defaults HISTORICAL_UNCLAIMED",
+    "canonical field resolves through claims/provenance",
+    "conflicting critical evidence remains conflict",
+    "raw source remains immutable"
+  ],
+  "acceptance": [
+    "Gold HLA links to source document/crop/review",
+    "role/ABO/HLA can be queried",
+    "rebuild is reproducible from evidence+review decisions"
+  ]
+}

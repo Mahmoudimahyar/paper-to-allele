@@ -1,0 +1,31 @@
+{
+  "id": "BOT-MATCH-001",
+  "version": "1.0.0",
+  "status": "BACKLOG",
+  "risk": "CRITICAL",
+  "goal": "Show complete recipients a small anonymized top-match list and allow a controlled connection request to a donor.",
+  "non_goals": [
+    "public donor directory",
+    "free-form negotiation",
+    "in-platform payment"
+  ],
+  "actors": [
+    "recipient",
+    "donor"
+  ],
+  "preconditions": [
+    "complete verified profile",
+    "MATCH-001"
+  ],
+  "invariants": [
+    "recipient sees matches; donor receives only requests",
+    "no unrestricted database enumeration",
+    "one active referral per donor",
+    "compensation display never affects rank"
+  ],
+  "acceptance": [
+    "recipient sees only top configured N",
+    "donor can accept/decline",
+    "no direct bulk contact export endpoint exists"
+  ]
+}
