@@ -9,7 +9,10 @@
 # is exactly what we want: a remaining lint error becomes immediate feedback.
 set -u
 
-ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=scripts/hooks/_paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/_paths.sh"
+
+ROOT="$(km_to_unix "${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}")"
 
 payload="$(cat)"
 file="$(printf '%s' "$payload" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"

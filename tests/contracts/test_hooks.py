@@ -219,6 +219,75 @@ def test_empty_steer_file_delivers_nothing(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------
+# stop_checkpoint / post_edit_check / session_start
+# --------------------------------------------------------------------------
+
+
+def test_stop_hook_never_blocks(tmp_path: Path) -> None:
+    """A Stop hook that exits 2 prevents Claude from stopping, and Claude Code
+    overrides it after 8 consecutive blocks -- silently turning the gate into a
+    no-op. This hook must return 0 on every path, including hostile ones.
+    """
+    payloads = [
+        {"hook_event_name": "Stop", "stop_hook_active": False},
+        {"hook_event_name": "Stop", "stop_hook_active": True},
+        "not json at all",
+    ]
+    for payload in payloads:
+        # Point it at a directory that is not a git repo: still must not block.
+        assert run_hook("stop_checkpoint.sh", payload, {"CLAUDE_PROJECT_DIR": str(tmp_path)}) == 0
+
+
+def test_post_edit_check_ignores_non_python_files() -> None:
+    code = run_hook(
+        "post_edit_check.sh",
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(ROOT / "docs/INDEX.md")},
+        },
+    )
+    assert code == ALLOW
+
+
+def test_session_start_is_bounded_and_succeeds() -> None:
+    """Its stdout is injected into every session, so it must stay small."""
+    import os
+
+    proc = subprocess.run(
+        [BASH, "scripts/hooks/session_start.sh"],
+        input="{}",
+        text=True,
+        capture_output=True,
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(ROOT)},
+        cwd=ROOT,
+    )
+    assert proc.returncode == 0
+    lines = proc.stdout.strip().splitlines()
+    assert 5 < len(lines) < 40, f"orientation is {len(lines)} lines; keep it small"
+    assert "acceptance" in proc.stdout.lower()
+
+
+def test_session_start_warns_when_the_kill_switch_is_set(tmp_path: Path) -> None:
+    import os
+    import shutil as sh
+
+    sandbox = tmp_path / "repo"
+    sh.copytree(ROOT / "scripts", sandbox / "scripts")
+    (sandbox / "AGENT_STOP").write_text("halted", encoding="utf-8")
+    proc = subprocess.run(
+        [BASH, "scripts/hooks/session_start.sh"],
+        input="{}",
+        text=True,
+        capture_output=True,
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(sandbox)},
+        cwd=sandbox,
+    )
+    assert proc.returncode == 0
+    assert "AGENT_STOP" in proc.stdout
+
+
+# --------------------------------------------------------------------------
 # settings.json wiring
 # --------------------------------------------------------------------------
 

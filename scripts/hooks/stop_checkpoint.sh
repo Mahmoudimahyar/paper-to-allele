@@ -15,8 +15,16 @@
 # the very backstop meant to save it.
 set -u
 
-ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-cd "$ROOT" || exit 0
+# shellcheck source=scripts/hooks/_paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/_paths.sh"
+
+ROOT="$(km_to_unix "${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}")"
+if ! cd "$ROOT" 2>/dev/null; then
+  # Report rather than exiting silently: a checkpoint that never happens is a
+  # silent loss of the git history this repo treats as cross-agent memory.
+  echo "stop_checkpoint: cannot cd to '$ROOT'; NOTHING was checkpointed." >&2
+  exit 0
+fi
 
 command -v git >/dev/null 2>&1 || exit 0
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0

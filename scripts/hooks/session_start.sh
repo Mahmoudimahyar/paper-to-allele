@@ -28,8 +28,11 @@ fi
 echo "KidneyMatch session orientation"
 echo "-- active/next task --"
 "$PY" scripts/taskctl.py next 2>/dev/null || echo "(taskctl unavailable)"
-echo "-- acceptance ledger (default-FAIL; criteria start unmet) --"
-"$PY" scripts/acceptance.py status 2>/dev/null | head -20 || echo "(ledger unavailable)"
+# Only the ACTIVE task's criteria. Listing every live task then truncating with
+# `head` would make a clipped list look like a complete one.
+ACTIVE="$("$PY" -c "import json;print(json.load(open('docs/work/WORK_QUEUE.json',encoding='utf-8'))['active_task'])" 2>/dev/null)"
+echo "-- acceptance for ${ACTIVE:-?} (default-FAIL; criteria start unmet) --"
+"$PY" scripts/acceptance.py status "$ACTIVE" 2>/dev/null || echo "(ledger unavailable)"
 echo "-- environment --"
 "$PY" scripts/doctor.py --brief 2>/dev/null || echo "(doctor unavailable)"
 echo "-- reminders --"
