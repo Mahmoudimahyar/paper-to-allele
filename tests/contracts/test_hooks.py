@@ -160,6 +160,50 @@ def test_write_mode_open_on_the_ledger_is_still_blocked() -> None:
     assert code == BLOCK
 
 
+def test_a_trailing_comment_cannot_exempt_a_mutation() -> None:
+    """Audit finding: the exemption was `"acceptance.py" in segment`, tested
+    BEFORE the mutation check, so appending `# per acceptance.py` to any command
+    disabled the guard entirely. The exemption now requires an invocation of the
+    script by path, and comments are stripped before matching.
+    """
+    for command in (
+        "sed -i 's/false/true/' docs/work/acceptance.json  # per acceptance.py",
+        "echo '{}' > docs/work/acceptance.json  # regenerate the way acceptance.py would",
+        "cp /tmp/forged.json docs/work/acceptance.json",
+        "git checkout -- docs/work/acceptance.json",
+    ):
+        code = run_hook(
+            "guard_ledger.sh",
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+            },
+        )
+        assert code == BLOCK, f"bypass not blocked: {command}"
+
+
+def test_redirect_direction_is_read_not_guessed() -> None:
+    """`cat ledger > backup` writes the BACKUP, not the ledger.
+
+    A bare `">" in segment` test blocked these read-only commands.
+    """
+    for command in (
+        "cat docs/work/acceptance.json > .artifacts/backup.json",
+        "cp docs/work/acceptance.json /tmp/backup.json",
+        "grep -rn acceptance.json scripts/ > /tmp/refs.txt",
+    ):
+        code = run_hook(
+            "guard_ledger.sh",
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+            },
+        )
+        assert code == ALLOW, f"read wrongly blocked: {command}"
+
+
 def test_unparseable_payload_fails_closed() -> None:
     """An exception must not fall through to exit 1, which would fail OPEN."""
     assert run_hook("guard_ledger.sh", "this is not json") == BLOCK

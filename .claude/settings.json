@@ -1,6 +1,5 @@
 {
   "autoMemoryEnabled": true,
-
   "permissions": {
     "allow": [
       "Bash(uv run:*)",
@@ -32,7 +31,6 @@
       "Edit(config/**)",
       "Edit(schemas/**)"
     ],
-
     "ask": [
       "Bash(git push:*)",
       "Bash(gh:*)",
@@ -42,7 +40,6 @@
       "Edit(.claude/settings.local.json)",
       "Edit(.github/**)"
     ],
-
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
@@ -54,7 +51,6 @@
       "Bash(wget:*)"
     ]
   },
-
   "hooks": {
     "PreToolUse": [
       {
@@ -70,7 +66,7 @@
         ]
       },
       {
-        "matcher": "Edit|Write|Bash",
+        "matcher": "Edit|Write|Bash|PowerShell|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -82,7 +78,6 @@
         ]
       }
     ],
-
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -97,7 +92,6 @@
         ]
       }
     ],
-
     "Stop": [
       {
         "hooks": [
@@ -111,7 +105,6 @@
         ]
       }
     ],
-
     "SessionStart": [
       {
         "hooks": [

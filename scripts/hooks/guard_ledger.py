@@ -30,6 +30,9 @@ LEDGER_REL = "docs/work/acceptance.json"
 SANCTIONED = "acceptance.py"
 
 EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
+# PowerShell takes a `command` just like Bash. Omitting it left an open
+# bypass of this guard, which was used inadvertently during development.
+SHELL_TOOLS = {"Bash", "PowerShell"}
 
 
 def block(message: str) -> None:
@@ -37,42 +40,65 @@ def block(message: str) -> None:
     sys.exit(2)
 
 
-# Shell constructs that can write a file. Reading the ledger (cat, grep, git
-# diff) stays allowed: blocking reads would push the agent to the Read tool for
-# no safety gain while making ordinary inspection painful. The ledger's real
-# protection is that `mark` demands evidence and `taskctl` re-runs the acceptance
-# commands; this hook is defence in depth against casual rewriting.
-MUTATORS = (
-    ">",
-    "sed -i",
-    "tee ",
-    "mv ",
-    "cp ",
-    "rm ",
-    "truncate",
-    "write_text",
-    "json.dump",
-    "dd ",
-)
+# Deciding whether a Bash command WRITES the ledger, as opposed to merely
+# mentioning it. Two failures found by adversarial audit drove this design:
+#
+#   * A bare `"acceptance.py" in segment` exemption meant appending
+#     `# per acceptance.py` to ANY command disabled the guard completely.
+#   * A bare `">" in segment` test blocked `cat ledger > backup`, where the
+#     ledger is the SOURCE. Redirect direction must be read, not guessed.
 
-# open(...) is NOT a mutator on its own: reading the ledger uses open() too.
-# Only a write/append/exclusive mode counts.
+COMMENT = re.compile(r"#[^\n]*")
+
+# The exemption requires an actual invocation of the script by path, which a
+# comment cannot satisfy once comments have been stripped.
+SANCTIONED_CALL = re.compile(r"\bscripts[/\\]acceptance\.py\b")
+
+# open(...) alone is not a write: reading the ledger uses open() too.
 WRITE_OPEN = re.compile(r"""open\s*\([^)]*['"][wax]\+?b?['"]""")
 
-# Split on shell separators AND newlines so that an unrelated `rm -rf` elsewhere
-# in a multi-line script does not incriminate a segment that merely reads the
-# ledger. Scanning the whole command text produced exactly that false positive.
+REDIRECT_TARGET = re.compile(r">>?\s*([^\s;|&<>]+)")
+INPLACE = re.compile(r"\b(?:sed\s+-i|truncate|tee|dd|patch)\b")
+PY_WRITE = re.compile(r"\b(?:json\.dump|write_text|write_bytes|shutil\.copy\w*|os\.replace)\b")
+GIT_REWRITE = re.compile(r"\bgit\s+(?:checkout|restore)\b")
+COPY_CMD = re.compile(r"^\s*(?:cp|mv|install|rsync)\b(.*)$")
+
 SEGMENT = re.compile(r"[\n;]|&&|\|\||\|")
 
 
+def _writes_ledger(segment: str) -> bool:
+    """True when this segment would modify the ledger, not merely read it."""
+    # Redirection writes only the target that follows > or >>.
+    for match in REDIRECT_TARGET.finditer(segment):
+        if LEDGER_NAME in match.group(1):
+            return True
+
+    # In-place editors rewrite whatever file they are handed.
+    if INPLACE.search(segment):
+        return True
+
+    # cp/mv/install/rsync write their LAST positional argument.
+    copy = COPY_CMD.match(segment)
+    if copy:
+        positional = [a for a in copy.group(1).split() if not a.startswith("-")]
+        if positional and LEDGER_NAME in positional[-1]:
+            return True
+
+    # git checkout/restore overwrite the working-tree copy.
+    if GIT_REWRITE.search(segment):
+        return True
+
+    return bool(WRITE_OPEN.search(segment) or PY_WRITE.search(segment))
+
+
 def mutates_ledger(command: str) -> bool:
-    """True only if a segment that references the ledger also modifies something."""
-    for segment in SEGMENT.split(command):
+    """True only if a segment referencing the ledger would also write to it."""
+    for segment in SEGMENT.split(COMMENT.sub("", command)):
         if LEDGER_NAME not in segment:
             continue
-        if SANCTIONED in segment:
+        if SANCTIONED_CALL.search(segment):
             continue
-        if WRITE_OPEN.search(segment) or any(token in segment for token in MUTATORS):
+        if _writes_ledger(segment):
             return True
     return False
 
@@ -120,7 +146,7 @@ def main() -> int:
                 "Editing this file by hand would let you certify your own work."
             )
 
-    elif tool == "Bash":
+    elif tool in SHELL_TOOLS:
         command = str(tool_input.get("command") or "")
         if mutates_ledger(command):
             block(

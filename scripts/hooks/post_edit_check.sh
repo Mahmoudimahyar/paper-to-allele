@@ -43,13 +43,29 @@ uv run --frozen ruff check --fix "$file" >/dev/null 2>&1
 uv run --frozen ruff format "$file" >/dev/null 2>&1
 
 # Re-check: report only what autofix could not resolve.
+#
+# Consult ruff's EXIT STATUS, not its text: 0 = clean, 1 = lint findings,
+# anything else = ruff or its environment failed. Gating on output text alone
+# reported a broken pyproject.toml or a stale uv.lock as "lint errors in the
+# file you just edited" - actively misleading mid-edit, and repeated on every
+# subsequent Python edit.
 remaining="$(uv run --frozen ruff check "$file" --output-format concise 2>&1)"
-if [ -n "$remaining" ] && ! printf '%s' "$remaining" | grep -q "All checks passed"; then
+status=$?
+
+if [ "$status" -eq 1 ]; then
   {
     echo "ruff still reports problems in $file after autofix:"
     printf '%s\n' "$remaining"
   } >&2
   exit 2
+fi
+
+if [ "$status" -ne 0 ]; then
+  {
+    echo "post_edit_check: ruff could not run (exit $status). This is an environment"
+    echo "problem, NOT a lint error in $file. Try: uv sync --extra dev"
+    printf '%s\n' "$remaining" | head -5
+  } >&2
 fi
 
 exit 0
