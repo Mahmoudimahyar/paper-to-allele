@@ -45,3 +45,6 @@ Thumbs.db
 # operator control channel (runtime only, never committed)
 AGENT_STOP
 STEER.md
+
+# machine-local Claude Code overrides (never committed)
+.claude/settings.local.json
