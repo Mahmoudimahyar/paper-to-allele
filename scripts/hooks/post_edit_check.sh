@@ -24,6 +24,18 @@ case "$file" in
 esac
 [ -f "$file" ] || exit 0
 
+# Confine to files INSIDE the project. `ruff check --fix` rewrites whatever it is
+# given: without this, an edit to any absolute .py path outside the repository
+# had its code modified by this hook (verified - it stripped an unused import
+# from a file in /tmp).
+file_unix="$(km_to_unix "$file")"
+case "$(cd "$(dirname "$file_unix")" 2>/dev/null && pwd -P)/" in
+"$(cd "$ROOT" 2>/dev/null && pwd -P)"/*) ;;
+*)
+  exit 0
+  ;;
+esac
+
 command -v uv >/dev/null 2>&1 || exit 0
 
 cd "$ROOT" || exit 0

@@ -335,3 +335,59 @@ def test_bash_rules_are_not_accidentally_overbroad() -> None:
         inner = rule[len("Bash(") : -1]
         if inner.endswith("*") and not inner.endswith((":*", " *", "/*")):
             pytest.fail(f"over-broad bash allow rule {rule!r}; write it as a ':*' suffix")
+
+
+# --------------------------------------------------------------------------
+# Regressions found by the P1 adversarial audit
+# --------------------------------------------------------------------------
+
+
+def test_non_object_json_payloads_fail_closed() -> None:
+    """`json.loads` accepts null/42/[]/"x" -- all parse, none are objects.
+
+    Calling .get() on them raised, and an uncaught exception exits 1, which does
+    NOT block. Every one of these previously failed OPEN.
+    """
+    for payload in ("null", "true", "42", "[]", '"x"'):
+        assert run_hook("guard_ledger.sh", payload) == BLOCK, f"failed open on {payload}"
+
+
+def test_post_edit_check_will_not_touch_files_outside_the_repository(tmp_path: Path) -> None:
+    """`ruff check --fix` rewrites whatever it is handed.
+
+    Before this guard, an edit to any absolute .py path outside the project had
+    its code modified by the hook: an unused import was stripped from a file in
+    a temp directory that had nothing to do with this repository.
+    """
+    victim = tmp_path / "victim.py"
+    original = "import os\nx = 1\n"
+    victim.write_text(original, encoding="utf-8")
+
+    run_hook(
+        "post_edit_check.sh",
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(victim)},
+        },
+    )
+    assert victim.read_text(encoding="utf-8") == original, (
+        "the hook modified a file outside the project tree"
+    )
+
+
+def test_path_conversion_leaves_posix_paths_alone_off_windows() -> None:
+    """`/a/project/x.py` is a legal POSIX path whose first component is one
+    letter. The drive-letter rewrite turned it into a bogus `A:` drive path, which
+    would break every hook on Linux CI.
+    """
+    import os
+
+    script = (
+        "uname() { echo Linux; }; . scripts/hooks/_paths.sh; "
+        'printf "%s|%s" "$(km_to_native /a/project/x.py)" "$(km_to_unix /home/u/f)"'
+    )
+    proc = subprocess.run(
+        [BASH, "-c", script], capture_output=True, text=True, cwd=ROOT, env={**os.environ}
+    )
+    assert proc.stdout.strip() == "/a/project/x.py|/home/u/f"

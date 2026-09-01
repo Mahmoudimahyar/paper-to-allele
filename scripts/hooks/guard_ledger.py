@@ -96,6 +96,15 @@ def main() -> int:
         )
         return 2  # unreachable; keeps type checkers happy
 
+    # json.loads("null") / "42" / "[]" all succeed but are not objects; calling
+    # .get() on them raises, and an uncaught exception exits 1 -- which does NOT
+    # block. Verified: every non-object payload previously failed OPEN.
+    if not isinstance(event, dict):
+        block(
+            "BLOCKED: the acceptance-ledger guard received a non-object hook payload, "
+            "so it cannot confirm this call is safe. This guard fails closed."
+        )
+
     tool = event.get("tool_name", "")
     tool_input = event.get("tool_input") or {}
 
