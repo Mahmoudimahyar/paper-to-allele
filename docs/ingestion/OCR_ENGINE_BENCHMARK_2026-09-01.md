@@ -564,3 +564,66 @@ decision rather than a side effect of running an OCR pass.
 matching, and keep the plaintext out of the derived store unless a reviewer
 workflow genuinely needs to read it. That preserves the dedup value at a fraction
 of the exposure. Raised as a human decision, not applied unilaterally.
+
+
+---
+
+# Anchor-based locus resolution (ADR 0007) — measured on the corpus
+
+`src/kidneymatch/ocr/anchors.py`, driven by `scripts/resolve_loci.py`.
+
+## The layout is columnar, not row-based
+
+The first rule assumed the value sits to the RIGHT of its label. Measured over
+33,048 documents that resolves almost nothing, and the diagnostic said why: for a
+document with exactly one `DRB1` anchor, the nearest box to its right sits a
+**median of 19.5 label-heights away vertically** — it is not on the same row at
+all.
+
+Switching the rule to `below` is **4-5x better**:
+
+| direction | row tol | max gap | resolve rate |
+|---|---|---|---|
+| right | 0.6 | 2.5 | 0.7% |
+| right | 0.6 | 6.0 | 1.4% |
+| **below** | **0.6** | **2.5** | **3.2%** |
+| below | 3.0 | 6.0 | 1.9% |
+
+Loosening the tolerances makes it **worse**, not better: more candidates trip the
+`max_values` guard and the resolver abstains. The constraint was never tolerance.
+
+## Resolve rate among documents that actually carry the anchor
+
+The corpus-wide rate is bounded by how often a locus label is readable at all, so
+the meaningful denominator is documents with exactly one anchor:
+
+| locus | docs with one anchor | resolved | rate |
+|---|---|---|---|
+| **DPA1** | 2,042 | 899 | **44.0%** |
+| **DPB1** | 2,254 | 947 | **42.0%** |
+| **DQB1** | 3,164 | 1,175 | **37.1%** |
+| **DRB1** | 3,560 | 1,199 | **33.7%** |
+| DQA1 | 1,674 | 103 | 6.2% |
+| DRB4 | 5,659 | 227 | 4.0% |
+| DRB3 | 8,561 | 324 | 3.8% |
+| DRB5 | 2,698 | 49 | 1.8% |
+
+**The design works for the standalone loci and fails for DRB3/4/5.** That split is
+not a surprise: `HLA_VALIDATION_SPEC.md` section 7 says a form row labelled
+`DRB3/4/5` is a presentation grouping, not one gene, and those three loci are
+exactly the ones printed that way. They need a dedicated combined-header anchor
+type that binds each of the three genes separately — binding one value to the
+grouped label would assign the same allele to three genes.
+
+## What this establishes, and what it does not
+
+It establishes that per-document anchoring is viable: a third to nearly a half of
+anchored documents resolve under a single crude global rule, with everything else
+abstaining rather than guessing. A per-family rule — which is what the registry is
+for — should do better than one global rule, and DRB3/4/5 needs its own handling.
+
+It establishes nothing about **correctness**. These are resolution rates, not
+accuracy: no labelled data has been compared yet. The golden corpus is what turns
+"the resolver bound a value" into "the resolver bound the RIGHT value", and until
+then the wrong-locus false-acceptance rate — the metric that actually matters —
+remains unmeasured.
