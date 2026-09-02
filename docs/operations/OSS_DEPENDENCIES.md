@@ -26,6 +26,8 @@ Every dependency requires:
 | Second OCR | Tesseract 5 (`fas`, `eng`) | **BENCHMARKED — 283 ms/img, the ONLY engine that reads Persian (34.5%). Contributes 0 extra HLA values. Adopt for Persian METADATA, not for HLA cells.** |
 | VLM fallback | PaddleOCR-VL | ADOPT after resource/accuracy benchmark |
 | OCR alternative | Surya | BENCHMARK, not mandatory |
+| **Primary OCR (ADOPTED)** | **OnnxTR 0.9 (fast_base det + crnn_mobilenet_v3_small rec), Apache-2.0** | **BENCHMARKED 2026-09-01 on the real archive: 217 ms/img, 4.5x faster than RapidOCR. Detection is 86% of cost; recognition 0.44 ms/crop. Single-process (pools are slower). See ADR 0006.** |
+| Persian OCR (GPU) | EasyOCR `fa` + torch cu121/cu126 | **BENCHMARKED — 686 ms/img on GTX 1070, 19,619 Persian chars vs Tesseract's 7,499. Best Persian reader. torch cu128+ DROPPED Pascal sm_61.** |
 | Latin/HLA OCR | RapidOCR (PP-OCR ONNX) | **BENCHMARKED — 984 ms/img, 47.7% HLA recall, no PaddlePaddle dependency. Fastest usable Latin path; recommended default.** |
 | HLA nomenclature | py-ard | ADOPT with pinned IPD release and license review |
 | Fuzzy text | RapidFuzz | ADOPT |

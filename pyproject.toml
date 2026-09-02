@@ -32,6 +32,11 @@ web = [
   "psycopg[binary]>=3.2,<4",
   "django-allauth>=65,<66",
 ]
+ocr = [
+    "numpy>=2,<3",
+    "onnxtr[cpu]>=0.9,<1",
+    "pillow>=11,<13",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kidneymatch"]
