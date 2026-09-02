@@ -57,5 +57,6 @@ present, and `context_pack.py --task HIST-001` surfaces both. The human must pro
 Acceptance state: run `python scripts/acceptance.py status`. All 9 criteria across the 4 live tasks are unmet by design; `HIST-002`/`DEDUPE-001` have no tests yet, so their acceptance command exits non-zero rather than empty-passing.
 
 ## Last verified baseline
-`python scripts/verify_repo.py` → **PASS (8 steps, none skipped)**, 2026-09-01, commit `green baseline`.
-16 tests pass. Re-run it yourself; this file records a past result, not the current environment.
+`python scripts/verify_repo.py` → **PASS (12 steps, none skipped)**, 2026-09-01,
+from a clean `git clone` with nothing pre-built. 96 tests.
+Re-run it yourself; this file records a past result, not the current environment.
