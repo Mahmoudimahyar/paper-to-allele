@@ -31,6 +31,7 @@
         "BOOT-001"
       ],
       "context": [
+        "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md",
         "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
         "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
         "docs/architecture/DATA_MODEL.md"
@@ -64,6 +65,7 @@
         "HIST-001"
       ],
       "context": [
+        "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md",
         "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
         "docs/architecture/DATA_MODEL.md"
       ],

@@ -28,7 +28,11 @@ ARTIFACTS = ROOT / ".artifacts" / "verify"
 # the interpreter and every tool version match CI regardless of which Python
 # invoked this script. Falls back to the current interpreter otherwise.
 USE_UV = bool(shutil.which("uv")) and (ROOT / "uv.lock").is_file()
-PREFIX = ["uv", "run", "--frozen"] if USE_UV else []
+
+# The active phase (MVP-HIST) needs the historical-ingestion parser deps.
+# CI, bootstrap and this script must agree; tests/contracts enforces that.
+EXTRA = "hist"
+PREFIX = ["uv", "run", "--frozen", "--extra", EXTRA] if USE_UV else []
 
 
 def step(*args: str) -> list[str]:

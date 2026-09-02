@@ -76,6 +76,33 @@ def test_ci_delegates_to_the_same_gate_developers_run() -> None:
     assert "uv sync --frozen" in ci, "CI must not silently re-resolve dependencies"
 
 
+def test_every_entry_point_builds_the_same_environment() -> None:
+    """CI, bootstrap and verify_repo must sync the same extras.
+
+    They diverged once already: `uv add --dev` created a second dev dependency
+    set that only some of them installed, so a fresh clone had no pytest-cov and
+    the coverage step failed with "unrecognized arguments: --cov". A drift here
+    is invisible on a developer machine that already has everything installed.
+    """
+    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    bootstrap = (ROOT / "scripts/bootstrap.sh").read_text(encoding="utf-8")
+    verify = (ROOT / "scripts/verify_repo.py").read_text(encoding="utf-8")
+
+    assert "--extra hist" in ci, "CI does not install the active phase's parser deps"
+    assert "--extra hist" in bootstrap, "bootstrap does not install them"
+    assert 'EXTRA = "hist"' in verify, "verify_repo does not route steps through them"
+
+
+def test_the_active_phase_dependencies_are_importable() -> None:
+    """HIST-001 parses HTML. If these are missing the first import fails."""
+    import importlib.util
+
+    for module in ("bs4", "lxml"):
+        assert importlib.util.find_spec(module) is not None, (
+            f"{module} is not installed; run `uv sync --extra hist`"
+        )
+
+
 def test_pre_commit_ruff_matches_the_locked_ruff() -> None:
     """A pre-commit ruff older than the locked ruff reformats differently, so the
     hook and CI fight each other and the working tree never settles.

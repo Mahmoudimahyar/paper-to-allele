@@ -28,6 +28,9 @@ data/review/*
 data/gold/*
 !data/raw/.gitkeep
 !data/golden/.gitkeep
+!data/derived/.gitkeep
+!data/review/.gitkeep
+!data/gold/.gitkeep
 !data/README.md
 *.sqlite3
 

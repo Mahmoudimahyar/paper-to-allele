@@ -2,7 +2,7 @@
 
 Recommended:
 ```bash
-uv sync
+uv sync --extra hist
 python scripts/doctor.py
 python scripts/verify_repo.py
 ```
