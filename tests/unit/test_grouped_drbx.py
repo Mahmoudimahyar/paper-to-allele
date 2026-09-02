@@ -20,9 +20,9 @@ printed, the licence is gone.
 from __future__ import annotations
 
 import pytest
-from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx
 
 from kidneymatch.ocr.anchors import Box, ResolutionStatus
+from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx
 
 HEADER = Box(x0=0.10, y0=0.50, x1=0.24, y1=0.53, text="HLA-DRB3/4/5")
 
@@ -250,3 +250,80 @@ def test_each_gene_fact_points_at_the_box_that_named_it() -> None:
     assert facts["DRB3"].header_box == HEADER
     assert facts["DRB5"].gene_box is None  # ABSENT by row, not by a box
     assert facts["DRB5"].header_box == HEADER
+
+
+# --- fixes from the skeptical review -------------------------------------
+
+
+def test_a_gene_token_sharing_the_printed_line_is_counted() -> None:
+    """The row band used centre distance where the resolver uses overlap.
+
+    A third gene token on the same physical line fell just outside it, so the
+    row emitted ABSENT where it must REVIEW (7 documents), and 1,036 documents
+    lost a gene token that was on the line.
+    """
+    a = Box(x0=0.40, y0=0.513, x1=0.46, y1=0.541, text="DRB3")
+    b = Box(x0=0.50, y0=0.474, x1=0.56, y1=0.502, text="DRB4")
+    c = Box(x0=0.80, y0=0.466, x1=0.86, y1=0.494, text="DRB5")
+    facts = resolve_grouped_drbx([HEADER, a, b, c])
+    assert all(f.status is ResolutionStatus.REVIEW_REQUIRED for f in facts.values())
+
+
+def test_a_token_on_the_next_printed_row_is_still_excluded() -> None:
+    """Widening the band must not reach the row below."""
+    below = Box(x0=0.40, y0=0.60, x1=0.46, y1=0.628, text="DRB4")
+    assert calls([HEADER, at(0.40, "DRB3"), below])["DRB4"] is GeneCall.UNKNOWN
+
+
+def test_an_undamaged_allele_on_the_row_names_its_gene() -> None:
+    """`DRB5*01:01` matched neither the gene-token pattern nor the damage check,
+    so it was invisible to the count and its gene was called ABSENT."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3"), at(0.60, "DRB5*01:01")])
+    assert facts["DRB3"].call is GeneCall.PRESENT
+    assert facts["DRB5"].call is GeneCall.PRESENT
+    assert facts["DRB4"].call is GeneCall.ABSENT
+
+
+def test_an_allele_only_row_is_not_reported_as_unread() -> None:
+    """11 documents print an allele and no bare gene name; the row said 'no gene
+    token was read', which is false — an allele naming the gene was read."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3*02:02")])
+    assert facts["DRB3"].call is GeneCall.PRESENT
+
+
+@pytest.mark.parametrize(
+    ("text", "genes"),
+    [("DRB3/4", ("DRB3", "DRB4")), ("DRB4/5", ("DRB4", "DRB5")), ("DRB3/5", ("DRB3", "DRB5"))],
+)
+def test_a_compact_two_gene_token_names_both_genes(text: str, genes: tuple[str, str]) -> None:
+    """333 documents print the pair in one box instead of two."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, text)])
+    for gene in genes:
+        assert facts[gene].call is GeneCall.PRESENT
+    absent = ({"DRB3", "DRB4", "DRB5"} - set(genes)).pop()
+    assert facts[absent].call is GeneCall.ABSENT
+
+
+def test_a_compact_token_naming_all_three_genes_requires_review() -> None:
+    """A person carries at most two. Three is the header spelled again."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3/4/5"), at(0.60, "DRB3")])
+    assert all(f.status is ResolutionStatus.REVIEW_REQUIRED for f in facts.values())
+
+
+def test_a_printed_header_whose_row_reads_nothing_needs_review() -> None:
+    """One policy across the codebase: a printed label we could not read is a
+    failure a human must see, not an UNKNOWN.
+
+    `anchors.py` already said so. Measured, 63.2% of empty grouped rows have a
+    DRB1 genotype that expects at least one gene, so it is a read failure far
+    more often than a true triple negative. 1,305 documents.
+    """
+    facts = resolve_grouped_drbx([HEADER])
+    assert all(f.status is ResolutionStatus.REVIEW_REQUIRED for f in facts.values())
+    assert all(f.call is GeneCall.UNKNOWN for f in facts.values())
+
+
+def test_no_header_at_all_is_still_unknown_not_review() -> None:
+    """A form that types these genes as three standalone rows is not a failure."""
+    facts = resolve_grouped_drbx([at(0.40, "DRB3")])
+    assert all(f.status is ResolutionStatus.UNKNOWN for f in facts.values())

@@ -106,10 +106,28 @@ DRBX_ALLELE_TOKEN = re.compile(
     re.IGNORECASE,
 )
 
-# Row band as a multiple of the header's height, measured centre to centre. The
-# sweep 0.4 -> 2.0 shows 1.0 is the knee: it is the largest band at which no
-# document yields a biologically impossible third gene token.
-ROW_BAND = 1.0
+# A gene token shares the header's printed LINE. Measured centre-to-centre
+# distance was used first and cuts through the real distribution: a third token
+# on the same line fell just outside it, so the row emitted ABSENT where it must
+# REVIEW (7 documents), and 1,036 documents lost a token that was on the line.
+# Vertical overlap is what `anchors.py` uses and what actually identifies a row.
+ROW_OVERLAP = 0.2
+
+# The band a box joins on its own: centre within one header height, which is the
+# knee of the measured sweep. Boxes further out join only by overlapping a box
+# already on the line (see `_row_band`).
+ROW_BAND_CENTRE = 1.0
+
+# The outer bound on that chain, so following the line cannot reach the next
+# printed row. Rows are 3.8 header-heights apart on the dominant form.
+ROW_BAND = 1.5
+
+# A pair of genes printed in one box instead of two: 333 documents.
+DRBX_PAIR_TOKEN = re.compile(
+    r"^(?:HLA[\s\-]*)?DR[B8](?P<first>[345S])\s*[/,]\s*(?:DR[B8])?(?P<second>[345S])"
+    r"[\s*+°\"'`]*[.,:;)]?$",
+    re.IGNORECASE,
+)
 
 RULE_ID = "GROUPED_DRBX/v1"
 
@@ -176,12 +194,40 @@ def _row_band(boxes: list[Box], header: Box) -> list[Box]:
     33 header-heights away, far past any distance limit that would be safe
     elsewhere. The row band is what bounds this rule.
     """
-    tolerance = ROW_BAND * header.height
-    band = [
+    outer = ROW_BAND * header.height
+
+    def overlaps(a: Box, b: Box) -> bool:
+        shared = min(a.y1, b.y1) - max(a.y0, b.y0)
+        shorter = min(max(a.y1 - a.y0, 1e-6), max(b.y1 - b.y0, 1e-6))
+        return shared / shorter >= ROW_OVERLAP
+
+    candidates = [
         b
         for b in boxes
-        if b is not header and b.x0 > header.x1 and abs(b.centre_y - header.centre_y) <= tolerance
+        if b is not header and b.x0 > header.x1 and abs(b.centre_y - header.centre_y) <= outer
     ]
+    # A printed line is a CHAIN of overlapping boxes, not a set of boxes that
+    # each overlap the header. Text drifts on a hand-held photograph, so by the
+    # second value column a token may share no pixels with the header while
+    # plainly sitting on its line — measured, such a token overlapped its in-band
+    # neighbour by 0.70-0.75 while lying 1.18 header-heights from the centre.
+    # Testing only against the header dropped it, and the row then reported its
+    # gene ABSENT. The outer bound above still keeps the next printed row out.
+    band = [
+        b
+        for b in candidates
+        if overlaps(header, b)
+        or abs(b.centre_y - header.centre_y) <= ROW_BAND_CENTRE * header.height
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for b in candidates:
+            if any(b is seen for seen in band):
+                continue
+            if any(overlaps(b, seen) for seen in band):
+                band.append(b)
+                changed = True
     return sorted(band, key=lambda b: b.x0)
 
 
@@ -230,12 +276,23 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
 
     named: list[tuple[str, Box, bool]] = []
     for box in band:
-        match = DRBX_GENE_TOKEN.match((box.text or "").strip())
-        if not match:
-            continue
-        symbol = match.group("gene").upper()
-        repaired = symbol == "S"
-        named.append((f"DRB{'5' if repaired else symbol}", box, repaired))
+        text = (box.text or "").strip()
+        symbols: list[str] = []
+        pair = DRBX_PAIR_TOKEN.match(text)
+        if pair:
+            # `DRB3/4` in one box names both genes: 333 documents print the pair
+            # this way instead of in two boxes.
+            symbols = [pair.group("first").upper(), pair.group("second").upper()]
+        else:
+            match = DRBX_GENE_TOKEN.match(text) or DRBX_ALLELE_TOKEN.match(text)
+            # An allele names its gene as surely as a bare gene name does. It
+            # matched neither branch before, so it was invisible to the count and
+            # its gene was reported ABSENT.
+            if match:
+                symbols = [match.group("gene").upper()]
+        for symbol in symbols:
+            repaired = symbol == "S"
+            named.append((f"DRB{'5' if repaired else symbol}", box, repaired))
 
     if len(named) > 2:
         # Biologically impossible: at most one DRBX gene per haplotype. Zero
@@ -249,9 +306,15 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
         )
 
     if not named:
+        # One policy across the codebase: a printed label whose cell we could
+        # not read is a failure a human must see, not an UNKNOWN. `anchors.py`
+        # already said so, and 63.2% of empty grouped rows have a DRB1 genotype
+        # that expects at least one gene, so this is a read failure far more
+        # often than a true triple negative. The CALL stays UNKNOWN — nothing is
+        # claimed about the genes — while the STATUS asks for a human.
         return _all(
             GeneCall.UNKNOWN,
-            ResolutionStatus.UNKNOWN,
+            ResolutionStatus.REVIEW_REQUIRED,
             "header present but no gene token was read on its row",
             header=header,
             tokens=0,

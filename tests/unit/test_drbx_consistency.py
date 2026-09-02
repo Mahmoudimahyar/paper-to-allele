@@ -18,6 +18,7 @@ its return value is discarded.
 from __future__ import annotations
 
 import pytest
+
 from kidneymatch.hla.drbx_consistency import (
     ConsistencyOutcome,
     check_drb1_drbx,
@@ -116,7 +117,10 @@ def test_a_flag_lands_on_both_rows_not_one() -> None:
     A disagreement localises to neither, so neither may be preferred — least of
     all by re-reading a DRB1 digit to make the contradiction go away.
     """
-    result = check_drb1_drbx(["04"], present={"DRB3"}, absent=set())
+    # Both alleles read and both carry DRB4, so a DRB3 on the row contradicts
+    # them. (With only ONE allele read this would be consistent: the unread
+    # partner could carry DRB3 — see the single-allele tests below.)
+    result = check_drb1_drbx(["04", "04"], present={"DRB3"}, absent=set())
     assert result.flags_drb1_row is True
     assert result.flags_drbx_row is True
 
@@ -137,3 +141,53 @@ def test_a_known_biological_exception_does_not_become_a_hard_error() -> None:
     result = check_drb1_drbx(["07", "07"], present=set(), absent={"DRB3", "DRB4", "DRB5"})
     assert result.outcome is ConsistencyOutcome.EXPECTED_GENE_ABSENT
     assert result.is_review_flag is True
+
+
+# --- N1: one allele read is not a homozygous pair ------------------------
+
+
+def test_one_read_allele_does_not_manufacture_a_forbidden_flag() -> None:
+    """The check duplicated a single first field into a homozygous pair.
+
+    A gene explained by the UNREAD second haplotype was then reported as
+    forbidden: 1,315 of 1,332 flags were single-value reads (57% of them). The
+    99.62% consistency figure in ADR 0008 was the two-value subset only.
+    """
+    # DRB1*01 carries no DRBX gene, but the unread partner may carry DRB3.
+    result = check_drb1_drbx(["01"], present={"DRB3"}, absent=set())
+    assert result.outcome is ConsistencyOutcome.CONSISTENT
+
+
+def test_two_genes_with_one_allele_that_carries_none_is_a_contradiction() -> None:
+    """Each haplotype contributes at most one DRBX gene.
+
+    Two genes present means both haplotypes contributed, so an allele that
+    carries none cannot be one of them however the other allele reads.
+    """
+    result = check_drb1_drbx(["01"], present={"DRB3", "DRB4"}, absent=set())
+    assert result.outcome is ConsistencyOutcome.FORBIDDEN_GENE_PRESENT
+
+
+def test_two_genes_must_include_the_read_alleles_own_gene() -> None:
+    """DRB1*04 carries DRB4. If both haplotype slots are filled and DRB4 is not
+    among them, the two rows disagree."""
+    result = check_drb1_drbx(["04"], present={"DRB3", "DRB5"}, absent=set())
+    assert result.outcome is ConsistencyOutcome.FORBIDDEN_GENE_PRESENT
+
+
+def test_two_genes_including_the_read_alleles_gene_is_consistent() -> None:
+    result = check_drb1_drbx(["04"], present={"DRB3", "DRB4"}, absent=set())
+    assert result.outcome is ConsistencyOutcome.CONSISTENT
+
+
+def test_a_gene_the_read_allele_expects_but_the_row_calls_absent_still_flags() -> None:
+    """This direction survives with one allele: the read haplotype's own gene
+    cannot be absent."""
+    result = check_drb1_drbx(["11"], present=set(), absent={"DRB3", "DRB4", "DRB5"})
+    assert result.outcome is ConsistencyOutcome.EXPECTED_GENE_ABSENT
+
+
+def test_a_homozygous_pair_is_still_checked_as_a_pair() -> None:
+    """Two values that happen to be equal are two reads, not one."""
+    result = check_drb1_drbx(["01", "01"], present={"DRB3"}, absent=set())
+    assert result.outcome is ConsistencyOutcome.FORBIDDEN_GENE_PRESENT

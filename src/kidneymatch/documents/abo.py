@@ -74,10 +74,17 @@ _DISCLAIMER = re.compile(r"براساس|بر اساس|شرح|مسئول|اطلا
 _KHOON = re.compile(r"^[خح]و?[نی]{1,2}ی?$")
 _GROOH = re.compile(r"^[گک]رو[هه]$")
 
+# `groups?` used to be accepted bare. The methods footnote on these forms reads
+# "... alleles or groups of alleles ... PCR-SSP ...", which anchored a cell on
+# 576 documents and resolved two of them. A field label carries punctuation or
+# the word `Blood`; the prose plural never does.
 _LABEL_LATIN = re.compile(
-    r"(?i)^(?:b[l1i][o0]{1,2}d\s*gr[o0]up|gr[o0]ups?|b[l1i][o0]{1,2}d\s*type"
+    r"(?i)^(?:b[l1i][o0]{1,2}d\s*gr[o0]up|b[l1i][o0]{1,2}d\s*type"
     r"|ab[o0]|ab[o0]/rh|b\.?\s?g\.?|rh|rhd)\s*[:;.\-/&]*$"
 )
+# A bare `Group` is a label only with punctuation, or with `Blood` to its left.
+_LABEL_GROUP_WORD = re.compile(r"(?i)^gr[o0]up(?P<punctuation>\s*[:;.\-/&]+)?$")
+_BLOOD_WORD = re.compile(r"(?i)^b[l1i][o0]{1,2}d[:;.\-/&]*$")
 
 _MAX_LABEL_CHARS = 25
 _MAX_GAP = 10.0  # anchor heights; measured p99 of the real gap is 9.36
@@ -97,14 +104,31 @@ def _is_persian_label(text: str) -> bool:
     return any(_GROOH.match(w) for w in words) and any(w[:1] in "خح" for w in words)
 
 
+def _has_blood_word(text: str) -> bool:
+    return any(_KHOON.match(w) for w in re.split(r"[\s:;.,()،؛]+", text) if w)
+
+
 def has_printed_disclaimer(persian_boxes: list[Box]) -> bool:
-    """Does this form disclaim its own blood-group field?"""
-    for b in persian_boxes:
-        text = normalise(b.text)
-        if _DISCLAIMER.search(text) and any(
-            _KHOON.match(w) for w in re.split(r"[\s:;.,()،؛]+", text) if w
-        ):
+    """Does this form disclaim its own blood-group field?
+
+    The sentence is long and the recognizer splits it across boxes, so the
+    disclaimer word and the blood word are often in different ones. Requiring
+    both in a SINGLE box missed at least 27.5% of the Yekta pages that show the
+    disclaimer, and 120 resolved readings were consequently labelled as
+    laboratory measurements when the form disclaims them.
+    """
+    marked = [b for b in persian_boxes if _DISCLAIMER.search(normalise(b.text))]
+    for b in marked:
+        if _has_blood_word(normalise(b.text)):
             return True
+        # Same printed line, wrapped into another box.
+        for other in persian_boxes:
+            if other is b:
+                continue
+            overlap = min(b.y1, other.y1) - max(b.y0, other.y0)
+            shorter = min(b.height, max(other.y1 - other.y0, 1e-6))
+            if overlap / shorter >= _OVERLAP and _has_blood_word(normalise(other.text)):
+                return True
     return False
 
 
@@ -140,6 +164,24 @@ class AboDecision:
     def is_verified(self) -> bool:
         """Never true here. Verification is a laboratory act, not a reading."""
         return False
+
+
+def _is_group_word_label(box: Box, latin_boxes: list[Box]) -> bool:
+    """A bare `Group` token: a field label, or the middle of a sentence?"""
+    match = _LABEL_GROUP_WORD.match((box.text or "").strip())
+    if not match:
+        return False
+    if match.group("punctuation"):
+        return True
+    left = sorted(
+        (
+            o
+            for o in latin_boxes
+            if o is not box and o.x1 <= box.x0 and (min(box.y1, o.y1) - max(box.y0, o.y0)) > 0
+        ),
+        key=lambda o: -o.x1,
+    )
+    return bool(left) and bool(_BLOOD_WORD.match((left[0].text or "").strip()))
 
 
 def _parse(token: str) -> tuple[str, Rh, bool] | None:
@@ -188,7 +230,11 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
     """Read the blood group from its printed cell, or abstain."""
     everything = list(persian_boxes) + list(latin_boxes)
     anchors = [(b, False) for b in persian_boxes if _is_persian_label(b.text)]
-    anchors += [(b, True) for b in latin_boxes if _LABEL_LATIN.match((b.text or "").strip())]
+    anchors += [
+        (b, True)
+        for b in latin_boxes
+        if _LABEL_LATIN.match((b.text or "").strip()) or _is_group_word_label(b, latin_boxes)
+    ]
 
     if not anchors:
         return AboReading(AboStatus.UNKNOWN, reason="no blood-group field label on this document")
@@ -269,7 +315,14 @@ def reconcile_abo(
     single = next(iter(claims)) if len(claims) == 1 else None
 
     if image.status is AboStatus.RESOLVED and image.group:
-        if single and single != (image.group, image.rh):
+        # A caption that gives the letter without the sign is the same claim at
+        # lower precision, not a different blood group. Treating it as a
+        # conflict raised the identity flag on captions that merely omitted the
+        # Rh, which is most of them.
+        contradicts = single is not None and (
+            single[0] != image.group or (single[1] is not Rh.UNKNOWN and single[1] is not image.rh)
+        )
+        if contradicts:
             # Most plausibly the caption describes a different person. That
             # invalidates it as evidence for every field it carries — role,
             # name, contact — until a human resolves it.
@@ -281,7 +334,7 @@ def reconcile_abo(
                 subject_identity_questioned=True,
                 reason="the caption states a different blood group from the form",
             )
-        agreed = single == (image.group, image.rh)
+        agreed = single is not None and single[0] == image.group and single[1] is image.rh
         return AboDecision(
             AboStatus.RESOLVED,
             image.group,

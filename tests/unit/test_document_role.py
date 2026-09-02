@@ -30,13 +30,14 @@ page, and abstain wherever the two readings could disagree.
 from __future__ import annotations
 
 import pytest
+
 from kidneymatch.documents.role import (
     Role,
     RoleTier,
     decide_document_role,
+    is_comparison_sheet,
     read_form_role,
 )
-
 from kidneymatch.ocr.anchors import Box, ResolutionStatus
 
 # Form boilerplate, printed on every copy of these laboratory forms.
@@ -270,3 +271,85 @@ def test_nothing_at_all_is_an_unknown_role_candidate() -> None:
     decision = decide_document_role(read_form_role([], []))
     assert decision.role is Role.UNKNOWN
     assert decision.is_finding is False
+
+
+# --- fixes from the skeptical review -------------------------------------
+
+KARDE = "پیوند نکرده"  # "has not transplanted" — an ordinary past participle
+GARDE = "گرده"  # how the recognizer sometimes renders the blood-group word
+CANDIDATE = "کاندید پیوند"  # "transplant candidate" — a recipient
+BOTH_IN_ONE_BOX = "اهدا کننده / گیرنده"  # a printed choice label, not a value
+
+
+@pytest.mark.parametrize("text", [KARDE, GARDE, "اقدام کرده", "مراجعه کرده"])
+def test_the_ordinary_verb_karde_is_not_a_recipient(text: str) -> None:
+    """The recipient pattern made the `ن` optional, so it matched `کرده`
+    ("done") and `گرده`.
+
+    Measured: 2,062 documents matched on that stem, 61 of them promoted to a
+    Tier-B *finding* with no corroboration, and 740 genuine donor forms were
+    pushed into review as "both role words printed".
+    """
+    reading = read_form_role([box(0.44, text), box(0.60, MARKAZ)], [])
+    assert reading.role is Role.UNKNOWN
+
+
+@pytest.mark.parametrize("text", [RECIPIENT_WORD, RECIPIENT_MISREAD, "کبرنده", "کرنده", "گبرنده"])
+def test_the_real_recipient_spellings_still_match(text: str) -> None:
+    """The fix must not cost the measured variants: `کیرنده` alone is 1,658
+    documents, more than the correct spelling."""
+    assert read_form_role([box(0.44, text), LABEL], []).role is Role.RECIPIENT
+
+
+def test_a_donor_form_is_no_longer_pushed_to_review_by_the_false_stem() -> None:
+    reading = read_form_role([ANCHORED_DONOR, LABEL, box(0.20, KARDE, y0=0.70)], [])
+    assert reading.role is Role.DONOR
+    assert reading.status is ResolutionStatus.RESOLVED
+
+
+def test_a_box_holding_both_role_words_is_a_label_not_a_donor_value() -> None:
+    """It is a printed choice list. Donor was tested first, so it read DONOR."""
+    reading = read_form_role([box(0.44, BOTH_IN_ONE_BOX)], [])
+    assert reading.role is Role.UNKNOWN
+
+
+def test_a_choice_label_does_not_become_a_finding_with_an_agreeing_caption() -> None:
+    decision = decide_document_role(
+        read_form_role([box(0.44, BOTH_IN_ONE_BOX)], []), caption_role=Role.DONOR
+    )
+    assert decision.is_finding is False
+
+
+def test_transplant_candidate_is_recipient_evidence() -> None:
+    """`کاندید پیوند` means the subject is waiting for a transplant.
+
+    Measured: it co-occurs with a recipient phrase on 1,867 documents and with a
+    donor phrase on 15, and 476 documents carry it with no other role evidence.
+    """
+    reading = read_form_role([box(0.44, CANDIDATE), box(0.60, MARKAZ)], [])
+    assert reading.role is Role.RECIPIENT
+
+
+def test_transplant_candidate_contradicting_a_donor_field_forces_review() -> None:
+    reading = read_form_role([ANCHORED_DONOR, LABEL, box(0.20, CANDIDATE, y0=0.40)], [])
+    assert reading.status is ResolutionStatus.REVIEW_REQUIRED
+
+
+# --- W7: comparison sheets -----------------------------------------------
+
+
+def test_a_page_printing_both_english_roles_as_column_headers_is_a_comparison_sheet() -> None:
+    """503 documents print `Donor | Recipient` as column headings.
+
+    They carry two people's typings side by side, and are the only path found by
+    which two patients' alleles could enter one record.
+    """
+    assert is_comparison_sheet([box(0.30, "Donor"), box(0.55, "Recipient")]) is True
+
+
+def test_a_page_with_one_role_word_is_not_a_comparison_sheet() -> None:
+    assert is_comparison_sheet([box(0.30, "Donor"), box(0.55, "Name")]) is False
+
+
+def test_role_words_on_different_rows_are_not_column_headers() -> None:
+    assert is_comparison_sheet([box(0.30, "Donor"), box(0.55, "Recipient", y0=0.70)]) is False

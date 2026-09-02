@@ -22,6 +22,7 @@ descend from the same person's statement.
 from __future__ import annotations
 
 import pytest
+
 from kidneymatch.documents.abo import (
     AboSource,
     AboStatus,
@@ -29,7 +30,6 @@ from kidneymatch.documents.abo import (
     read_abo,
     reconcile_abo,
 )
-
 from kidneymatch.ocr.anchors import Box
 
 GROUP_LABEL_FA = "گروه خونی :"  # "blood group:" — the printed field label
@@ -239,3 +239,76 @@ def test_no_evidence_at_all_is_unknown() -> None:
     decision = reconcile_abo(read_abo([], []), caption_claims=set())
     assert decision.status is AboStatus.UNKNOWN
     assert decision.group is None
+
+
+# --- fixes from the skeptical review -------------------------------------
+
+
+def test_the_methods_footnote_word_groups_is_not_a_field_label() -> None:
+    """The form prints "... alleles or groups of alleles ... PCR-SSP ...".
+
+    `groups` there anchored a cell on 576 documents and resolved two of them.
+    """
+    prose = [
+        box(0.05, "alleles", w=0.06),
+        box(0.12, "or", w=0.02),
+        box(0.15, "groups", w=0.05),
+        box(0.21, "of", w=0.02),
+        box(0.24, "alleles.", w=0.06),
+        box(0.31, "A+", w=0.03),
+    ]
+    assert read_abo([], prose).group is None
+
+
+def test_a_real_english_field_label_still_anchors() -> None:
+    for label in ("Blood Group:", "Group:", "ABO", "Rh:"):
+        reading = read_abo([], [box(0.20, label), box(0.33, "B+", w=0.05)])
+        assert reading.group == "B", label
+
+
+def test_a_bare_group_word_anchors_only_beside_the_word_blood() -> None:
+    """`Group` with no colon is a field label when `Blood` precedes it, and
+    prose otherwise."""
+    assert (
+        read_abo(
+            [], [box(0.10, "Blood", w=0.05), box(0.16, "Group", w=0.05), box(0.23, "O+", w=0.04)]
+        ).group
+        == "O"
+    )
+    assert read_abo([], [box(0.16, "Group", w=0.05), box(0.23, "O+", w=0.04)]).group is None
+
+
+def test_the_disclaimer_is_detected_across_a_wrapped_footnote() -> None:
+    """The sentence is long and the recognizer splits it across boxes.
+
+    Requiring one box to carry both the disclaimer word and the blood word
+    missed at least 27.5% of the Yekta pages that show the disclaimer, so 120
+    resolved readings were labelled as laboratory measurements.
+    """
+    first_half = Box(x0=0.10, y0=0.90, x1=0.48, y1=0.92, text="اطلاعات مربوط به گروه خونی")
+    second_half = Box(x0=0.50, y0=0.90, x1=0.90, y1=0.92, text="براساس شرح حال مراجعه کننده بوده")
+    reading = read_abo([FA_LABEL, box(0.48, "A+", w=0.05), first_half, second_half], [])
+    assert reading.source is AboSource.PATIENT_REPORTED_ON_FORM
+
+
+def test_a_caption_without_an_Rh_does_not_question_the_subjects_identity() -> None:
+    """`A` and `A+` are the same claim about the group, stated to different
+    precision. Treating that as a conflict raised the identity flag on captions
+    that merely omitted the sign."""
+    image = read_abo([FA_LABEL, box(0.48, "A+", w=0.05)], [])
+    decision = reconcile_abo(image, caption_claims={("A", Rh.UNKNOWN)})
+    assert decision.status is AboStatus.RESOLVED
+    assert decision.group == "A"
+    assert decision.subject_identity_questioned is False
+
+
+def test_a_caption_with_a_different_letter_still_conflicts() -> None:
+    image = read_abo([FA_LABEL, box(0.48, "A+", w=0.05)], [])
+    decision = reconcile_abo(image, caption_claims={("B", Rh.UNKNOWN)})
+    assert decision.status is AboStatus.CONFLICT
+
+
+def test_a_caption_with_the_opposite_Rh_still_conflicts() -> None:
+    image = read_abo([FA_LABEL, box(0.48, "A+", w=0.05)], [])
+    decision = reconcile_abo(image, caption_claims={("A", Rh.NEGATIVE)})
+    assert decision.status is AboStatus.CONFLICT

@@ -123,7 +123,32 @@ def check_drb1_drbx(
 
     expected = expected_drbx_genes(drb1_first_fields)
 
-    pair = list(drb1_first_fields) + list(drb1_first_fields)
+    if len(drb1_first_fields) == 1:
+        # Only ONE haplotype was read. Duplicating it into a homozygous pair
+        # reported a gene that the UNREAD partner may perfectly well carry:
+        # measured, 1,315 of 1,332 forbidden flags were single-value reads, 57%
+        # of all such documents. ADR 0008's 99.62% was the two-value subset.
+        #
+        # What survives with one allele is the counting argument. Each haplotype
+        # contributes at most one DRB3/4/5 gene, so two genes on the row means
+        # BOTH haplotypes contributed, and one of them must be this allele's.
+        own = expected_drbx_genes(drb1_first_fields)
+        if len(present) >= 2 and not (own & present):
+            carried = next(iter(own)) if own else "no DRBX gene"
+            return ConsistencyResult(
+                ConsistencyOutcome.FORBIDDEN_GENE_PRESENT,
+                f"{len(present)} genes on the row need both haplotypes, but the one "
+                f"DRB1 allele read carries {carried}",
+            )
+        missing = sorted(gene for gene in own if gene in absent)
+        if missing:
+            return ConsistencyResult(
+                ConsistencyOutcome.EXPECTED_GENE_ABSENT,
+                f"the DRB1 allele read expects {', '.join(missing)}, which the row calls absent",
+            )
+        return ConsistencyResult(ConsistencyOutcome.CONSISTENT)
+
+    pair = list(drb1_first_fields)
     try:
         # Used ONLY for whether it raises. The return value is an imputation and
         # is deliberately not bound to a name.

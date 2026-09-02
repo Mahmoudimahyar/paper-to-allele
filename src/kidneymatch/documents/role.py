@@ -121,7 +121,19 @@ _EHDA = r"(?:اهدا|اهد|هدا|امدا|احدا|اددا|ایدا|انید
 _KONANDE = r"ک\s?[نب]\s?[نب]?\s?[دذ]\s?[هة]?"
 _DONOR = re.compile(_EHDA + r"\s?" + _KONANDE + r"|اهداکننده")
 _DAHANDE = re.compile(r"^\s?[دذ]\s?ه\s?[نب]\s?[دذ]\s?[هة]\s?$")
-_RECIPIENT = re.compile(r"[گک]\s?[یبنپتث]?\s?ر\s?[نب]?\s?[دذ]\s?[هة]")
+
+# The `ن` is REQUIRED. It was optional, which made this match `کرده` ("done",
+# as in `پیوند نکرده`) and `گرده` (how the recognizer sometimes renders the
+# blood-group word). Measured: 2,062 documents matched on that stem, 61 became
+# Tier-B findings with no corroboration, and 740 genuine donor forms were pushed
+# into review as "both role words printed". Requiring the `ن` costs none of the
+# measured spellings — `گیرنده`, `کیرنده`, `کبرنده`, `کرنده`, `گبرنده` all keep it.
+_RECIPIENT = re.compile(r"[گک]\s?[یبنپتث]?\s?ر\s?[نب]\s?[دذ]\s?[هة]")
+
+# "transplant candidate": someone waiting for a transplant, i.e. a recipient.
+# Measured, it co-occurs with a recipient phrase on 1,867 documents and with a
+# donor phrase on 15, and 476 documents carry it with no other role evidence.
+_CANDIDATE = re.compile(r"کاند[یبن]?د\s?پ[یبن]?[وؤ]?ن?د")
 
 # Halves of a phrase the recognizer splits across two boxes.
 _KONANDE_ONLY = re.compile(r"^" + _KONANDE + r"(?:\s?(?:پیوند|پوند|یوند|پرند|پبوند|بیوند))?$")
@@ -203,11 +215,18 @@ def _persian_tokens(boxes: list[Box]) -> list[RoleToken]:
         text = normalise(b.text)
         if not text:
             continue
-        # Donor is tested first: measured, no box matches both under this order.
-        if _DONOR.search(text) or _DAHANDE.match(text):
+        is_donor = bool(_DONOR.search(text) or _DAHANDE.match(text))
+        is_recipient = bool(_RECIPIENT.search(text) or _CANDIDATE.search(text))
+        if is_donor and is_recipient:
+            # One box naming both roles is a printed CHOICE label, not a value.
+            # Seven such boxes exist; testing donor first read four of them as
+            # DONOR, and an agreeing caption made that a finding.
+            seen.add(index)
+            continue
+        if is_donor:
             tokens.append(RoleToken(Role.DONOR, b, text))
             seen.add(index)
-        elif _RECIPIENT.search(text):
+        elif is_recipient:
             tokens.append(RoleToken(Role.RECIPIENT, b, text))
             seen.add(index)
 
@@ -229,6 +248,19 @@ def _persian_tokens(boxes: list[Box]) -> list[RoleToken]:
         if right and _EHDA_ONLY.match(normalise(right[0].text)):
             tokens.append(RoleToken(Role.DONOR, b, normalise(b.text)))
     return tokens
+
+
+def is_comparison_sheet(latin_boxes: list[Box]) -> bool:
+    """Does this page print BOTH English role words as column headings on one row?
+
+    503 documents do. They carry two people's typings side by side, and are the
+    only path found by which two patients' alleles could enter one record. Every
+    locus resolution on such a page must go to review: which column a value
+    belongs to is exactly what the row-based rule cannot tell.
+    """
+    donors = [b for b in latin_boxes if _EN_DONOR.match((b.text or "").strip())]
+    recipients = [b for b in latin_boxes if _EN_RECIPIENT.match((b.text or "").strip())]
+    return any(_same_row(d, r) for d in donors for r in recipients)
 
 
 def _english_reading(boxes: list[Box]) -> tuple[Role, Box | None]:
