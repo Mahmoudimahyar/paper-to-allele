@@ -14,6 +14,7 @@ clean family the DRB4 label occupies two different columns.
 from __future__ import annotations
 
 import pytest
+
 from kidneymatch.ocr.anchors import (
     Box,
     LocusResolution,
@@ -30,7 +31,7 @@ VALUE_2 = Box(x0=0.32, y0=0.50, x1=0.38, y1=0.53, text="11")
 FAR_AWAY = Box(x0=0.80, y0=0.50, x1=0.86, y1=0.53, text="99")
 OTHER_ROW = Box(x0=0.22, y0=0.70, x1=0.28, y1=0.73, text="07")
 
-RULE = ValueRule(direction="right", same_row_tol=0.6, max_gap=2.5, max_values=2)
+RULE = ValueRule(direction="right", align_overlap=0.2, max_gap=2.5, max_values=2)
 
 
 def resolve(boxes: list[Box], locus: str = "DRB1") -> LocusResolution:
@@ -134,7 +135,7 @@ def test_a_combined_drb345_header_is_not_treated_as_one_locus() -> None:
 @pytest.mark.parametrize("direction", ["right", "below"])
 def test_direction_is_honoured(direction: str) -> None:
     below = Box(x0=0.10, y0=0.56, x1=0.16, y1=0.59, text="15")
-    rule = ValueRule(direction=direction, same_row_tol=0.6, max_gap=2.5, max_values=2)
+    rule = ValueRule(direction=direction, align_overlap=0.2, max_gap=2.5, max_values=2)
     result = resolve_locus([LABEL, below], locus="DRB1", anchor_pattern=r"^DRB1$", rule=rule)
     if direction == "below":
         assert result.status is ResolutionStatus.RESOLVED

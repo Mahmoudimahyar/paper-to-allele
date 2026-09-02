@@ -4,19 +4,34 @@ This is the code that decides which gene a value belongs to. Getting it wrong is
 the worst failure this project can produce, so every ambiguous case abstains.
 
 **Design (ADR 0007).** The template registry stores the RELATION between a
-printed locus label and its value — an anchor pattern plus a direction, row
-tolerance and maximum gap — not absolute cell rectangles. The cell is located per
-document from that document's own anchor.
+printed locus label and its value — a direction, row tolerance and maximum gap —
+not absolute cell rectangles. The cell is located per document from that
+document's own anchor.
 
 Absolute rectangles were retired because they are unsafe even for a family that
 looks perfect: within one clean family of 1,034 documents the printed `DRB4`
-label occupies two different columns 0.285 apart, and the layout signature cannot
-separate the variants. A single authored box there would bind the wrong locus for
-roughly 40% of members, silently.
+label occupies two different columns 0.285 apart, and the layout signature
+cannot separate the variants. A single authored box there would bind the wrong
+locus for roughly 40% of members, silently.
 
-Anchoring per document is stricter than that, not looser: the geometry is
-re-established from the page in front of us rather than inherited from a family
-average that may not apply to this member.
+**What a shape audit found on 2026-09-02.** The relation was right; the rule was
+aimed the wrong way and nothing checked what it bound. Of 2,977 `DRB1` bindings
+the resolver called RESOLVED, only 185 were allele-shaped and **988 were the
+next row's locus label**; `DPA1` and `DPB1` produced no real values at all
+(KI-010). Yield metrics cannot see this — the resolver reported success every
+time. Four gates now stand between a candidate box and a RESOLVED value:
+
+1. **Value shape** — it must parse as an allele value (`glyphs.py`). A
+   label-shaped token can never be a value, however damaged.
+2. **Prefix consistency** — a value that names its own locus must agree with
+   the anchor. Geometry still decides; disagreement means nobody knows.
+3. **Nearest-anchor ownership** — a candidate closer to a different locus's
+   label belongs to that label.
+4. **Cardinality** — a locus has at most two alleles.
+
+Anchors are found by `glyphs.canonical_locus_label`, which repairs the
+recognizer's measured final-character confusions (`DRBI` is read 3.5x more often
+than `DRB1`) and refuses interior damage.
 """
 
 from __future__ import annotations
@@ -25,6 +40,13 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
+
+from kidneymatch.ocr.glyphs import (
+    AlleleValue,
+    canonical_locus_label,
+    looks_like_locus_label,
+    parse_allele_value,
+)
 
 Direction = Literal["right", "below"]
 
@@ -71,10 +93,25 @@ class ValueRule:
 
     Expressing tolerances in label heights rather than absolute coordinates is
     what lets one rule serve documents at 520 px and 1,280 px alike.
+
+    The dominant layout on this corpus is a vertical stack of row labels with
+    values to the right, so `direction="right"` with a wide `max_gap` is the
+    sensible default. `below` remains available because DP rows on some forms
+    are laid out differently; per-family rules are authored from evidence, not
+    assumed (ADR 0007).
+
+    `align_overlap` is the fraction of the SHORTER box's extent that must
+    overlap across the direction of travel — vertical overlap for a rule
+    reading rightwards. Centre distance was tried first and is wrong: measured
+    over 15,631 documents, a `DRB1` value's centre sits 0.5 to 0.75 label
+    heights ABOVE its label's centre while the two boxes still share 25-50% of
+    their vertical extent. A centre tolerance loose enough to admit them also
+    admits the neighbouring row; overlap separates the two cleanly and does not
+    care that the recognizer boxed the value slightly higher.
     """
 
     direction: Direction
-    same_row_tol: float
+    align_overlap: float
     max_gap: float
     max_values: int
 
@@ -89,18 +126,56 @@ class LocusResolution:
     anchor_box: Box | None = None
     value_boxes: list[Box] = field(default_factory=list)
     reason: str = ""
+    parsed_values: list[AlleleValue] = field(default_factory=list)
+
+    @property
+    def repaired(self) -> bool:
+        """True if any accepted value needed a glyph repair to be read."""
+        return any(value.repaired for value in self.parsed_values)
 
 
-def find_anchors(boxes: list[Box], anchor_pattern: str) -> list[Box]:
-    """Boxes whose text IS the locus label.
+def find_anchors(boxes: list[Box], locus: str, anchor_pattern: str | None = None) -> list[Box]:
+    """Boxes whose text IS this locus's printed label.
 
-    The pattern is matched against the whole stripped token, never searched
-    within it. `\\bDRB1\\b` also matches the `DRB1` inside `DRB1*11`; measured on
-    the real corpus that inflated apparent DRB1 presence by 5.18x and placed the
-    locus wherever a patient-specific value happened to sit.
+    The default matcher is `glyphs.canonical_locus_label`, which repairs the
+    measured final-character confusions and refuses interior damage. A template
+    family MAY override it with a regex (ADR 0007 stores the relation per
+    family), and the regex is then matched against the WHOLE stripped token —
+    never searched within it. `\\bDRB1\\b` also matches the `DRB1` inside
+    `DRB1*11`; measured on the real corpus that inflated apparent DRB1 presence
+    by 5.18x and placed the locus wherever a patient value happened to sit.
     """
-    compiled = re.compile(anchor_pattern, re.IGNORECASE)
-    return [b for b in boxes if compiled.match((b.text or "").strip())]
+    if anchor_pattern is not None:
+        compiled = re.compile(anchor_pattern, re.IGNORECASE)
+        return [b for b in boxes if compiled.match((b.text or "").strip())]
+    return [b for b in boxes if canonical_locus_label(b.text or "") == locus]
+
+
+def _all_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
+    """Every box on the page that names any locus, with the locus it names."""
+    out = []
+    for box in boxes:
+        named = canonical_locus_label(box.text or "")
+        if named is not None:
+            out.append((named, box))
+    return out
+
+
+def _aligned(anchor: Box, box: Box, rule: ValueRule) -> bool:
+    """Do these two boxes sit on the same printed line (or column)?"""
+    if rule.direction == "right":
+        overlap = min(anchor.y1, box.y1) - max(anchor.y0, box.y0)
+        shorter = min(anchor.height, max(box.y1 - box.y0, 1e-6))
+    else:
+        overlap = min(anchor.x1, box.x1) - max(anchor.x0, box.x0)
+        shorter = min(max(anchor.x1 - anchor.x0, 1e-6), max(box.x1 - box.x0, 1e-6))
+    return overlap / shorter >= rule.align_overlap
+
+
+def _distance(anchor: Box, box: Box, direction: Direction) -> float:
+    if direction == "right":
+        return box.x0 - anchor.x1
+    return box.y0 - anchor.y1
 
 
 def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
@@ -112,13 +187,10 @@ def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
     enough to also reach into the next column, which is exactly how a value gets
     bound to the wrong locus.
     """
-    tolerance = rule.same_row_tol * anchor.height
     limit = rule.max_gap * anchor.height
 
     def aligned(box: Box) -> bool:
-        if rule.direction == "right":
-            return abs(box.centre_y - anchor.centre_y) <= tolerance
-        return abs(box.centre_x - anchor.centre_x) <= tolerance
+        return _aligned(anchor, box, rule)
 
     if rule.direction == "right":
         ahead = sorted(
@@ -142,20 +214,45 @@ def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
     return found
 
 
+def _owned_by_another_anchor(
+    candidate: Box, anchor: Box, boxes: list[Box], rule: ValueRule
+) -> str | None:
+    """The locus of a label that owns this candidate more plausibly than ours.
+
+    Two loci printed on one row band is a normal layout, and reading rightwards
+    with a generous gap walks from one cell into the next. The nearest preceding
+    label owns the value; anything else is a guess about which gene a patient's
+    allele belongs to.
+    """
+    ours = _distance(anchor, candidate, rule.direction)
+    for locus, other in _all_locus_anchors(boxes):
+        if other is anchor:
+            continue
+        # A label on a different line does not compete for this box, however
+        # close it is along the reading axis. Without this the rule compared
+        # every label on the page by x alone and refused 24,892 sound bindings.
+        if not _aligned(other, candidate, rule):
+            continue
+        gap = _distance(other, candidate, rule.direction)
+        if 0 <= gap < ours:
+            return locus
+    return None
+
+
 def resolve_locus(
     boxes: list[Box],
     locus: str,
-    anchor_pattern: str,
     rule: ValueRule,
+    anchor_pattern: str | None = None,
 ) -> LocusResolution:
     """Bind values to `locus` using its printed label on this document.
 
     The locus is taken from the ANCHOR, never from the value's own text. A value
     token that happens to spell a different locus cannot retarget the binding —
     `OCR_SPEC.md` section 2: geometry decides the field, OCR decides the
-    characters inside it.
+    characters inside it. When the two disagree, neither wins: a human looks.
     """
-    anchors = find_anchors(boxes, anchor_pattern)
+    anchors = find_anchors(boxes, locus, anchor_pattern)
 
     if not anchors:
         # The form does not print this locus. That is UNKNOWN, not a failure,
@@ -176,13 +273,26 @@ def resolve_locus(
     found = _candidates(boxes, anchor, rule)
 
     if not found:
-        # The label is printed but no value was read in range. Distinct from
-        # UNKNOWN: the locus IS reported, we simply could not read it.
+        # The label is printed but nothing was read in its cell. That is
+        # REVIEW_REQUIRED, not UNKNOWN, and the distinction is a policy in
+        # `OCR_SPEC.md`: UNKNOWN means the form does not report this locus,
+        # while a printed label we could not read is a failure a human must
+        # see.
+        #
+        # It is tempting to call an empty cell "the laboratory did not type
+        # this locus" and retire ~13,000 DPB1 items from the queue. Measured,
+        # that would be wrong: DPB1 values on these forms sit 5-6 label heights
+        # ABOVE the label, so an empty cell under a rightward rule means the
+        # RULE is wrong for that family, not that the row is blank. Emitting
+        # UNKNOWN there would convert a rule defect into silent data loss.
+        #
+        # A large count here is therefore a signal to author a per-family rule
+        # (ADR 0007), which is exactly what review is for.
         return LocusResolution(
             locus,
             ResolutionStatus.REVIEW_REQUIRED,
             anchor_box=anchor,
-            reason="anchor found but no value box within the rule's range",
+            reason="anchor found but no box at all in its cell under this rule",
         )
 
     if len(found) > rule.max_values:
@@ -196,10 +306,62 @@ def resolve_locus(
             reason=f"{len(found)} candidate values exceeds max_values={rule.max_values}",
         )
 
+    parsed: list[AlleleValue] = []
+    for box in found:
+        text = (box.text or "").strip()
+
+        if looks_like_locus_label(text):
+            # Gate 1. The measured failure: 988 of 2,977 DRB1 bindings were the
+            # next row's label, reported as this patient's allele.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=f"candidate {text!r} is a locus label, not a value",
+            )
+
+        owner = _owned_by_another_anchor(box, anchor, boxes, rule)
+        if owner is not None:
+            # Gate 3.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=f"candidate is closer to the {owner} label; another locus owns it",
+            )
+
+        value = parse_allele_value(text)
+        if value is None:
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=f"candidate {text!r} does not parse as an allele value",
+            )
+
+        if value.locus_prefix is not None and value.locus_prefix != locus:
+            # Gate 2. Geometry says one gene, the printed value says another.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=(
+                    f"value names {value.locus_prefix} but the anchor is {locus}; "
+                    "geometry and text disagree"
+                ),
+            )
+
+        parsed.append(value)
+
     return LocusResolution(
         locus,
         ResolutionStatus.RESOLVED,
-        values=[(b.text or "").strip() for b in found],
+        values=[value.text() for value in parsed],
         anchor_box=anchor,
         value_boxes=found,
+        parsed_values=parsed,
     )

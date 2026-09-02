@@ -32,11 +32,15 @@ import hashlib
 import json
 import os
 import sqlite3
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from kidneymatch.ingestion.photos import is_original_photo  # noqa: E402
 
 # Bump either version to invalidate cached rows and force a re-read.
 ENGINE_VERSION = "onnxtr0.9.0/fast_base+crnn_mobilenet_v3_small"
@@ -82,19 +86,6 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def is_original_photo(name: str) -> bool:
-    """True for an original photo file; False for any thumbnail.
-
-    The export writes `photo_N@date_thumb.jpg` next to each original AND, when
-    the same thumbnail is written again, Windows-style copies named
-    `photo_N@date_thumb (2).jpg`. A suffix test on `_thumb.jpg` let 9,581 of
-    those copies through as "originals" and they became 29% of the OCR pass,
-    the whole "low-resolution tail", and 54 of 199 golden-sample documents.
-    Every one of them has its original on disk. Test on the substring.
-    """
-    return name.endswith(".jpg") and "_thumb" not in name
 
 
 def unique_originals(export: Path) -> list[tuple[str, Path]]:

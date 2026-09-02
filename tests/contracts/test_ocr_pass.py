@@ -121,20 +121,13 @@ def test_output_goes_to_the_gitignored_derived_layer() -> None:
     assert proc.returncode == 0, "the OCR output path is not gitignored"
 
 
-@pytest.mark.parametrize(
-    ("name", "expected"),
-    [
-        ("photo_123@01-02-2023_10-11-12.jpg", True),
-        ("photo_123@01-02-2023_10-11-12_thumb.jpg", False),
-        # Windows-style copy of a thumbnail. `endswith("_thumb.jpg")` let 9,581
-        # of these into the pass as "originals" (KI-009); every one had its
-        # original on disk.
-        ("photo_123@01-02-2023_10-11-12_thumb (2).jpg", False),
-        ("photo_123@01-02-2023_10-11-12_thumb (17).jpg", False),
-        ("photo_123@01-02-2023_10-11-12.png", False),
-        ("messages.html", False),
-    ],
-)
-def test_thumbnail_copies_are_never_treated_as_originals(name: str, expected: bool) -> None:
-    """A thumbnail is identified by the `_thumb` substring, not by a suffix."""
-    assert load().is_original_photo(name) is expected
+def test_the_manifest_uses_the_shared_photo_definition() -> None:
+    """The script must not carry its own idea of what a corpus photo is.
+
+    It did, and the two drifted: `endswith("_thumb.jpg")` admitted 9,581
+    thumbnail copies (KI-009). The definition and its tests now live in
+    `kidneymatch.ingestion.photos`; this asserts the script uses that one.
+    """
+    from kidneymatch.ingestion import photos
+
+    assert load().is_original_photo is photos.is_original_photo
