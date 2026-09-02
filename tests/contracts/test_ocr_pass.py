@@ -7,7 +7,6 @@ after any interruption, which at 33,147 images is a real cost.
 from __future__ import annotations
 
 import importlib.util
-import sqlite3
 from pathlib import Path
 
 import pytest
