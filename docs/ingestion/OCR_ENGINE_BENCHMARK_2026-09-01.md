@@ -213,3 +213,79 @@ Non-obvious flags that are required, not optional:
 - `PaddleOCR(..., enable_mkldnn=False)` — otherwise zero output on this CPU
 - `PaddleOCR(..., text_detection_model_name="PP-OCRv5_mobile_det")` — otherwise impractically slow
 - `--tessdata-dir <path>` **unquoted** — quoted fails to open the data file
+
+
+---
+
+# Full-corpus extraction pass — 2026-09-02
+
+`scripts/ocr_pass.py` (ADR 0006 stages 0–2) over every unique original.
+
+| | |
+|---|---|
+| unique originals processed | **33,147** |
+| failures | **0** |
+| text boxes extracted | **2,914,800** |
+| mean | 226 ms/image |
+| wall clock | **~2.1 h**, single process |
+| store | `data/derived/ocr_pass.sqlite`, 177 MB (gitignored) |
+
+## The group rule is confirmed at scale
+
+Counting only **unambiguous** locus names — `DRB1/DRB3/DRB4/DRB5/DQA1/DQB1/DPA1/DPB1`,
+because a bare "A", "B" or "C" matches far too much incidental text:
+
+| signal | images | share |
+|---|---|---|
+| yielded no text at all | 99 | 0.3% |
+| **≥2 unambiguous loci → an HLA typing report** | **20,201** | **60.9%** |
+| a value adjacent to an unambiguous locus | 19,115 | 57.7% |
+
+The looser regex that also accepts single-letter loci reports 83.2%, which is an
+overcount. **~61% is the defensible figure**: three out of five unique images in
+this archive are HLA typing reports. That corroborates the channel rule that
+every submitter must publish their test.
+
+## Locus availability — this changes the V1 ranking outlook
+
+| locus | images | share |
+|---|---|---|
+| DRB1 | 19,231 | 58.0% |
+| DRB3 | 19,018 | 57.4% |
+| **DQB1** | **16,904** | **51.0%** |
+| DRB4 | 7,956 | 24.0% |
+| DRB5 | 3,972 | 12.0% |
+| DQA1 | 2,508 | 7.6% |
+| DPB1 | 2,412 | 7.3% |
+| DPA1 | 2,162 | 6.5% |
+
+**DQB1 is present on 51% of unique images.** The earlier caption-based estimate
+(0.65% of messages) badly understated it, because HLA data lives in the images,
+not the captions. The `MATCHING_POLICY_V1` decision to rank DQ first is therefore
+**viable on this corpus**, not aspirational — a direct correction to the concern
+raised in `MVP_PLAN_REVIEW_2026-09-01.md` §5.
+
+DRB3/4/5 appear frequently and at different rates from each other, which is
+consistent with them being separate genes and supports the spec's insistence that
+a `DRB3/4/5` form row is a presentation grouping, not one field.
+
+## Persian: 0.0%, and that is expected, not a failure
+
+The recognizer is `crnn_mobilenet_v3_small`, a **Latin-only** model — its output
+alphabet cannot represent Persian at all. This pass deliberately covers the Latin
+half. Persian metadata (patient, laboratory, dates) requires the separate
+EasyOCR `fa` GPU pass in ADR 0006 stage 4, which has not been run yet.
+
+**Do not read 0.0% Persian as "no Persian in the archive".** It means "this
+engine cannot emit Persian".
+
+## What this unblocks
+
+The 20,201 multi-locus images are the stratum the 200-document golden corpus
+should be sampled from — instead of from raw noise, where roughly two in five
+images are not typing reports at all. Box geometry is stored in normalized
+coordinates, so it is directly usable for template-family discovery and for the
+median-stack/variance-map approach in `MVP_PLAN_REVIEW_2026-09-01.md` §3.5.
+
+Still not done here, by design: **no locus is assigned to any value.** That needs
+template geometry.
