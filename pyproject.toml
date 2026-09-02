@@ -60,6 +60,13 @@ strict = true
 mypy_path = "src"
 packages = ["kidneymatch"]
 
+# py-ard ships no type information. Narrowly scoped so strict mode still covers
+# everything we write: only the import is untyped, and every value crossing this
+# boundary is annotated at the call site in `hla/drbx_consistency.py`.
+[[tool.mypy.overrides]]
+module = ["pyard.*"]
+ignore_missing_imports = true
+
 [dependency-groups]
 # Installed by default by `uv sync` / `uv run`. Kept as a PEP 735 group rather
 # than a `dev` extra so a fresh clone gets exactly what CI and the dev machine
