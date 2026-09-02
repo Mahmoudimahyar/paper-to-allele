@@ -222,6 +222,16 @@ def parse_allele_value(token: str) -> AlleleValue | None:
     if second is not None and not second.isdigit():
         return None
 
+    if match.group("expression") and second is None:
+        # WHO nomenclature never attaches an expression suffix to a
+        # first-field-only name, so this parse is a misread accepted as a value.
+        # `L` and `S` are also digit-slot repairs, so `10S` was read as the
+        # family `10` plus a suffix rather than the family `105`, and `A` turned
+        # the recognizer's `HLA` fragments (`ILA`, `IILA`) into alleles.
+        # Measured: 3,062 boxes parsed this way against one with a real second
+        # field, and 33 of them reached an anchored cell.
+        return None
+
     prefix = match.group("prefix")
     # A bare `A` cannot ANCHOR a locus — a lone letter is a table header or an
     # ABO group far more often than a gene. But `A*02` has no such competition:

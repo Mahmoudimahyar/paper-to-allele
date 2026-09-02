@@ -126,10 +126,13 @@ def test_a_combined_drb345_header_is_not_treated_as_one_locus() -> None:
     to it would assign the same allele to three genes.
     """
     combined = Box(x0=0.10, y0=0.50, x1=0.22, y1=0.53, text="DRB3/4/5")
-    result = resolve_locus(
-        [combined, VALUE_1], locus="DRB3", anchor_pattern=r"^(?:HLA[-\s]?)?DRB3$", rule=RULE
-    )
-    assert result.status is ResolutionStatus.UNKNOWN, "the combined header is not a DRB3 label"
+    # Stronger than when this was written: the generic rule now refuses the
+    # DRBX genes outright, because it read neighbouring numbers as their alleles
+    # on four documents. They are presence typing, read by `drbx.py`.
+    with pytest.raises(ValueError, match="grouped"):
+        resolve_locus(
+            [combined, VALUE_1], locus="DRB3", anchor_pattern=r"^(?:HLA[-\s]?)?DRB3$", rule=RULE
+        )
 
 
 @pytest.mark.parametrize("direction", ["right", "below"])

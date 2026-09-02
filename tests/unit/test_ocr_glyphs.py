@@ -279,16 +279,21 @@ def test_an_HLA_prefix_on_a_value_is_stripped() -> None:
     assert value is not None and value.locus_prefix == "DRB1" and value.first_field == "15"
 
 
-def test_an_expression_suffix_is_not_swallowed_into_the_digits() -> None:
-    """`A*02S` is a secreted allele, not `A*025`.
+def test_a_suffix_is_never_swallowed_into_the_digits() -> None:
+    """The digit-slot repair maps `S` to `5`, so a greedy numeric group would
+    eat a suffix and invent a different allele.
 
-    The digit-slot repair maps `S` to `5`, so a greedy numeric group eats the
-    suffix and invents a different allele. The suffix must be recognised first.
+    This test originally asserted that `A*02S` parses as the family `02` with a
+    secreted suffix. That was wrong: WHO nomenclature attaches an expression
+    suffix only to a complete allele name, so `A*02S` is not a designation at
+    all and is now refused outright. What must still hold is that no reading
+    silently turns the suffix into a digit.
     """
-    value = parse_allele_value("A*02S")
-    assert value is not None
-    assert value.first_field == "02"
-    assert value.expression == "S"
+    assert parse_allele_value("A*02S") is None
+    complete = parse_allele_value("A*02:01N")
+    assert complete is not None
+    assert complete.first_field == "02" and complete.second_field == "01"
+    assert complete.expression == "N"
 
 
 @pytest.mark.parametrize("token", ["DRB1*D2", "DRB1*Q2"])
@@ -317,3 +322,32 @@ def test_DRBS_names_DRB5_and_the_evidence_is_direct() -> None:
     the model assumed does not describe the `DRBS` population.
     """
     assert canonical_locus_label("DRBS") == "DRB5"
+
+
+# --- W11: the expression suffix ------------------------------------------
+
+
+@pytest.mark.parametrize("token", ["10S", "13S", "35S", "42L", "SOSS", "ILA", "IILA", "TILA"])
+def test_a_suffix_after_a_first_field_alone_is_not_a_value(token: str) -> None:
+    """WHO nomenclature never attaches an expression suffix to a first-field-only
+    name, so every such parse is a misread accepted as a value.
+
+    `L` and `S` are also digit-slot repairs, so a three-character token ending
+    in one was read as a two-digit family plus a suffix; `A` turned the `HLA`
+    fragments the recognizer emits (`ILA`, `IILA`) into alleles. Measured: 3,062
+    boxes parse this way against exactly one with a real second field, and 33
+    reached an anchored cell.
+    """
+    assert parse_allele_value(token) is None
+
+
+def test_a_suffix_after_two_fields_is_kept() -> None:
+    """`DRB4*01:03N` is a null allele: the suffix changes the biology."""
+    value = parse_allele_value("DRB4*01:03N")
+    assert value is not None and value.expression == "N"
+
+
+def test_a_three_digit_family_is_not_split_into_digits_and_a_suffix() -> None:
+    """`10S` must not become `10` + suffix; with the repair it is the family 105."""
+    value = parse_allele_value("DPB1*10S:01")
+    assert value is not None and value.first_field == "105" and value.second_field == "01"

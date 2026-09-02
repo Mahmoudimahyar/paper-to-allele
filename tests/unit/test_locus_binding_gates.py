@@ -212,8 +212,14 @@ def test_provenance_boxes_are_recorded_for_every_outcome() -> None:
     assert [b.text for b in result.value_boxes] == ["11"]
 
 
-@pytest.mark.parametrize("locus", ["DRB1", "DQB1", "DPA1", "DPB1", "DQA1"])
-def test_every_supported_locus_resolves_the_same_way(locus: str) -> None:
-    result = resolve([row_box(0.10, locus), row_box(0.22, "01")], locus=locus)
+@pytest.mark.parametrize(
+    ("locus", "family"),
+    # A family that really exists for that gene. `01` is not a DQB1 family, and
+    # the vocabulary gate now says so — the earlier fixture only passed because
+    # nothing checked.
+    [("DRB1", "01"), ("DQB1", "03"), ("DPA1", "01"), ("DPB1", "04"), ("DQA1", "05")],
+)
+def test_every_supported_locus_resolves_the_same_way(locus: str, family: str) -> None:
+    result = resolve([row_box(0.10, locus), row_box(0.22, family)], locus=locus)
     assert result.status is ResolutionStatus.RESOLVED
     assert result.locus == locus

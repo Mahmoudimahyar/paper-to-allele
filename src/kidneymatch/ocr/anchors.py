@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
 
+from kidneymatch.hla.vocabulary import FirstFieldVocabulary, load_vocabulary
 from kidneymatch.ocr.glyphs import (
     AlleleValue,
     canonical_locus_label,
@@ -49,6 +50,19 @@ from kidneymatch.ocr.glyphs import (
 )
 
 Direction = Literal["right", "below"]
+
+# Genes read by `drbx.py` from the grouped DRB3/4/5 header, never by this rule.
+# Asking for them here bound neighbouring numbers as alleles on four documents,
+# every value impossible for the gene (review W10).
+GROUPED_DRBX_GENES = frozenset({"DRB3", "DRB4", "DRB5"})
+
+# Loci this relation can legitimately read.
+DEFAULT_LOCI: tuple[str, ...] = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
+
+# A value is one line of text. Measured, 99.7% of legitimate values are 0.5-1.6
+# label heights tall; a box several times taller is a detector blob spanning
+# rows, and it is "aligned" with every row it crosses (review W3).
+MAX_VALUE_HEIGHT_RATIO = 2.5
 
 
 class ResolutionStatus(StrEnum):
@@ -62,6 +76,21 @@ class ResolutionStatus(StrEnum):
     RESOLVED = "RESOLVED"
     UNKNOWN = "UNKNOWN"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
+class SecondAllele(StrEnum):
+    """Whether this locus's second allele was read.
+
+    A locus is diploid. One value in the cell does NOT mean homozygous: it means
+    one value was read. Measured, the second allele sat just past the chain on
+    6,597 cells, and 29-36% of resolved A/B/DRB1 cells carried a single value —
+    far above any plausible homozygosity rate (KI-015). A consumer that read a
+    one-element list as a genotype would miscount every mismatch, so the state
+    is explicit and there is no way to get a list without it.
+    """
+
+    READ = "READ"
+    UNREAD = "UNREAD"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +156,7 @@ class LocusResolution:
     value_boxes: list[Box] = field(default_factory=list)
     reason: str = ""
     parsed_values: list[AlleleValue] = field(default_factory=list)
+    second_allele: SecondAllele = SecondAllele.UNREAD
 
     @property
     def repaired(self) -> bool:
@@ -225,6 +255,7 @@ def _owned_by_another_anchor(
     allele belongs to.
     """
     ours = _distance(anchor, candidate, rule.direction)
+    ours_offset = abs(candidate.centre_y - anchor.centre_y)
     for locus, other in _all_locus_anchors(boxes):
         if other is anchor:
             continue
@@ -234,8 +265,47 @@ def _owned_by_another_anchor(
         if not _aligned(other, candidate, rule):
             continue
         gap = _distance(other, candidate, rule.direction)
-        if 0 <= gap < ours:
+        if gap < 0:
+            continue
+        # Stacked labels share an x1, so horizontal distance alone cannot
+        # separate them: a tall value overlapping two rows tied, and the strict
+        # `<` let BOTH loci resolve it (review W3/W4). A tie is an ownership
+        # conflict, and near-ties are decided by vertical proximity, which is
+        # what actually distinguishes one printed row from the next.
+        if abs(gap - ours) <= 1e-9:
             return locus
+        if gap < ours:
+            return locus
+        if abs(candidate.centre_y - other.centre_y) < ours_offset - 1e-9:
+            return locus
+    return None
+
+
+def _value_beyond_the_chain(
+    boxes: list[Box], anchor: Box, found: list[Box], rule: ValueRule
+) -> Box | None:
+    """An allele-shaped box on this row, past where the chain stopped.
+
+    The measured failure behind KI-015: in two-allele cells the gap to the
+    second allele is median 15.3 label heights and max exactly 20.0 — the cap
+    itself. On 6,597 single-allele cells the heterozygous partner sat just
+    beyond, self-prefixed with the same locus 98-99% of the time. Resolving
+    without it publishes half a genotype.
+    """
+    edge = found[-1] if found else anchor
+    for box in boxes:
+        if box is anchor or any(box is seen for seen in found):
+            continue
+        if not _aligned(anchor, box, rule):
+            continue
+        if _distance(edge, box, rule.direction) <= 0:
+            continue
+        text = (box.text or "").strip()
+        if looks_like_locus_label(text) or parse_allele_value(text) is None:
+            continue
+        if _owned_by_another_anchor(box, anchor, boxes, rule) is not None:
+            continue
+        return box
     return None
 
 
@@ -244,6 +314,7 @@ def resolve_locus(
     locus: str,
     rule: ValueRule,
     anchor_pattern: str | None = None,
+    vocabulary: FirstFieldVocabulary | None = None,
 ) -> LocusResolution:
     """Bind values to `locus` using its printed label on this document.
 
@@ -252,6 +323,14 @@ def resolve_locus(
     `OCR_SPEC.md` section 2: geometry decides the field, OCR decides the
     characters inside it. When the two disagree, neither wins: a human looks.
     """
+    if locus in GROUPED_DRBX_GENES:
+        # Presence typing, read by `drbx.py` from the grouped header. A caller
+        # that asks here has a bug, and a quiet UNKNOWN would hide it.
+        raise ValueError(
+            f"{locus} is read from the grouped DRB3/4/5 row by kidneymatch.ocr.drbx, "
+            "not by the generic value rule"
+        )
+    vocabulary = vocabulary if vocabulary is not None else load_vocabulary()
     anchors = find_anchors(boxes, locus, anchor_pattern)
 
     if not anchors:
@@ -310,6 +389,20 @@ def resolve_locus(
     for box in found:
         text = (box.text or "").strip()
 
+        if box.height > MAX_VALUE_HEIGHT_RATIO * anchor.height:
+            # Not one line of text. Such a box overlaps several printed rows, so
+            # it is "aligned" with every label it crosses and was bound twice.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=(
+                    f"candidate is {box.height / anchor.height:.1f}x the label height; "
+                    "not a single line of text"
+                ),
+            )
+
         if looks_like_locus_label(text):
             # Gate 1. The measured failure: 988 of 2,977 DRB1 bindings were the
             # next row's label, reported as this patient's allele.
@@ -355,7 +448,42 @@ def resolve_locus(
                 ),
             )
 
+        if not vocabulary.covers(locus):
+            # An unchecked value must never be presented as a checked one.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=f"no first-field vocabulary for {locus}; cannot check the value",
+            )
+        if not vocabulary.is_admissible(locus, value.first_field):
+            # Gate 5. The recognizer's commonest surviving error is a leading
+            # `0` read as `8` or `9` (`A*83`, `DRB1*93`). Both readings are
+            # clean digits, so no repair and no geometric gate can see it.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=(
+                    f"{value.first_field!r} is not an allele family of {locus} "
+                    f"in IMGT {vocabulary.imgt_version}"
+                ),
+            )
+
         parsed.append(value)
+
+    beyond = _value_beyond_the_chain(boxes, anchor, found, rule)
+    if beyond is not None:
+        return LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=anchor,
+            value_boxes=found,
+            reason="an allele-shaped box sits on this row beyond the chain; "
+            "the second allele may have been cut off",
+        )
 
     return LocusResolution(
         locus,
@@ -364,4 +492,46 @@ def resolve_locus(
         anchor_box=anchor,
         value_boxes=found,
         parsed_values=parsed,
+        # One value read is not homozygosity: it is one value read.
+        second_allele=SecondAllele.READ if len(parsed) >= 2 else SecondAllele.UNREAD,
     )
+
+
+def resolve_document(
+    boxes: list[Box],
+    rule: ValueRule,
+    loci: tuple[str, ...] = DEFAULT_LOCI,
+    vocabulary: FirstFieldVocabulary | None = None,
+) -> dict[str, LocusResolution]:
+    """Resolve every locus on one document, enforcing exclusivity between them.
+
+    The last line of defence. Each locus is resolved independently and with no
+    memory of what another locus bound, so a box that passes every per-locus
+    gate can still be claimed twice — measured, three boxes were RESOLVED under
+    both DQA1 and DPA1. One box cannot be two genes' values, so when it happens
+    both readings are withdrawn rather than one being preferred.
+    """
+    vocabulary = vocabulary if vocabulary is not None else load_vocabulary()
+    results = {
+        locus: resolve_locus(boxes, locus, rule, vocabulary=vocabulary)
+        for locus in loci
+        if locus not in GROUPED_DRBX_GENES
+    }
+
+    owners: dict[int, list[str]] = {}
+    for locus, result in results.items():
+        if result.status is not ResolutionStatus.RESOLVED:
+            continue
+        for box in result.value_boxes:
+            owners.setdefault(id(box), []).append(locus)
+
+    contested = {locus for claims in owners.values() if len(claims) > 1 for locus in claims}
+    for locus in contested:
+        results[locus] = LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=results[locus].anchor_box,
+            value_boxes=results[locus].value_boxes,
+            reason="a value box on this document was bound by more than one locus",
+        )
+    return results
