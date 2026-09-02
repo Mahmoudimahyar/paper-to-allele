@@ -15,45 +15,26 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
   77% ≤640 px" counted 9,581 thumbnail copies (`_thumb (n).jpg`) as originals.
   Quality is still judged on pixel dimensions, never on filename (KI-007,
   HA-003), but low resolution is a small band, not the corpus.
-- **Extraction (ADR 0008, 2026-09-02).** The binding gates, glyph repair, grouped
-  DRB3/4/5 rule, role field and ABO cell are implemented and measured on the
-  corrected corpus. A/B/DRB1/DQB1 resolve on 9,411–10,967 documents each; the
-  DRB3/4/5 row yields 29,820 per-gene facts against 3 before. **These
-  laboratories print DQA1/DPA1/DPB1 rows and leave them blank (KI-013)**, so the
-  archive supports DR/DQB matching and not DP.
-- **Accuracy status: still unvalidated (KI-012).** Every figure above is a yield
-  or an internal-consistency rate. No extracted value has been compared to a
-  human reading. The golden corpus is drawn (199 documents, thumbnail-free) and
-  unlabelled; labelling it is the next binding constraint and the only route out
-  of `BLOCKED_BY_BENCHMARK` for OCR-001.
+- **Extraction pipeline is built and measured (2026-09-02).** ADR 0008 plus the
+  skeptical review's P0, P1, P2 and P7. `scripts/extract_facts.py` runs the whole
+  corpus in about a minute into `data/derived/facts.sqlite`: **90,735 resolved
+  facts** with provenance, 83,499 review items. Every fact records its anchor
+  box, value boxes, raw text, repair flag, rule id and the engine and IMGT
+  versions. Detail and evidence: `ADR 0008`, and
+  `docs/ingestion/EXTRACTION_REVIEW_2026-09-02.md` sections 3a and 4.
+- **Two form facts that constrain the product.** These laboratories print
+  DQA1/DPA1/DPB1 rows and leave them blank (KI-013), so the archive supports
+  DR/DQB matching and not DP. The dominant letterhead disclaims its own
+  blood-group field as patient-reported (KI-014).
 - Donor/recipient role is read from the form's own printed field, never from a
-  whole-page word search, which would invert it on hundreds of documents. Plan of
-  record: `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`.
-- **Skeptical review of ADR 0008 done (2026-09-02):** 42 findings, 39 confirmed by
-  independent refuters, 16 wrong-fact class. The biggest: a single resolved allele
-  is treated as complete while the second allele sits just past `max_gap` on 6,597
-  cells (KI-015); no nomenclature gate (KI-016). Ranked fix plan and the next
-  accuracy gains (Yekta per-family rule, template-discovery rewrite to 63% coverage,
-  labelling tool, Tesseract confirmer at 86% agreement, constrained CTC decode):
-  `docs/ingestion/EXTRACTION_REVIEW_2026-09-02.md` section 4.
-- **P0 and P7 of that plan are DONE (2026-09-02).** Every wrong-fact class is
-  closed and the pipeline is assembled: `scripts/extract_facts.py` runs 23,566
-  documents in 48 s into `data/derived/facts.sqlite` (79,912 resolved facts,
-  94,322 review items, full provenance). Nomenclature-impossible values 480 → 0,
-  double-bound boxes 3 → 0, consistency false flags 1,315 → 0. Next in order:
-  **P2 template discovery rewrite → P1 Yekta per-family rule → P3 label the
-  golden corpus.** P1 and P2 change what the golden set scores, so they come
-  before labelling.
-- **P1 and P2 are now DONE too (2026-09-02).** Template discovery rewritten
-  (`kidneymatch.ocr.templates`): coverage 707 → 12,300 documents in three
-  printed forms, by fitting a similarity transform to a signature of
-  form-printed labels only. The per-family rule reads the whole row band and
-  requires each value to print its own locus, a property measured per family at
-  99.8–99.9%: two-allele cells 24,983 → 39,511 and single-allele cells 3,800 →
-  95 on the assigned documents, with impossible families and double-bound boxes
-  still zero. `data/derived/facts.sqlite` now holds 90,735 resolved facts.
-  **Next: P3 — build the labelling tool and label the golden corpus.** That is
-  the only route out of `BLOCKED_BY_BENCHMARK` (KI-012).
+  whole-page word search, which would invert it on hundreds of documents.
+- **Accuracy is still unvalidated (KI-012), and this is the binding
+  constraint.** Every figure above is a yield or an internal-consistency rate;
+  no extracted value has been compared to a human reading. **Next: P3 — build
+  the labelling tool and label the golden corpus** (199 documents, thumbnail-free,
+  about 1,650 cells). It is the only route out of `BLOCKED_BY_BENCHMARK` for
+  OCR-001. Then P4 (Tesseract confirmer), P5 (constrained CTC decode), P6
+  (PCR-SSP form).
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.
