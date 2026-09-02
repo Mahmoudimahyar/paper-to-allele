@@ -160,8 +160,23 @@ a regression. `scripts/extract_facts.py` now assembles the pipeline and writes
 `data/derived/facts.sqlite` — 79,912 resolved facts with provenance over 23,566
 documents in 48 seconds.
 
-**Open: P1 to P6 below**, in that order. P1 and P2 change what the golden corpus
-will be scoring, so they come before labelling.
+**P1 and P2 are also done.** Template discovery was rewritten around a
+signature of form-printed labels and a similarity fit, lifting coverage from 707
+to 12,300 documents in three printed forms; building it reproduced the very
+fragmentation being fixed, when greedy agglomeration split one form into nine
+prototypes that were then mutually ambiguous. The per-family rule reads the
+whole row band and requires each value to print its own locus, measured at
+99.8–99.9% per family:
+
+| on the 12,300 assigned documents | default rule | family rule |
+|---|---|---|
+| resolved cells | 28,783 | **39,606** |
+| two-allele cells | 24,983 | **39,511** |
+| single-allele cells | 3,800 | **95** |
+| impossible families / double-bound boxes | 0 / 0 | **0 / 0** |
+
+**Open: P3 to P6 below.** P3 is the binding constraint: nothing is validated
+until the golden corpus is labelled.
 
 ## 4. How to make it better — the plan, ranked by harm per hour
 

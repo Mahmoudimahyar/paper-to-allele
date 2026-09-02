@@ -44,6 +44,16 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
   **P2 template discovery rewrite → P1 Yekta per-family rule → P3 label the
   golden corpus.** P1 and P2 change what the golden set scores, so they come
   before labelling.
+- **P1 and P2 are now DONE too (2026-09-02).** Template discovery rewritten
+  (`kidneymatch.ocr.templates`): coverage 707 → 12,300 documents in three
+  printed forms, by fitting a similarity transform to a signature of
+  form-printed labels only. The per-family rule reads the whole row band and
+  requires each value to print its own locus, a property measured per family at
+  99.8–99.9%: two-allele cells 24,983 → 39,511 and single-allele cells 3,800 →
+  95 on the assigned documents, with impossible families and double-bound boxes
+  still zero. `data/derived/facts.sqlite` now holds 90,735 resolved facts.
+  **Next: P3 — build the labelling tool and label the golden corpus.** That is
+  the only route out of `BLOCKED_BY_BENCHMARK` (KI-012).
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.
