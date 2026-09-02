@@ -21,7 +21,9 @@
       "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
       "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md",
       "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
-      "docs/ingestion/OCR_ENGINE_BENCHMARK_2026-09-01.md"
+      "docs/ingestion/OCR_ENGINE_BENCHMARK_2026-09-01.md",
+      "docs/architecture/decisions/0006-ocr-cascade-architecture.md",
+      "docs/architecture/decisions/0007-template-registry-stores-relations-not-coordinates.md"
     ],
     "matching": [
       "docs/clinical/MATCHING_POLICY_V1.md",
@@ -56,7 +58,9 @@
       "docs/architecture/decisions/0002-cross-agent-instructions.md",
       "docs/architecture/decisions/0003-repo-memory.md",
       "docs/architecture/decisions/0004-low-resolution-historical-media.md",
-      "docs/architecture/decisions/0005-separate-generator-and-reviewer.md"
+      "docs/architecture/decisions/0005-separate-generator-and-reviewer.md",
+      "docs/architecture/decisions/0006-ocr-cascade-architecture.md",
+      "docs/architecture/decisions/0007-template-registry-stores-relations-not-coordinates.md"
     ]
   }
 }

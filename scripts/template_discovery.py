@@ -73,7 +73,7 @@ def load(db: Path):
             gx0, gx1 = int(np.clip(x0 * GRID, 0, GRID - 1)), int(np.clip(x1 * GRID, 0, GRID - 1))
             gy0, gy1 = int(np.clip(y0 * GRID, 0, GRID - 1)), int(np.clip(y1 * GRID, 0, GRID - 1))
             grid[gy0 : gy1 + 1, gx0 : gx1 + 1] += 1.0
-            match = LOCUS_RE.search(text or "")
+            match = LOCUS_RE.match((text or "").strip())
             if match:
                 i = LOCI.index(match.group(1).upper())
                 if not seen[i]:

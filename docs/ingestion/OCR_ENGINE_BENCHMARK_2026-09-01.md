@@ -333,7 +333,7 @@ clustering never saw**.
 | documents with ≥2 located loci | 20,057 |
 | distinct locus-presence patterns | 160 |
 | candidate families | 59 |
-| **VERIFIED single templates** | **5**, covering 1,571 documents |
+| **VERIFIED single templates** | **11**, covering 2,479 documents (after the label-only fix below) |
 
 The dominant presence pattern is `DRB1+DRB3+DQB1` (25.3%), then
 `DRB1+DRB3+DRB4+DQB1` (14.3%).
@@ -393,3 +393,30 @@ documents. Two measured decisions:
 Measured ~2,000–2,700 ms/image on the unique set (higher than the 686 ms seen
 earlier, because the unique set is ~1,280 px rather than ~520 px). Full pass
 ≈ 12–15 h, resumable, GPU-bound so it leaves the CPU free.
+
+
+## CORRECTION (2026-09-02): the locus regex matched values, not labels
+
+`DRB1` also matches the `DRB1` inside `DRB1*11`. Measured over 33,048
+documents this inflates apparent presence by **5.18x for DRB1** and **5.15x for
+DQB1**.
+
+Two different consequences, and they must not be conflated:
+
+- **The corpus claim survives.** "Does this archive contain DQ typing?" is
+  legitimately answered by a value token, so *DQ data is present on about half of
+  unique images* still holds.
+- **The template signature did not survive.** It placed the "locus position"
+  wherever a patient-specific value fell rather than where the form prints its
+  label. Corrected to `^(?:HLA[-\s]?)?<LOCUS>$`; the family set changed from 5
+  covering 1,571 documents to 11 covering 2,479. **Do not quote the earlier
+  figures.**
+
+See ADR 0007, which also retires the absolute-cell-box registry design: within one
+otherwise-clean family the `DRB4` label sits in two different columns and layout
+geometry provably cannot separate the variants, so an absolute box would bind the
+wrong locus for ~40% of members.
+
+Also measured: **cluster sizes overstate template prevalence by ~2x** (16,571
+documents with >=4 allele tokens collapse to 7,764 distinct fingerprints; 71.7%
+share one). Report families by effective sample size.
