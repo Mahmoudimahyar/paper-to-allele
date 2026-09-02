@@ -31,6 +31,7 @@
         "BOOT-001"
       ],
       "context": [
+        "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
         "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md",
         "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md",
         "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
@@ -66,6 +67,7 @@
         "HIST-001"
       ],
       "context": [
+        "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
         "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md",
         "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md",
         "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
@@ -90,6 +92,7 @@
         "HIST-001"
       ],
       "context": [
+        "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
         "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md",
         "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
       ],
@@ -125,6 +128,7 @@
         "HLA similarity alone never merges people"
       ],
       "context": [
+        "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
         "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md"
       ]
     },

@@ -4,6 +4,19 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-004 — Iranian histocompatibility practice must be confirmed
+- **Needed by:** V1-MATCH; blocks freezing the matching spec.
+- **Why:** The matching design is grounded in OPTN (US), EFI and Eurotransplant
+  (EU) standards and WHO nomenclature. **No Iranian standard was consulted.**
+  If Iranian practice differs on which loci are typed, how mismatches are
+  counted, or how serology is reported, it outranks all of the above.
+- **Decision required:** confirm with an Iranian transplant immunologist which
+  loci are routinely typed, at what resolution, and how mismatch is counted
+  locally. Also confirm whether the archive's lab families (Yekta, Basir,
+  Gholhak, Razi) report serologic or molecular types.
+- **Secret?** No.
+- **Blocking now?** Blocks V1-MATCH spec freeze. Does not block MVP-HIST.
+
 ### HA-003 — Low-resolution threshold for mandatory human review
 - **Needed by:** MEDIA-001, and every downstream OCR acceptance decision.
 - **Why now:** The real archive contains **zero** thumbnail-only assets, but 77%
