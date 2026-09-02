@@ -141,8 +141,23 @@ class ValueRule:
 
     direction: Direction
     align_overlap: float
-    max_gap: float
+    max_gap: float | None
     max_values: int
+
+    # A per-family alternative to the overlap test, in anchor heights. A form's
+    # rows sit a fixed pitch apart (3.8 anchor heights on the dominant
+    # letterhead), so half that pitch is the natural band, and it admits values
+    # boxed half a line above their label that the overlap test alone drops.
+    # `None` keeps the overlap test as the only criterion.
+    centre_band: float | None = None
+
+    # Require a value to print its own locus. On the dominant form 99.9% of
+    # values do, and demanding it is what makes reading the whole row band
+    # without a distance cap safe: the second allele column sits 8-25 anchor
+    # heights away, so a cap cuts it off, while a bare number anywhere on that
+    # band could be anything. Forms that do not print the locus keep the
+    # default, where a bare value is legitimate.
+    require_prefix: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,10 +211,14 @@ def _aligned(anchor: Box, box: Box, rule: ValueRule) -> bool:
     if rule.direction == "right":
         overlap = min(anchor.y1, box.y1) - max(anchor.y0, box.y0)
         shorter = min(anchor.height, max(box.y1 - box.y0, 1e-6))
+        centres = abs(box.centre_y - anchor.centre_y)
     else:
         overlap = min(anchor.x1, box.x1) - max(anchor.x0, box.x0)
         shorter = min(max(anchor.x1 - anchor.x0, 1e-6), max(box.x1 - box.x0, 1e-6))
-    return overlap / shorter >= rule.align_overlap
+        centres = abs(box.centre_x - anchor.centre_x)
+    if overlap / shorter >= rule.align_overlap:
+        return True
+    return rule.centre_band is not None and centres <= rule.centre_band * anchor.height
 
 
 def _distance(anchor: Box, box: Box, direction: Direction) -> float:
@@ -217,7 +236,7 @@ def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
     enough to also reach into the next column, which is exactly how a value gets
     bound to the wrong locus.
     """
-    limit = rule.max_gap * anchor.height
+    limit = None if rule.max_gap is None else rule.max_gap * anchor.height
 
     def aligned(box: Box) -> bool:
         return _aligned(anchor, box, rule)
@@ -237,7 +256,7 @@ def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
     edge = anchor.x1 if rule.direction == "right" else anchor.y1
     for box in ahead:
         start = box.x0 if rule.direction == "right" else box.y0
-        if start - edge > limit:
+        if limit is not None and start - edge > limit:
             break  # the chain is broken; anything further belongs to another cell
         found.append(box)
         edge = box.x1 if rule.direction == "right" else box.y1
@@ -433,6 +452,21 @@ def resolve_locus(
                 anchor_box=anchor,
                 value_boxes=found,
                 reason=f"candidate {text!r} does not parse as an allele value",
+            )
+
+        if rule.require_prefix and value.locus_prefix is None:
+            # This family prints the locus on every value, so a bare number on
+            # the row band is not one of its values. Without the distance cap
+            # that this requirement replaces, accepting it would bind anything
+            # on the line.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=(
+                    f"this form prints the locus on every value, and {text!r} does not name one"
+                ),
             )
 
         if value.locus_prefix is not None and value.locus_prefix != locus:

@@ -1,34 +1,26 @@
 #!/usr/bin/env python3
-"""Discover candidate laboratory template families from extracted geometry.
+"""Find the printed forms in the corpus, and assign every document to one.
 
-A template family is a recurring lab form layout. Finding them is a prerequisite
-for the template registry, which is what supplies the LOCUS for each cell. This
-script proposes candidates; it does not author cell boxes and it never assigns a
-locus to a value.
+The previous version assigned **707 of 23,485** documents to a verified family
+while one laboratory alone accounts for about two thirds of the corpus. The
+skeptical review of ADR 0008 diagnosed why, and `kidneymatch.ocr.templates`
+carries the fix and the evidence: the signature counted the grouped DRB3/4/5
+row's VALUES as form labels, so one form split by genotype, and it clustered in
+absolute page coordinates, which fragments a form photographed by hand.
 
-Method, in three steps:
+The method here:
 
-1. **Locus-position signature.** For each document, the normalized centre of the
-   box containing each unambiguous locus label (`DRB1`, `DRB3`, `DRB4`, `DRB5`,
-   `DQA1`, `DQB1`, `DPA1`, `DPB1`). Where a form prints its loci is far more
-   discriminative than generic ink density, and it is exactly the information the
-   registry needs. Single-letter loci (`A`, `B`, `C`) are excluded: they match
-   too much incidental text to be trusted.
+1. **Signature** from labels the form prints in a fixed place only.
+2. **Prototypes** from documents that carry every one of those labels, grouped
+   by their layout in a scale-and-offset-free comparison.
+3. **Assignment** of any document with at least three labels by fitting a
+   similarity transform to each prototype, refusing ties.
 
-2. **Group by presence pattern, then cluster by position.** Which loci a form
-   reports is itself a strong fingerprint and needs no geometry. Within each
-   pattern, HDBSCAN over the label coordinates separates forms that report the
-   same loci but lay them out differently.
+A document that matches nothing stays unassigned and gets the default relation.
+That is the safe outcome: claiming a family would apply that family's authored
+cell rule to a layout it was never measured on.
 
-3. **Verify against an INDEPENDENT signal.** A cluster found in locus-position
-   space must also be tight in layout-occupancy space, which the clustering never
-   saw. A cluster that is not is a MIXTURE, and hand-authoring cell boxes against
-   a mixture would map cells to the wrong locus on part of the family — the exact
-   failure the OCR spec forbids. Verified clusters are the only ones eligible for
-   registry authoring.
-
-Output: `data/derived/template_families.json` (gitignored; it references PHI
-images by hash and path).
+Output: `data/derived/template_families.json` (gitignored — it lists PHI images).
 """
 
 from __future__ import annotations
@@ -36,184 +28,219 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
-
-import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from kidneymatch.ocr.glyphs import canonical_locus_label  # noqa: E402
+from kidneymatch.hla.vocabulary import load_vocabulary  # noqa: E402
+from kidneymatch.ocr.anchors import ResolutionStatus, ValueRule, resolve_document  # noqa: E402
 from kidneymatch.ocr.store import read_corpus  # noqa: E402
+from kidneymatch.ocr.templates import (  # noqa: E402
+    CONSTANT_LABELS,
+    MAX_RESIDUAL,
+    MIN_LABELS,
+    Assignment,
+    LayoutPrototype,
+    assign_prototype,
+    constant_label_positions,
+    fit_similarity,
+)
 
 DEFAULT_DB = ROOT / "data/derived/ocr_pass.sqlite"
 DEFAULT_OUT = ROOT / "data/derived/template_families.json"
 
-LOCI = ["DRB1", "DRB3", "DRB4", "DRB5", "DQA1", "DQB1", "DPA1", "DPB1"]
+# A prototype is only worth authoring a rule against if enough documents share
+# it; below this a "family" is a handful of photographs, not a printed form.
+MIN_PROTOTYPE_MEMBERS = 100
 
-GRID = 16  # layout-occupancy resolution, used only for verification
-MIN_GROUP = 200  # smallest presence group worth clustering
-MIN_CLUSTER = 60  # smallest cluster worth proposing as a family
-TIGHT_SD = 0.035  # mean coordinate sd below which a cluster is geometrically tight
-MIN_LIFT = 0.10  # coherence lift over baseline required to call it a template
-MIN_MODAL_SHARE = 0.70  # each locus label must sit in one modal position
+# The conservative default relation, used only to sample which values a family
+# binds so the prefix property can be measured without assuming it.
+PROBE_RULE = ValueRule(direction="right", align_overlap=0.2, max_gap=20.0, max_values=2)
 
 
-def load(db: Path):
-    """Layout signatures over the corpus.
+def _normalised(positions: dict[str, tuple[float, float]]) -> dict[str, tuple[float, float]]:
+    """Put a document's labels in a frame of its own, so scale and offset drop out."""
+    xs = [x for x, _ in positions.values()]
+    ys = [y for _, y in positions.values()]
+    cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
+    spread = (
+        sum((x - cx) ** 2 + (y - cy) ** 2 for x, y in positions.values()) / len(positions)
+    ) ** 0.5
+    if spread <= 1e-12:
+        return {}
+    return {locus: ((x - cx) / spread, (y - cy) / spread) for locus, (x, y) in positions.items()}
 
-    Reads through `kidneymatch.ocr.store`, so thumbnail copies are excluded
-    (KI-009), and identifies locus labels with `glyphs.canonical_locus_label`,
-    which repairs the recognizer's final-character confusions. The earlier
-    version used neither: it clustered 9,581 thumbnails alongside originals and
-    saw `DRB1` on 3,511 documents instead of 16,025, because the label is read
-    `DRBI` more often than correctly. Both figures in the previous family set
-    are therefore superseded.
+
+def _mean_positions(
+    group: list[dict[str, tuple[float, float]]],
+) -> dict[str, tuple[float, float]]:
+    """The form's own label positions: the mean over the documents that share it."""
+    summed: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for positions in group:
+        for locus, point in positions.items():
+            summed[locus].append(point)
+    return {
+        locus: (
+            sum(p[0] for p in points) / len(points),
+            sum(p[1] for p in points) / len(points),
+        )
+        for locus, points in summed.items()
+    }
+
+
+def build_prototypes(complete: list[dict[str, tuple[float, float]]]) -> list[LayoutPrototype]:
+    """Group fully-labelled documents into printed forms.
+
+    Greedy agglomeration in the normalised frame: a document either fits a
+    prototype already found, or starts a new one. Simpler than a density
+    clustering and, unlike one, it cannot label a document as noise merely
+    because its neighbours were photographed at other distances.
     """
-    keys, pos, occ = [], [], []
-    for doc in read_corpus(db, with_boxes_only=True):
-        centres = np.full((len(LOCI), 2), -1.0, dtype=np.float32)
-        seen = np.zeros(len(LOCI), dtype=np.float32)
-        grid = np.zeros((GRID, GRID), dtype=np.float32)
-        for box in doc.boxes:
-            x0, y0, x1, y1 = box.x0, box.y0, box.x1, box.y1
-            gx0, gx1 = int(np.clip(x0 * GRID, 0, GRID - 1)), int(np.clip(x1 * GRID, 0, GRID - 1))
-            gy0, gy1 = int(np.clip(y0 * GRID, 0, GRID - 1)), int(np.clip(y1 * GRID, 0, GRID - 1))
-            grid[gy0 : gy1 + 1, gx0 : gx1 + 1] += 1.0
-            locus = canonical_locus_label(box.text or "")
-            if locus in LOCI:
-                i = LOCI.index(locus)
-                if not seen[i]:
-                    centres[i] = ((x0 + x1) / 2, (y0 + y1) / 2)
-                    seen[i] = 1.0
+    prototypes: list[LayoutPrototype] = []
+    members: list[list[dict[str, tuple[float, float]]]] = []
 
-        if seen.sum() < 2:
+    for positions in complete:
+        normalised = _normalised(positions)
+        if not normalised:
             continue
-        flat = grid.ravel()
-        norm = np.linalg.norm(flat)
-        if norm == 0:
+        placed = False
+        for index, prototype in enumerate(prototypes):
+            fit = fit_similarity(normalised, prototype)
+            if fit is not None and fit.residual <= 0.02:
+                members[index].append(normalised)
+                placed = True
+                break
+        if not placed:
+            prototypes.append(LayoutPrototype.from_positions(f"T{len(prototypes)}", normalised))
+            members.append([normalised])
+
+    # Merge prototypes that are the SAME printed form.
+    #
+    # Greedy agglomeration at a tight threshold splits one form into several
+    # seeds, exactly the fragmentation this rewrite exists to fix: measured, the
+    # first version produced nine prototypes whose mutual residuals were 0.012
+    # to 0.046, i.e. within the tolerance used to assign documents. Every
+    # document then fitted two or more of them and was refused as ambiguous —
+    # 4,096 of them. Two prototypes that fit each other are one form.
+    groups = [list(group) for group in members]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(groups)):
+            if not groups[i]:
+                continue
+            for j in range(i + 1, len(groups)):
+                if not groups[j]:
+                    continue
+                a = LayoutPrototype.from_positions("a", _mean_positions(groups[i]))
+                fit = fit_similarity(_mean_positions(groups[j]), a)
+                if fit is not None and fit.residual <= MAX_RESIDUAL:
+                    groups[i].extend(groups[j])
+                    groups[j] = []
+                    merged = True
+    refined: list[LayoutPrototype] = []
+    for index, group in enumerate(g for g in groups if g):
+        if len(group) < MIN_PROTOTYPE_MEMBERS:
             continue
-        keys.append(doc.sha256)
-        pos.append(np.concatenate([centres.ravel(), seen]))
-        occ.append(flat / norm)
-
-    return keys, np.asarray(pos, np.float32), np.asarray(occ, np.float32)
-
-
-def coherence(occ: np.ndarray, rows: np.ndarray, rng: np.random.Generator) -> float | None:
-    """Mean pairwise cosine similarity in layout space — the independent check."""
-    if len(rows) < 20:
-        return None
-    sel = rng.choice(rows, min(300, len(rows)), replace=False)
-    v = occ[sel]
-    v = v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
-    sim = v @ v.T
-    n = len(sim)
-    return float((sim.sum() - n) / (n * n - n))
-
-
-def anchor_purity(pos: np.ndarray, rows: np.ndarray, pat: np.ndarray) -> dict:
-    """Do the members print each locus label in ONE place, or in several?
-
-    Layout coherence is necessary but NOT sufficient. Measured on this corpus, a
-    family of 1,034 documents that passes every coherence test prints its DRB4
-    label in two different columns 0.285 apart, and the layout signature cannot
-    separate the variants. Authoring one cell box there would bind the wrong
-    locus for ~40% of members (ADR 0007).
-
-    This test finds that: it bins each locus's x positions and reports the share
-    held by the largest mode. A strong second mode means two sub-templates.
-    """
-    worst_locus, worst_share = None, 1.0
-    for i, present in enumerate(pat):
-        if not present:
-            continue
-        xs = pos[rows][:, 2 * i]
-        xs = xs[xs >= 0]
-        if len(xs) < 20:
-            continue
-        hist, _ = np.histogram(xs, bins=np.arange(0, 1.02, 0.02))
-        share = float(hist.max() / hist.sum()) if hist.sum() else 1.0
-        if share < worst_share:
-            worst_share, worst_locus = share, LOCI[i]
-    return {"modal_share": round(worst_share, 3), "weakest_locus": worst_locus}
+        refined.append(LayoutPrototype.from_positions(f"FORM#{index}", _mean_positions(group)))
+    return refined
 
 
 def discover(db: Path, out: Path) -> int:
-    from sklearn.cluster import HDBSCAN
-
-    keys, pos, occ = load(db)
-    print(f"documents with >=2 located loci: {len(keys):,}")
-    presence = pos[:, len(LOCI) * 2 :] > 0
-    rng = np.random.default_rng(0)
-
-    patterns: dict[bytes, np.ndarray] = {}
-    for i, row in enumerate(presence):
-        patterns.setdefault(row.tobytes(), []).append(i)
-    big = {k: np.asarray(v) for k, v in patterns.items() if len(v) >= MIN_GROUP}
-    print(f"presence patterns: {len(patterns):,} total, {len(big)} with >={MIN_GROUP} documents\n")
-
-    families = []
-    for pat_bytes, rows in sorted(big.items(), key=lambda kv: -len(kv[1])):
-        pat = np.frombuffer(pat_bytes, dtype=bool)
-        name = "+".join(loc for loc, f in zip(LOCI, pat, strict=True) if f)
-        cols = [c for i, f in enumerate(pat) if f for c in (2 * i, 2 * i + 1)]
-        sub = pos[rows][:, cols]
-
-        labels = HDBSCAN(
-            min_cluster_size=MIN_CLUSTER, min_samples=10, cluster_selection_epsilon=0.02, copy=True
-        ).fit_predict(sub)
-        base = coherence(occ, rows, rng)
-        if base is None:
-            continue
-
-        for cluster in sorted(set(labels[labels >= 0])):
-            member_rows = rows[labels == cluster]
-            sd = float(sub[labels == cluster].std(axis=0).mean())
-            coh = coherence(occ, member_rows, rng)
-            if coh is None:
-                continue
-            lift = coh - base
-            purity = anchor_purity(pos, member_rows, pat)
-            verified = bool(
-                lift >= MIN_LIFT and sd <= TIGHT_SD and purity["modal_share"] >= MIN_MODAL_SHARE
-            )
-            families.append(
-                {
-                    "family_id": f"{name}#{cluster}",
-                    "presence_pattern": name,
-                    "n_documents": int(len(member_rows)),
-                    "position_sd": round(sd, 4),
-                    "layout_coherence": round(coh, 3),
-                    "baseline_coherence": round(base, 3),
-                    "coherence_lift": round(lift, 3),
-                    "anchor_modal_share": purity["modal_share"],
-                    "weakest_anchor_locus": purity["weakest_locus"],
-                    "verified_single_template": verified,
-                    "sha256": [keys[i] for i in member_rows],
-                }
-            )
-
-    families.sort(key=lambda f: (-f["verified_single_template"], -f["n_documents"]))
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(families, indent=2), encoding="utf-8", newline="\n")
-
-    verified = [f for f in families if f["verified_single_template"]]
-    print(f"{'family':<26}{'docs':>7}{'pos sd':>8}{'lift':>7}{'modal':>7}{'weak':>7}  verdict")
-    for f in families[:20]:
-        verdict = (
-            "VERIFIED single template" if f["verified_single_template"] else "candidate / mixture"
-        )
-        print(
-            f"{f['family_id']:<26}{f['n_documents']:>7,}{f['position_sd']:>8.4f}"
-            f"{f['coherence_lift']:>+7.3f}{f['anchor_modal_share']:>7.2f}"
-            f"{(f['weakest_anchor_locus'] or '-'):>7}  {verdict}"
-        )
-    print(f"\ntotal candidate families : {len(families)}")
+    vocabulary = load_vocabulary()
+    documents = list(read_corpus(db, with_boxes_only=True))
+    positions = {doc.sha256: constant_label_positions(doc.boxes) for doc in documents}
+    complete = [p for p in positions.values() if len(p) == len(CONSTANT_LABELS)]
+    print(f"documents: {len(documents):,}")
+    print(f"  with every form label   : {len(complete):,}")
     print(
-        f"VERIFIED single templates: {len(verified)}  "
-        f"covering {sum(f['n_documents'] for f in verified):,} documents"
+        f"  with >= {MIN_LABELS} form labels : "
+        f"{sum(1 for p in positions.values() if len(p) >= MIN_LABELS):,}\n"
     )
+
+    prototypes = build_prototypes(complete)
+    print(f"prototypes found (>= {MIN_PROTOTYPE_MEMBERS} members): {len(prototypes)}\n")
+
+    assigned: dict[str, Assignment] = {}
+    for doc in documents:
+        assignment = assign_prototype(doc.boxes, prototypes)
+        if assignment is not None:
+            assigned[doc.sha256] = assignment
+
+    by_prototype: dict[str, list[str]] = defaultdict(list)
+    residuals: dict[str, list[float]] = defaultdict(list)
+    for sha, assignment in assigned.items():
+        by_prototype[assignment.prototype_id].append(sha)
+        residuals[assignment.prototype_id].append(assignment.residual)
+
+    # Does this form print the locus on every value? That property, not the
+    # distance, is what makes reading a whole row band safe, so it is measured
+    # per family rather than assumed. `extract_facts.py` reads this flag.
+    # Measured over values actually BOUND in a locus cell, not over every
+    # parseable box on the page: a page carries dates, sample numbers and table
+    # entries that parse as values and never name a locus, and counting those
+    # put the share at 65% when the property being tested is about the form's
+    # value cells.
+    prefixed: dict[str, list[int]] = defaultdict(list)
+    for doc in documents:
+        assignment = assigned.get(doc.sha256)
+        if assignment is None:
+            continue
+        for result in resolve_document(doc.boxes, PROBE_RULE, vocabulary=vocabulary).values():
+            if result.status is not ResolutionStatus.RESOLVED:
+                continue
+            for value in result.parsed_values:
+                prefixed[assignment.prototype_id].append(int(value.locus_prefix is not None))
+
+    def prefix_share(family_id: str) -> float:
+        seen = prefixed.get(family_id) or []
+        return round(sum(seen) / len(seen), 4) if seen else 0.0
+
+    families = [
+        {
+            "family_id": prototype.prototype_id,
+            "prefix_share": prefix_share(prototype.prototype_id),
+            "prints_locus_on_values": prefix_share(prototype.prototype_id) >= 0.95,
+            "label_positions": {locus: list(point) for locus, point in prototype.positions.items()},
+            "n_documents": len(by_prototype[prototype.prototype_id]),
+            "median_residual": round(
+                sorted(residuals[prototype.prototype_id])[
+                    len(residuals[prototype.prototype_id]) // 2
+                ],
+                5,
+            )
+            if residuals[prototype.prototype_id]
+            else None,
+            "sha256": sorted(by_prototype[prototype.prototype_id]),
+        }
+        for prototype in prototypes
+        if by_prototype[prototype.prototype_id]
+    ]
+    families.sort(key=lambda f: -f["n_documents"])
+
+    payload = {
+        "version": 2,
+        "method": "constant-label signature, similarity fit, ties refused",
+        "constant_labels": list(CONSTANT_LABELS),
+        "n_documents": len(documents),
+        "n_assigned": len(assigned),
+        "families": families,
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+    print(f"{'family':<10}{'documents':>11}{'median residual':>18}{'locus on values':>18}")
+    for family in families:
+        print(
+            f"{family['family_id']:<10}{family['n_documents']:>11,}"
+            f"{family['median_residual']!s:>18}{family['prefix_share']:>17.1%}"
+        )
+    share = 100 * len(assigned) / max(len(documents), 1)
+    print(f"\nassigned: {len(assigned):,} of {len(documents):,} ({share:.1f}%)")
+    label_counts = Counter(len(p) for p in positions.values())
+    print(f"unassigned by label count: {dict(sorted(label_counts.items()))}")
     print(f"written to {out.relative_to(ROOT)}")
     return 0
 

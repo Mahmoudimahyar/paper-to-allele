@@ -29,27 +29,61 @@ def test_template_discovery_excludes_single_letter_loci() -> None:
     recognizer's final-character confusions, and refuses a bare class I letter.
     """
     from kidneymatch.ocr.glyphs import canonical_locus_label
+    from kidneymatch.ocr.templates import CONSTANT_LABELS
 
     mod = load("template_discovery")
-    assert mod.LOCI == ["DRB1", "DRB3", "DRB4", "DRB5", "DQA1", "DQB1", "DPA1", "DPB1"]
     assert not hasattr(mod, "LOCUS_RE"), "the value-matching regex must not come back"
+    assert not hasattr(mod, "LOCI"), "the signature is defined by CONSTANT_LABELS now"
     for stray in ("A", "B", "C", "CW", "DRB1*11"):
-        assert canonical_locus_label(stray) not in mod.LOCI
+        assert canonical_locus_label(stray) not in CONSTANT_LABELS
     for real in ("DRB1", "DQB1", "DPA1", "HLA-DPBI"):
-        assert canonical_locus_label(real) in mod.LOCI
+        assert canonical_locus_label(real) in CONSTANT_LABELS
+    # DRB3/4/5 are excluded on purpose: on this corpus they are almost always
+    # the grouped row's VALUES, and counting them split one form by genotype.
+    for gene in ("DRB3", "DRB4", "DRB5"):
+        assert gene not in CONSTANT_LABELS
 
 
-def test_a_family_is_only_verified_when_an_independent_signal_agrees() -> None:
-    """Verification must use layout coherence, not the space it clustered in.
+def test_a_family_is_only_claimed_when_the_page_identifies_it() -> None:
+    """Assigning a document to the wrong form applies that form's authored rule
+    to a layout it was never measured on.
 
-    Authoring cell boxes against a mixture would map cells to the wrong locus on
-    part of the family - the failure OCR_SPEC forbids.
+    The mechanism changed with the discovery rewrite: coherence lift over an
+    absolute-coordinate clustering is gone, because clustering in page space is
+    what fragmented one form into position blobs. What replaces it must still
+    refuse rather than guess, so this asserts each guard.
     """
+    from kidneymatch.ocr import templates
+
+    # A fit has to be good, judged as a fraction of the form's own extent.
+    assert 0 < templates.MAX_RESIDUAL < 0.2
+    # Two points determine a scale and an offset exactly, so any pair "fits".
+    assert templates.MIN_LABELS >= 3
+    # A second form fitting nearly as well means the page does not identify one.
+    assert templates.AMBIGUITY_MARGIN > 1.0
+
     mod = load("template_discovery")
-    src = (ROOT / "scripts/template_discovery.py").read_text(encoding="utf-8")
-    assert "coherence_lift" in src and "verified_single_template" in src
-    assert mod.MIN_LIFT > 0, "verification must require a positive coherence lift"
-    assert mod.TIGHT_SD > 0
+    source = (ROOT / "scripts/template_discovery.py").read_text(encoding="utf-8")
+    # Prototypes that fit each other are one form; not merging them made every
+    # document ambiguous against its own family.
+    assert "MAX_RESIDUAL" in source and "prints_locus_on_values" in source
+    assert mod.MIN_PROTOTYPE_MEMBERS > 1
+
+
+def test_the_family_rule_is_gated_on_a_measured_property() -> None:
+    """The per-family rule reads a whole row band with no distance cap.
+
+    What makes that safe is that the form prints the locus on every value, so it
+    must be MEASURED per family rather than assumed, and the rule must apply
+    only where the measurement holds.
+    """
+    extract = load("extract_facts")
+    assert extract.FAMILY_RULE.require_prefix is True
+    assert extract.FAMILY_RULE.max_gap is None
+    assert extract.DEFAULT_RULE.require_prefix is False
+    assert extract.DEFAULT_RULE.max_gap is not None
+    source = (ROOT / "scripts/extract_facts.py").read_text(encoding="utf-8")
+    assert "prints_locus_on_values" in source
 
 
 def test_golden_sample_includes_strata_that_can_measure_false_acceptance() -> None:

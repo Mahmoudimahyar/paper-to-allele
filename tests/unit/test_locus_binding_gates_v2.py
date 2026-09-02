@@ -207,3 +207,57 @@ def test_resolve_document_never_asks_for_the_drbx_genes() -> None:
     results = resolve_document([DRB1, at(0.22, "11")], rule=ROW)
     assert "DRB3" not in results and "DRB4" not in results and "DRB5" not in results
     assert "DRB1" in results
+
+
+# --- P1: a per-family rule (ADR 0007 registry) ---------------------------
+
+FAMILY_RULE = ValueRule(
+    direction="right",
+    align_overlap=0.2,
+    max_gap=None,
+    max_values=2,
+    centre_band=1.9,
+    require_prefix=True,
+)
+
+
+def test_a_family_rule_reaches_the_second_column_with_no_distance_cap() -> None:
+    """On the dominant form the second allele column sits 8-25 label heights
+    away, so a distance cap cuts it off for about a quarter of rows.
+
+    What makes removing the cap safe is the prefix requirement below, not the
+    distance: 99.9% of this form's values print their own locus.
+    """
+    far = at(0.80, "DRB1*15")
+    result = resolve([DRB1, at(0.22, "DRB1*11"), far], rule=FAMILY_RULE)
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.values == ["DRB1*11", "DRB1*15"]
+    assert result.second_allele is SecondAllele.READ
+
+
+def test_a_family_rule_refuses_a_value_that_does_not_name_its_locus() -> None:
+    """Without a distance cap, a bare number anywhere on the row band could be
+    anything. The form prints the locus on every value, so a bare one is not
+    this form's value."""
+    result = resolve([DRB1, at(0.80, "11")], rule=FAMILY_RULE)
+    assert result.status is ResolutionStatus.REVIEW_REQUIRED
+    assert "prefix" in result.reason.lower() or "name" in result.reason.lower()
+
+
+def test_the_default_rule_still_accepts_a_bare_value() -> None:
+    """Forms that do not print the locus on each value must keep working."""
+    assert resolve([DRB1, at(0.22, "11")]).status is ResolutionStatus.RESOLVED
+
+
+def test_a_centre_band_admits_a_value_the_overlap_test_alone_would_drop() -> None:
+    """Values are boxed half a line above their label; on a form whose rows are
+    3.8 label heights apart, half a row pitch is the natural band."""
+    high = Box(x0=0.22, y0=0.4550, x1=0.28, y1=0.4850, text="DRB1*11")
+    result = resolve([DRB1, high], rule=FAMILY_RULE)
+    assert result.status is ResolutionStatus.RESOLVED
+
+
+def test_the_centre_band_still_stops_at_the_next_row() -> None:
+    next_row = Box(x0=0.22, y0=0.62, x1=0.28, y1=0.65, text="DRB1*11")
+    result = resolve([DRB1, next_row], rule=FAMILY_RULE)
+    assert result.status is not ResolutionStatus.RESOLVED

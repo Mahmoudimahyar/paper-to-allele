@@ -64,13 +64,32 @@ from kidneymatch.ocr.anchors import (  # noqa: E402
 )
 from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx  # noqa: E402
 from kidneymatch.ocr.store import read_corpus  # noqa: E402
+from kidneymatch.ocr.templates import LayoutPrototype, assign_prototype  # noqa: E402
 
 EXTRACTION_VERSION = "facts/v1"
 
-# The default relation (ADR 0008). Per-family rules are authored in the registry
-# and will override this; the numbers here must be validated against the golden
-# corpus rather than tuned by yield.
+# The default relation (ADR 0008), used for any document whose form is not
+# recognised. The numbers must be validated against the golden corpus rather
+# than tuned by yield.
 DEFAULT_RULE = ValueRule(direction="right", align_overlap=0.2, max_gap=20.0, max_values=2)
+
+# The relation for a recognised form that prints the locus on every value
+# (ADR 0007's per-family registry). The second allele column sits 8-25 anchor
+# heights away, so the default cap cuts it off on about a quarter of rows; what
+# makes reading the whole row band safe instead is the prefix requirement, and
+# `template_discovery.py` measures that property per family rather than assuming
+# it (99.8-99.9% on the three forms found). Measured over the 12,300 assigned
+# documents against the default: resolved cells 28,783 -> 39,606, two-allele
+# cells 24,983 -> 39,511, single-allele cells 3,800 -> 95, with impossible
+# families and double-bound boxes both still zero.
+FAMILY_RULE = ValueRule(
+    direction="right",
+    align_overlap=0.2,
+    max_gap=None,
+    max_values=2,
+    centre_band=1.9,
+    require_prefix=True,
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fact (
@@ -98,6 +117,7 @@ CREATE TABLE IF NOT EXISTS document (
     extraction_version TEXT NOT NULL,
     rel_path           TEXT NOT NULL,
     quality_band       TEXT,
+    family             TEXT,
     comparison_sheet   INTEGER NOT NULL DEFAULT 0,
     consistency        TEXT,
     consistency_reason TEXT,
@@ -146,11 +166,51 @@ def persian_boxes(db: Path) -> dict[str, list[Box]]:
     return out
 
 
-def extract(document, persian: list[Box], vocabulary, now: str) -> tuple[list[tuple], dict]:
+def load_families(path: Path) -> tuple[list[LayoutPrototype], set[str]]:
+    """The printed forms found by `template_discovery.py`, and which of them
+    print the locus on every value."""
+    if not path.exists():
+        return [], set()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    prototypes = [
+        LayoutPrototype.from_positions(
+            family["family_id"],
+            {locus: (point[0], point[1]) for locus, point in family["label_positions"].items()},
+        )
+        for family in payload.get("families", [])
+    ]
+    prefixed = {
+        family["family_id"]
+        for family in payload.get("families", [])
+        if family.get("prints_locus_on_values")
+    }
+    return prototypes, prefixed
+
+
+def extract(
+    document,
+    persian: list[Box],
+    vocabulary,
+    now: str,
+    prototypes: list[LayoutPrototype] | None = None,
+    prefixed_families: set[str] | None = None,
+) -> tuple[list[tuple], dict]:
     """Every fact this document yields. Pure: no I/O, so it is testable."""
     latin = document.boxes
     rows: list[tuple] = []
     comparison = is_comparison_sheet(latin)
+
+    # Which printed form is this? An unrecognised one gets the conservative
+    # default; claiming a family would apply its authored cell rule to a layout
+    # it was never measured on.
+    assignment = assign_prototype(latin, prototypes or [])
+    family = assignment.prototype_id if assignment else None
+    rule = (
+        FAMILY_RULE
+        if family is not None and family in (prefixed_families or set())
+        else DEFAULT_RULE
+    )
+    rule_id = f"family/{family}" if rule is FAMILY_RULE else "ADR0008/default-row-rule"
 
     def add(field, status, **kwargs):
         rows.append(
@@ -175,7 +235,7 @@ def extract(document, persian: list[Box], vocabulary, now: str) -> tuple[list[tu
             )
         )
 
-    loci = resolve_document(latin, DEFAULT_RULE, vocabulary=vocabulary)
+    loci = resolve_document(latin, rule, vocabulary=vocabulary)
     for locus, result in loci.items():
         status = result.status
         reason = result.reason
@@ -194,7 +254,7 @@ def extract(document, persian: list[Box], vocabulary, now: str) -> tuple[list[tu
                 result.second_allele.value if status is ResolutionStatus.RESOLVED else None
             ),
             reason=reason,
-            rule_id="ADR0008/default-row-rule",
+            rule_id=rule_id,
             anchor_box=_box(result.anchor_box),
             value_boxes=_boxes(result.value_boxes),
         )
@@ -270,6 +330,7 @@ def extract(document, persian: list[Box], vocabulary, now: str) -> tuple[list[tu
 
     summary = {
         "rel_path": document.rel_path,
+        "family": family,
         "quality_band": document.quality_band.value,
         "comparison_sheet": int(comparison),
         "consistency": consistency.value,
@@ -279,7 +340,9 @@ def extract(document, persian: list[Box], vocabulary, now: str) -> tuple[list[tu
     return rows, summary
 
 
-def run(src: Path, persian_db: Path, out: Path, limit: int | None, batch: int) -> int:
+def run(
+    src: Path, persian_db: Path, families_db: Path, out: Path, limit: int | None, batch: int
+) -> int:
     vocabulary = load_vocabulary()
     con = connect(out)
     done = {
@@ -290,6 +353,11 @@ def run(src: Path, persian_db: Path, out: Path, limit: int | None, batch: int) -
     }
     print(f"loading Persian geometry from {persian_db.name} ...", flush=True)
     persian = persian_boxes(persian_db)
+    prototypes, prefixed = load_families(families_db)
+    print(
+        f"printed forms known: {len(prototypes)} ({len(prefixed)} print the locus on values)",
+        flush=True,
+    )
     work = [d for d in read_corpus(src) if d.sha256 not in done]
     if limit:
         work = work[:limit]
@@ -305,7 +373,9 @@ def run(src: Path, persian_db: Path, out: Path, limit: int | None, batch: int) -
 
     for index, document in enumerate(work, 1):
         now = datetime.now(UTC).isoformat(timespec="seconds")
-        rows, summary = extract(document, persian.get(document.sha256, []), vocabulary, now)
+        rows, summary = extract(
+            document, persian.get(document.sha256, []), vocabulary, now, prototypes, prefixed
+        )
         facts.extend(rows)
         documents.append(
             (
@@ -313,6 +383,7 @@ def run(src: Path, persian_db: Path, out: Path, limit: int | None, batch: int) -
                 EXTRACTION_VERSION,
                 summary["rel_path"],
                 summary["quality_band"],
+                summary["family"],
                 summary["comparison_sheet"],
                 summary["consistency"],
                 summary["consistency_reason"],
@@ -323,12 +394,15 @@ def run(src: Path, persian_db: Path, out: Path, limit: int | None, batch: int) -
         for row in rows:
             tally[row[3]] += 1
         tally["comparison_sheets"] += summary["comparison_sheet"]
+        tally["family_rule" if summary["family"] else "default_rule"] += 1
 
         if len(documents) >= batch or index == len(work):
             con.executemany(
                 "INSERT OR REPLACE INTO fact VALUES (" + ",".join("?" * 17) + ")", facts
             )
-            con.executemany("INSERT OR REPLACE INTO document VALUES (?,?,?,?,?,?,?,?,?)", documents)
+            con.executemany(
+                "INSERT OR REPLACE INTO document VALUES (?,?,?,?,?,?,?,?,?,?)", documents
+            )
             con.commit()
             facts.clear()
             documents.clear()
@@ -346,6 +420,8 @@ def run(src: Path, persian_db: Path, out: Path, limit: int | None, batch: int) -
         if tally[status]:
             print(f"  {status:<18}{tally[status]:>9,}")
     print(f"  comparison sheets {tally['comparison_sheets']:>9,}")
+    print(f"  by family rule    {tally['family_rule']:>9,}")
+    print(f"  by default rule   {tally['default_rule']:>9,}")
     print(f"written to {out.relative_to(ROOT)}")
     return 0
 
@@ -374,6 +450,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", type=Path, default=ROOT / "data/derived/ocr_pass.sqlite")
     parser.add_argument("--persian", type=Path, default=ROOT / "data/derived/persian_pass.sqlite")
+    parser.add_argument(
+        "--families", type=Path, default=ROOT / "data/derived/template_families.json"
+    )
     parser.add_argument("--out", type=Path, default=ROOT / "data/derived/facts.sqlite")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=1000)
@@ -384,7 +463,7 @@ def main() -> int:
     if not args.src.exists():
         print(f"missing {args.src}; run scripts/ocr_pass.py first")
         return 2
-    return run(args.src, args.persian, args.out, args.limit, args.batch_size)
+    return run(args.src, args.persian, args.families, args.out, args.limit, args.batch_size)
 
 
 if __name__ == "__main__":
