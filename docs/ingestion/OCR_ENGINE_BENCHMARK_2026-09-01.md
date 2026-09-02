@@ -570,6 +570,17 @@ of the exposure. Raised as a human decision, not applied unilaterally.
 
 # Anchor-based locus resolution (ADR 0007) — measured on the corpus
 
+> **SUPERSEDED 2026-09-02 — do not quote the rates below.** A shape audit showed
+> that under the `below` rule the resolver was binding the *next row's locus
+> label* as the value (DRB1: 185 value-shaped vs 988 label-shaped bindings;
+> DPA1/DPB1: zero value-shaped). "The layout is columnar" was wrong: the form is
+> a vertical stack of row labels with values to the right, and the recognizer
+> reads the trailing `1` of labels as `I`, which hid most anchors. The 33,048
+> denominator also includes 9,581 thumbnail copies (KI-009). Corrected
+> measurements and the fix plan: `ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`
+> (§2.2) and KI-010. The section is kept as the record of what was tried.
+
+
 `src/kidneymatch/ocr/anchors.py`, driven by `scripts/resolve_loci.py`.
 
 ## The layout is columnar, not row-based

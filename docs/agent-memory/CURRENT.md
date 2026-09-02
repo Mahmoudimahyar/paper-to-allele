@@ -1,6 +1,6 @@
 # Current project state
 
-**Updated:** 2026-09-01
+**Updated:** 2026-09-02
 **Canonical phase:** MVP-HIST
 **Active task:** HIST-001
 **Active plan:** `docs/exec-plans/active/MVP-HIST-001-bootstrap-ingestion.md`
@@ -10,7 +10,17 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
 
 ## Locked facts
 - **The real archive is present**, local-only and gitignored, at `data/raw/ChatExport_2026-08-31`: 178,660 files, 7.0 GB, 183,897 messages, 145,697 photos. Measured figures: `docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md`.
-- Images are low resolution (median longest edge **520 px**, 77% ≤640 px) — but **not** because thumbnails replaced missing originals. Every asset has its original; there are **zero** thumbnail-only assets. Quality must therefore be judged on pixel dimensions, not on a `_thumb` filename. See KI-007 and HA-003; this is a safety gate, not a cosmetic detail.
+- **Corrected 2026-09-02 (KI-009):** the archive holds **23,566 unique original
+  images, 90% above 900 px and 0.4% at ≤560 px.** The earlier "median 520 px,
+  77% ≤640 px" counted 9,581 thumbnail copies (`_thumb (n).jpg`) as originals.
+  Quality is still judged on pixel dimensions, never on filename (KI-007,
+  HA-003), but low resolution is a small band, not the corpus.
+- **Accuracy status (2026-09-02):** no extracted value has been validated against
+  ground truth; the anchor resolver's earlier resolve rates bound the wrong token
+  (KI-010). Plan of record: `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`
+  — P0 data integrity → P1 resolver correctness → P3 golden labelling before any
+  batch extraction. Donor/recipient role is decidable for 80.5% of typing reports
+  from the form's own printed field plus captions; the rest is `UNKNOWN_ROLE`.
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.

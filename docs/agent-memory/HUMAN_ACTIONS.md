@@ -50,6 +50,25 @@ Never put secret values in this file.
 - **Secret?** No.
 - **Blocking now?** Blocks MEDIA-001 completion. Does NOT block HIST-001, which
   performs no quality classification.
+- **STATUS 2026-09-02: premise corrected.** The "77% at ~520 px" figure counted
+  9,581 thumbnail *copies* (`_thumb (n).jpg`) as originals (KI-009). True
+  distribution of the 23,566 unique originals: 90.0% >900 px, 9.7% 561–900 px,
+  0.4% ≤560 px. The decision is still needed — for the 561–900 px band and for
+  the `_thumb.jpg` the export carries for every photo — but it is no longer the
+  dominant accuracy risk. See `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`.
+
+### HA-006 — py-ard / IMGT version conflict
+- **Needed by:** HLA validation gate (P2 of the accuracy review), OCR-001.
+- **Why now:** `HLA_VALIDATION_SPEC.md` pins IMGT/HLA 3.65, but the locked
+  `py-ard` is 1.5.5 (`>=1,<2`) and `init(imgt_version="3650")` fails with
+  `IndexError` (3640 too, per the research pass); `3620` loads. Verified on this
+  machine 2026-09-02 (KI-011).
+- **Decision required:** (a) pin IMGT 3620 with the locked library and amend the
+  spec, or (b) raise the `py-ard` constraint to a 2.x release, update the OSS
+  register and lockfile, and re-test 3650. The agent must not change a spec pin
+  or a major dependency version silently.
+- **Secret?** No.
+- **Blocking now?** Blocks P2 (nomenclature validation) only; P0/P1 proceed.
 
 ### HA-001 — Local archive path (only when running real MVP-HIST ingestion)
 - **Needed by:** HIST-001 real-data smoke test

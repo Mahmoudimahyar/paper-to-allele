@@ -84,16 +84,26 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def is_original_photo(name: str) -> bool:
+    """True for an original photo file; False for any thumbnail.
+
+    The export writes `photo_N@date_thumb.jpg` next to each original AND, when
+    the same thumbnail is written again, Windows-style copies named
+    `photo_N@date_thumb (2).jpg`. A suffix test on `_thumb.jpg` let 9,581 of
+    those copies through as "originals" and they became 29% of the OCR pass,
+    the whole "low-resolution tail", and 54 of 199 golden-sample documents.
+    Every one of them has its original on disk. Test on the substring.
+    """
+    return name.endswith(".jpg") and "_thumb" not in name
+
+
 def unique_originals(export: Path) -> list[tuple[str, Path]]:
     """(sha256, path) for one representative of each distinct original photo."""
     photos = export / "photos"
     seen: dict[str, Path] = {}
     with os.scandir(photos) as it:
         for entry in it:
-            if not entry.is_file():
-                continue
-            name = entry.name
-            if not name.endswith(".jpg") or name.endswith("_thumb.jpg"):
+            if not entry.is_file() or not is_original_photo(entry.name):
                 continue
             digest = sha256_file(Path(entry.path))
             seen.setdefault(digest, Path(entry.path))
