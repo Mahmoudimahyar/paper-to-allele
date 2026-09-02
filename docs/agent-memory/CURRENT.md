@@ -45,7 +45,9 @@ synthetic Persian lab-form generator, DB constraint tests, Playwright/axe UI
 tests. See `docs/operations/TEST_PLAN.md` section 10 for the honest layer list.
 
 ## Current blockers
-None for HIST-001. The human must provide a local Telegram export path when running against real data, but tests use synthetic fixtures.
+None for HIST-001. Verified from a clean clone: the 12-step gate passes, the
+parser dependencies (bs4/lxml) import, the fixture corpus and DOM reference are
+present, and `context_pack.py --task HIST-001` surfaces both. The human must provide a local Telegram export path when running against real data, but tests use synthetic fixtures.
 
 ## Next actions
 1. **Implement HIST-001 test-first.** The fixture corpus, the DOM reference and the acceptance command all exist. Write one failing test per spec invariant (`python scripts/invariant_lint.py` lists the five HIST-001 owns), then the parser.
