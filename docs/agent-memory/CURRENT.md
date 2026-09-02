@@ -35,8 +35,15 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
   cells (KI-015); no nomenclature gate (KI-016). Ranked fix plan and the next
   accuracy gains (Yekta per-family rule, template-discovery rewrite to 63% coverage,
   labelling tool, Tesseract confirmer at 86% agreement, constrained CTC decode):
-  `docs/ingestion/EXTRACTION_REVIEW_2026-09-02.md` section 4. **Do P0 before
-  labelling — it changes what the golden set scores.**
+  `docs/ingestion/EXTRACTION_REVIEW_2026-09-02.md` section 4.
+- **P0 and P7 of that plan are DONE (2026-09-02).** Every wrong-fact class is
+  closed and the pipeline is assembled: `scripts/extract_facts.py` runs 23,566
+  documents in 48 s into `data/derived/facts.sqlite` (79,912 resolved facts,
+  94,322 review items, full provenance). Nomenclature-impossible values 480 → 0,
+  double-bound boxes 3 → 0, consistency false flags 1,315 → 0. Next in order:
+  **P2 template discovery rewrite → P1 Yekta per-family rule → P3 label the
+  golden corpus.** P1 and P2 change what the golden set scores, so they come
+  before labelling.
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.

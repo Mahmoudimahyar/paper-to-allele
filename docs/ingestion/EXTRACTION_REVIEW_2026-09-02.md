@@ -140,6 +140,29 @@ correct data · **N** floods review · **Q** code, tests, drift.
 - Post-hoc repair vs a grammar-constrained re-decode of the crops: **0 of 785**
   vocabulary-valid repaired DRB1 values changed (rule of three: <0.38%).
 
+## 3a. Implementation status (2026-09-02)
+
+**P0 and P7 are done** (commits `c851fae`, `40d93ef`, `6509d6c`). Every
+wrong-fact class in section 2.1 is closed, together with the review-noise
+findings and the script and test defects. Measured after the fixes:
+
+| | before | after |
+|---|---|---|
+| nomenclature-impossible resolved values | 480 | **0** |
+| value boxes bound by two loci | 3 | **0** |
+| consistency flags on one-value DRB1 rows | 1,315 false | **0** |
+| documents correctly marked patient-reported ABO | 421 | **1,714** |
+| DRB3/4/5 PRESENT facts | 17,480 | **18,674** |
+| half-genotypes published as complete | 6,597 | **0** (routed to review) |
+
+Total resolved locus cells fall 44,002 → 36,416; every cell lost is a catch, not
+a regression. `scripts/extract_facts.py` now assembles the pipeline and writes
+`data/derived/facts.sqlite` — 79,912 resolved facts with provenance over 23,566
+documents in 48 seconds.
+
+**Open: P1 to P6 below**, in that order. P1 and P2 change what the golden corpus
+will be scoring, so they come before labelling.
+
 ## 4. How to make it better — the plan, ranked by harm per hour
 
 Effort in agent-days (A) and human hours (H). Every magnitude below was measured
