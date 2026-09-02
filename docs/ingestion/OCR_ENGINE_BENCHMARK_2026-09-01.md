@@ -420,3 +420,37 @@ wrong locus for ~40% of members.
 Also measured: **cluster sizes overstate template prevalence by ~2x** (16,571
 documents with >=4 allele tokens collapse to 7,764 distinct fingerprints; 71.7%
 share one). Report families by effective sample size.
+
+
+## The anchor-purity gate (2026-09-02) — and what it cost
+
+ADR 0007 argued that layout coherence is necessary but not sufficient. Adding the
+**anchor-purity** test — does each locus label sit in ONE modal position across a
+family's members? — changes the answer substantially:
+
+| gate | verified families | documents |
+|---|---|---|
+| coherence + tight geometry | 11 | 2,479 |
+| **+ anchor purity (modal share >= 0.70)** | **5** | **613** |
+
+The families it rejected are exactly the predicted failure:
+
+| family | docs | pos sd | coherence lift | modal share | weakest locus |
+|---|---|---|---|---|---|
+| `DRB1+DRB3+DQB1#9` | 606 | 0.0205 | **+0.179** | **0.60** | DRB1 |
+| `DRB1+DRB3+DRB4+DQB1#2` | 528 | 0.0605 | +0.022 | **0.22** | **DRB4** |
+| `DRB1+DRB3+DQB1#3` | 215 | 0.0841 | −0.042 | **0.14** | DRB3 |
+
+`DRB1+DRB3+DQB1#9` has excellent geometry (sd 0.0205) and a strong coherence lift
+(+0.179) — **it would have passed the old gate** — yet its `DRB1` label occupies
+one position in only 60% of members. An absolute cell box there binds the wrong
+locus for the other 40%.
+
+`DRB4` recurs as the weakest anchor across several families, which is precisely
+the two-column variant ADR 0007 describes.
+
+**Only 613 documents currently sit in families where every locus label reliably
+occupies one position.** That is a much smaller base than the earlier numbers
+implied, and it is the honest one. It also strengthens the case for the
+relation-based registry: per-document anchoring does not need a family to be
+positionally uniform at all.

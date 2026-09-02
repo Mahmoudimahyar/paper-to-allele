@@ -53,6 +53,7 @@ MIN_GROUP = 200  # smallest presence group worth clustering
 MIN_CLUSTER = 60  # smallest cluster worth proposing as a family
 TIGHT_SD = 0.035  # mean coordinate sd below which a cluster is geometrically tight
 MIN_LIFT = 0.10  # coherence lift over baseline required to call it a template
+MIN_MODAL_SHARE = 0.70  # each locus label must sit in one modal position
 
 
 def load(db: Path):
@@ -106,6 +107,34 @@ def coherence(occ: np.ndarray, rows: np.ndarray, rng: np.random.Generator) -> fl
     return float((sim.sum() - n) / (n * n - n))
 
 
+
+def anchor_purity(pos: np.ndarray, rows: np.ndarray, pat: np.ndarray) -> dict:
+    """Do the members print each locus label in ONE place, or in several?
+
+    Layout coherence is necessary but NOT sufficient. Measured on this corpus, a
+    family of 1,034 documents that passes every coherence test prints its DRB4
+    label in two different columns 0.285 apart, and the layout signature cannot
+    separate the variants. Authoring one cell box there would bind the wrong
+    locus for ~40% of members (ADR 0007).
+
+    This test finds that: it bins each locus's x positions and reports the share
+    held by the largest mode. A strong second mode means two sub-templates.
+    """
+    worst_locus, worst_share = None, 1.0
+    for i, present in enumerate(pat):
+        if not present:
+            continue
+        xs = pos[rows][:, 2 * i]
+        xs = xs[xs >= 0]
+        if len(xs) < 20:
+            continue
+        hist, _ = np.histogram(xs, bins=np.arange(0, 1.02, 0.02))
+        share = float(hist.max() / hist.sum()) if hist.sum() else 1.0
+        if share < worst_share:
+            worst_share, worst_locus = share, LOCI[i]
+    return {"modal_share": round(worst_share, 3), "weakest_locus": worst_locus}
+
+
 def discover(db: Path, out: Path) -> int:
     from sklearn.cluster import HDBSCAN
 
@@ -141,7 +170,12 @@ def discover(db: Path, out: Path) -> int:
             if coh is None:
                 continue
             lift = coh - base
-            verified = bool(lift >= MIN_LIFT and sd <= TIGHT_SD)
+            purity = anchor_purity(pos, member_rows, pat)
+            verified = bool(
+                lift >= MIN_LIFT
+                and sd <= TIGHT_SD
+                and purity["modal_share"] >= MIN_MODAL_SHARE
+            )
             families.append(
                 {
                     "family_id": f"{name}#{cluster}",
@@ -151,6 +185,8 @@ def discover(db: Path, out: Path) -> int:
                     "layout_coherence": round(coh, 3),
                     "baseline_coherence": round(base, 3),
                     "coherence_lift": round(lift, 3),
+                    "anchor_modal_share": purity["modal_share"],
+                    "weakest_anchor_locus": purity["weakest_locus"],
                     "verified_single_template": verified,
                     "sha256": [keys[i] for i in member_rows],
                 }
@@ -161,14 +197,15 @@ def discover(db: Path, out: Path) -> int:
     out.write_text(json.dumps(families, indent=2), encoding="utf-8", newline="\n")
 
     verified = [f for f in families if f["verified_single_template"]]
-    print(f"{'family':<28}{'docs':>8}{'pos sd':>9}{'lift':>8}  verdict")
+    print(f"{'family':<26}{'docs':>7}{'pos sd':>8}{'lift':>7}{'modal':>7}{'weak':>7}  verdict")
     for f in families[:20]:
         verdict = (
             "VERIFIED single template" if f["verified_single_template"] else "candidate / mixture"
         )
         print(
-            f"{f['family_id']:<28}{f['n_documents']:>8,}{f['position_sd']:>9.4f}"
-            f"{f['coherence_lift']:>+8.3f}  {verdict}"
+            f"{f['family_id']:<26}{f['n_documents']:>7,}{f['position_sd']:>8.4f}"
+            f"{f['coherence_lift']:>+7.3f}{f['anchor_modal_share']:>7.2f}"
+            f"{(f['weakest_anchor_locus'] or '-'):>7}  {verdict}"
         )
     print(f"\ntotal candidate families : {len(families)}")
     print(
