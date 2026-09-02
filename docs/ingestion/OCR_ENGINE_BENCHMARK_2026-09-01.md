@@ -501,3 +501,66 @@ character (0x08)**, which is invisible in an editor, passes lint, and makes the
 regex match nothing. It was caught only by checking that the fingerprint count
 matched an earlier standalone measurement. **Verify that a new filter actually
 fires, rather than trusting that it ran.**
+
+
+---
+
+# Persian pass complete (2026-09-02) — and an honest accounting
+
+| | |
+|---|---|
+| reports processed | **20,201** |
+| failures | **0** |
+| Persian characters | **3,842,648** |
+| mean | 1,834 ms/image |
+| wall clock | **~10.2 h**, GPU |
+| documents with no Persian at all | 147 (0.7%) |
+
+Metadata field cues present, as a share of the 20,201 reports:
+
+| cue | documents | share |
+|---|---|---|
+| name | 8,875 | 43.9% |
+| doctor | 6,831 | 33.8% |
+| laboratory | 5,900 | 29.2% |
+| date | 5,165 | 25.6% |
+| sample | 358 | 1.8% |
+| national ID | 304 | 1.5% |
+
+## What the Persian pass actually bought
+
+Comparing the two passes per document, over the same 20,201 reports:
+
+| signal | Latin pass | Persian pass | union | **gain from Persian** |
+|---|---|---|---|---|
+| laboratory marker | 14,052 | 6,563 | 14,057 | **+5** |
+| date pattern | 12,422 | — | 12,782 | +360 |
+| Persian name cue | 0 | 8,875 | 8,875 | **+8,875** |
+
+**The Persian pass bought exactly one thing: patient name fields.** Laboratory
+names are printed in Latin, so the Latin pass already had them — Persian added
+**five** documents. Dates gained 360. Everything else was already there.
+
+Ten GPU-hours for one field. That is worth stating plainly, and it is worth
+weighing before repeating this on future archives: if names are not needed, the
+Persian pass is close to unnecessary.
+
+## A governance question this raises
+
+The one field the Persian pass uniquely unlocks — the patient name — is
+simultaneously:
+
+- the **highest-PII** field in the archive,
+- **useful for entity resolution** (linking one person's repeated posts), and
+- **irrelevant to HLA matching**, which needs no name at all.
+
+`PRODUCT_CONSTITUTION.md` §4 keeps direct identifiers hidden until a connection is
+mutually approved, and historical records stay unclaimed. Extracting 8,875 names
+into a derived store is defensible for deduplication, but it is a deliberate
+increase in the amount of identifiable data we hold, and it should be an explicit
+decision rather than a side effect of running an OCR pass.
+
+**Recommendation:** store the name only as a salted hash for entity-resolution
+matching, and keep the plaintext out of the derived store unless a reviewer
+workflow genuinely needs to read it. That preserves the dedup value at a fraction
+of the exposure. Raised as a human decision, not applied unilaterally.

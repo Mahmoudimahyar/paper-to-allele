@@ -17,6 +17,21 @@ Never put secret values in this file.
 - **Secret?** No.
 - **Blocking now?** Blocks V1-MATCH spec freeze. Does not block MVP-HIST.
 
+### HA-005 — Should patient names be stored in plaintext?
+- **Needed by:** entity resolution (ENTITY-001); affects what identifiable data we hold.
+- **Why:** The Persian pass extracted name-field cues from 8,875 reports. That
+  field is the highest-PII item in the archive, is useful for linking one
+  person's repeated posts, and is **irrelevant to HLA matching**. Comparing the
+  two passes, Persian added only +5 laboratory markers and +360 dates — names
+  were essentially its entire yield.
+- **Decision required:** store the name as a **salted hash** for matching only
+  (recommended — keeps the dedup value at a fraction of the exposure), or keep
+  plaintext because a reviewer workflow needs to read it. `PRODUCT_CONSTITUTION`
+  section 4 keeps direct identifiers hidden until mutual approval, so plaintext
+  storage should be a deliberate choice.
+- **Secret?** No, but the underlying data is PHI.
+- **Blocking now?** Blocks ENTITY-001 design. Not blocking MVP-HIST parsing.
+
 ### HA-003 — Low-resolution threshold for mandatory human review
 - **Needed by:** MEDIA-001, and every downstream OCR acceptance decision.
 - **Why now:** The real archive contains **zero** thumbnail-only assets, but 77%
