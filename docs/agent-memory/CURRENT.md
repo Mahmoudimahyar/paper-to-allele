@@ -46,6 +46,24 @@ Still blocked on code that does not exist: OCR golden/metamorphic tests, the
 synthetic Persian lab-form generator, DB constraint tests, Playwright/axe UI
 tests. See `docs/operations/TEST_PLAN.md` section 10 for the honest layer list.
 
+## Run in progress (2026-09-02)
+`scripts/ocr_pass.py` is extracting text + box geometry from all 33,147 unique
+originals. ~4.35 img/s, ETA ~2.1 h, output in gitignored
+`data/derived/ocr_pass.sqlite`.
+
+It is **resumable and idempotent** — just re-run the same command; completed
+SHA-256s are skipped:
+
+```bash
+uv run --frozen --extra hist --extra ocr python scripts/ocr_pass.py --batch-size 250
+uv run --frozen --extra hist --extra ocr python scripts/ocr_pass.py --status
+```
+
+This pass extracts text and geometry ONLY. It assigns no HLA locus — that needs
+the template registry, which needs the golden corpus. Its purpose is to unblock
+document classification, template discovery, and stratified sampling of the 200
+golden documents from the HLA stratum. See ADR 0006.
+
 ## Current blockers
 None for HIST-001. Verified from a clean clone: the 12-step gate passes, the
 parser dependencies (bs4/lxml) import, the fixture corpus and DOM reference are
