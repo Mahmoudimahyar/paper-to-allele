@@ -3,11 +3,14 @@
 **Reviewer:** Claude (Opus 5) · **Scope:** whole repository, before first product task
 **Verdict:** the *design* is strong; the *mechanism* is not yet built. Fix P0/P1 before the first long autonomous run.
 
-> **Status — 2026-09-01.** **P0 done** (commit `green baseline`) and **P1 done**
-> (commits `P1 autonomy batch` onward). `verify_repo.py` passes 8 mandatory steps
-> with 36 tests, from a fresh clone. P1 mechanisms are documented in
-> `OPERATOR_CONTROLS.md` and covered by `tests/contracts/test_hooks.py`.
-> **P2 (test depth) remains outstanding** and is the next batch.
+> **Status - 2026-09-01. P0, P1 and P2 are all done.**
+> `verify_repo.py` passes **12 mandatory steps** from a fresh clone, with 94
+> tests. P1 was adversarially audited and 8 confirmed defects fixed. P2 added
+> invariant->test traceability, property-based tests, a coverage gate (medical
+> modules at 100%), an Iranian PII scanner, and the security/mutation toolchain.
+> The repository is ready for HIST-001 implementation: see
+> `OPERATOR_CONTROLS.md`, `TEST_PLAN.md` section 10 for the honest per-layer
+> status, and `KNOWN_ISSUES.md` KI-005/KI-006 for residual limits.
 
 ## Evidence baseline (commands actually run)
 
