@@ -54,3 +54,10 @@ STEER.md
 
 # mutation testing workspace
 mutants/
+
+# Real historical archives, wherever they land. A Telegram export dropped at the
+# repo root is untracked but NOT ignored, and the Stop hook runs `git add -A`,
+# so without this a session ending commits real patient data.
+ChatExport_*/
+Telegram*Export*/
+*.tgs
