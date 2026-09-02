@@ -99,9 +99,7 @@ def report() -> dict[str, object]:
 def human_actions(data: dict[str, object]) -> list[str]:
     actions: list[str] = []
     if not data["python"]["ok"]:  # type: ignore[index]
-        actions.append(
-            "Create the pinned project environment: `uv sync --python 3.12 --extra dev`."
-        )
+        actions.append("Create the pinned project environment: `uv sync --python 3.12`.")
     commands = {x["name"]: x for x in data["commands"]}  # type: ignore[index]
     if not commands["git"]["present"]:
         actions.append("Install Git.")

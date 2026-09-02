@@ -49,7 +49,7 @@ def test_lockfile_exists() -> None:
     That rule is unenforceable without a lockfile, and OCR/HLA benchmarks are not
     comparable across sessions unless the dependency set is pinned.
     """
-    assert (ROOT / "uv.lock").is_file(), "uv.lock is missing; run `uv sync --extra dev`"
+    assert (ROOT / "uv.lock").is_file(), "uv.lock is missing; run `uv sync`"
 
 
 def test_repository_normalizes_line_endings() -> None:

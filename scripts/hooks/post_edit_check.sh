@@ -63,7 +63,7 @@ fi
 if [ "$status" -ne 0 ]; then
   {
     echo "post_edit_check: ruff could not run (exit $status). This is an environment"
-    echo "problem, NOT a lint error in $file. Try: uv sync --extra dev"
+    echo "problem, NOT a lint error in $file. Try: uv sync"
     printf '%s\n' "$remaining" | head -5
   } >&2
 fi

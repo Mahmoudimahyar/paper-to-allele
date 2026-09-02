@@ -32,14 +32,6 @@ web = [
   "psycopg[binary]>=3.2,<4",
   "django-allauth>=65,<66",
 ]
-dev = [
-  "pytest>=8,<9",
-  "pytest-cov>=6,<8",
-  "pytest-django>=4.11,<5",
-  "hypothesis>=6,<7",
-  "ruff>=0.12,<1",
-  "mypy>=1.17,<2",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kidneymatch"]
@@ -63,10 +55,19 @@ mypy_path = "src"
 packages = ["kidneymatch"]
 
 [dependency-groups]
+# Installed by default by `uv sync` / `uv run`. Kept as a PEP 735 group rather
+# than a `dev` extra so a fresh clone gets exactly what CI and the dev machine
+# get, with no --extra flag to forget.
 dev = [
-    "bandit[toml]>=1.8,<2",
-    "mutmut>=3.7,<4",
-    "pytest-randomly>=3.16,<4",
+  "bandit[toml]>=1.8,<2",
+  "hypothesis>=6,<7",
+  "mutmut>=3.7,<4",
+  "mypy>=1.17,<2",
+  "pytest-cov>=6,<8",
+  "pytest-django>=4.11,<5",
+  "pytest-randomly>=3.16,<4",
+  "pytest>=8,<9",
+  "ruff>=0.12,<1",
 ]
 
 [tool.coverage.run]

@@ -71,7 +71,7 @@ def main() -> int:
     if not USE_UV:
         print(
             "WARNING: running without `uv run --frozen`; tool versions may differ from CI. "
-            "Install uv and run `uv sync --extra dev` for a CI-identical result."
+            "Install uv and run `uv sync` for a CI-identical result."
         )
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
@@ -80,7 +80,7 @@ def main() -> int:
         tool = missing_tool(cmd)
         if tool is not None:
             print(f"FAIL: {label}")
-            print(f"  '{tool}' is not installed. Run `uv sync --extra dev`.")
+            print(f"  '{tool}' is not installed. Run `uv sync`.")
             print("verify_repo: FAIL (a required tool is missing; nothing was skipped)")
             return 127
 

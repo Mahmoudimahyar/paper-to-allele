@@ -200,14 +200,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "hypothesis" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-django" },
-    { name = "ruff" },
-]
 hist = [
     { name = "beautifulsoup4" },
     { name = "lxml" },
@@ -231,8 +223,14 @@ web = [
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
+    { name = "hypothesis" },
     { name = "mutmut" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-django" },
     { name = "pytest-randomly" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -240,29 +238,29 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'hist'", specifier = ">=4.12,<5" },
     { name = "django", marker = "extra == 'web'", specifier = ">=5.2,<5.3" },
     { name = "django-allauth", marker = "extra == 'web'", specifier = ">=65,<66" },
-    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6,<7" },
     { name = "imagehash", marker = "extra == 'image'", specifier = ">=4.3,<5" },
     { name = "lxml", marker = "extra == 'hist'", specifier = ">=5,<7" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.17,<2" },
     { name = "opencv-python-headless", marker = "extra == 'image'", specifier = ">=4.10,<5" },
     { name = "pillow", marker = "extra == 'image'", specifier = ">=11,<13" },
     { name = "polars", marker = "extra == 'hist'", specifier = ">=1,<2" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'web'", specifier = ">=3.2,<4" },
     { name = "py-ard", marker = "extra == 'hla'", specifier = ">=1,<2" },
     { name = "pydantic", specifier = ">=2.10,<3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6,<8" },
-    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.11,<5" },
     { name = "rapidfuzz", marker = "extra == 'hist'", specifier = ">=3,<4" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
 ]
-provides-extras = ["hist", "image", "hla", "web", "dev"]
+provides-extras = ["hist", "image", "hla", "web"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", extras = ["toml"], specifier = ">=1.8,<2" },
+    { name = "hypothesis", specifier = ">=6,<7" },
     { name = "mutmut", specifier = ">=3.7,<4" },
+    { name = "mypy", specifier = ">=1.17,<2" },
+    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pytest-cov", specifier = ">=6,<8" },
+    { name = "pytest-django", specifier = ">=4.11,<5" },
     { name = "pytest-randomly", specifier = ">=3.16,<4" },
+    { name = "ruff", specifier = ">=0.12,<1" },
 ]
 
 [[package]]
