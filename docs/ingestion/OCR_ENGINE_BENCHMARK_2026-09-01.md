@@ -289,3 +289,107 @@ median-stack/variance-map approach in `MVP_PLAN_REVIEW_2026-09-01.md` §3.5.
 
 Still not done here, by design: **no locus is assigned to any value.** That needs
 template geometry.
+
+
+---
+
+# Phase 2 — template discovery, golden sampling, Persian pass (2026-09-02)
+
+## A correction that changes the resolution picture
+
+I previously reported the archive's median longest edge as **520 px**. That is
+true of a random sample of **all 145,697 originals**, but it is **not** true of
+the 33,147 **unique** originals that are actually processed:
+
+| percentile | longest edge, UNIQUE originals |
+|---|---|
+| p10 | 520 px |
+| p25 | 520 px |
+| **p50** | **1,278 px** |
+| p75 | 1,280 px |
+| p90 | 1,280 px |
+
+Only **29.7%** of unique images are ≤640 px; **64.0%** exceed 900 px.
+
+The heavily-duplicated images — broker reposts, recompressed on each hop — are
+disproportionately low resolution, and exact-hash dedup removes them. The unique
+set is bimodal (a ~520 px cluster and a ~1,280 px cluster), not uniformly poor.
+**The OCR target is in materially better shape than the raw corpus implied.**
+
+This also means the 220-image engine benchmark above was run on a
+lower-resolution sample than production, because it sampled from all originals
+and deduped afterwards. Its relative ordering stands; its absolute difficulty is
+pessimistic.
+
+## Template family discovery
+
+`scripts/template_discovery.py`. Signature = the normalized position of each
+**unambiguous** locus label; group by which loci a form reports; cluster by
+position; then **verify against layout-occupancy coherence, a signal the
+clustering never saw**.
+
+| | |
+|---|---|
+| documents with ≥2 located loci | 20,057 |
+| distinct locus-presence patterns | 160 |
+| candidate families | 59 |
+| **VERIFIED single templates** | **5**, covering 1,571 documents |
+
+The dominant presence pattern is `DRB1+DRB3+DQB1` (25.3%), then
+`DRB1+DRB3+DRB4+DQB1` (14.3%).
+
+The verification step earns its place: of the eight largest clusters in the
+biggest group, two were mixtures (coherence lift +0.016 and −0.060) despite
+having 365 and 182 documents. **Hand-authoring cell boxes against those would
+have mapped cells to the wrong locus on part of the family.** Only the 5
+verified families are eligible for registry authoring.
+
+## Template discovery is strongly resolution-biased
+
+| band | share of corpus | share of verified-family docs | reaches a verified template |
+|---|---|---|---|
+| ≤560 px | 29.2% | **0.3%** | **0.05%** |
+| 561–900 px | 6.9% | 4.8% | 3.30% |
+| >900 px | 64.0% | 94.9% | 7.03% |
+
+A **~140× gap**. Low-resolution documents rarely produce enough clean locus
+labels to cluster, so they are nearly absent from the verified families. Left
+uncorrected, the golden corpus would certify the pipeline on the easy half of the
+archive and say nothing about the 9,666 low-resolution documents — which is
+exactly where the mandatory-review policy must hold. `golden_sample.py` therefore
+carries a dedicated `low_res_report` stratum.
+
+## Golden sample
+
+`scripts/golden_sample.py`, 200 documents:
+
+| stratum | docs | purpose |
+|---|---|---|
+| verified_template | 120 (61%) | certify each template's cell mapping; **equal** allocation across all 5 |
+| mixture_family | 40 (20%) | where matching should abstain |
+| low_res_report | 18 (9%) | the resolution tail the bias above would otherwise hide |
+| non_report | 20 (10%) | the only way to measure false acceptance |
+
+**The metric unit is the CELL, not the document.** A report carries several locus
+cells, so 200 documents is roughly 800 cells. By the rule of three, zero failures
+in n gives a 95% upper bound of 3/n, so ~800 cells bounds the error at ~0.375%,
+consistent with a ≥99.5% precision claim. **200 documents treated as 200
+observations would only bound it at 1.5% and could not support the claim.**
+Record cells labelled, not documents.
+
+## Persian pass
+
+`scripts/persian_pass.py`, EasyOCR `fa+en` on GPU, over the 20,201 report
+documents. Two measured decisions:
+
+- **It does its own detection.** Feeding it the stored Latin boxes is **1.4×
+  slower** (2,386 vs 1,688 ms) despite yielding 8.5% more Persian. Those boxes
+  are word-level from a Latin detector; Persian is cursive and line-level regions
+  are both cheaper and more faithful to connected script.
+- **Downscaling is not a lever.** At a 640 px cap it is only 21% faster but loses
+  **26%** of Persian characters. EasyOCR's cost tracks the number of detected
+  text regions, not the input size. Rejected.
+
+Measured ~2,000–2,700 ms/image on the unique set (higher than the 686 ms seen
+earlier, because the unique set is ~1,280 px rather than ~520 px). Full pass
+≈ 12–15 h, resumable, GPU-bound so it leaves the CPU free.

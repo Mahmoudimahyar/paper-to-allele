@@ -36,6 +36,7 @@ ocr = [
     "numpy>=2,<3",
     "onnxtr[cpu]>=0.9,<1",
     "pillow>=11,<13",
+    "scikit-learn>=1.5,<2",
 ]
 
 [tool.hatch.build.targets.wheel]

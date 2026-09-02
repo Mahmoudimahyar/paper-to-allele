@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Discover candidate laboratory template families from extracted geometry.
+
+A template family is a recurring lab form layout. Finding them is a prerequisite
+for the template registry, which is what supplies the LOCUS for each cell. This
+script proposes candidates; it does not author cell boxes and it never assigns a
+locus to a value.
+
+Method, in three steps:
+
+1. **Locus-position signature.** For each document, the normalized centre of the
+   box containing each unambiguous locus label (`DRB1`, `DRB3`, `DRB4`, `DRB5`,
+   `DQA1`, `DQB1`, `DPA1`, `DPB1`). Where a form prints its loci is far more
+   discriminative than generic ink density, and it is exactly the information the
+   registry needs. Single-letter loci (`A`, `B`, `C`) are excluded: they match
+   too much incidental text to be trusted.
+
+2. **Group by presence pattern, then cluster by position.** Which loci a form
+   reports is itself a strong fingerprint and needs no geometry. Within each
+   pattern, HDBSCAN over the label coordinates separates forms that report the
+   same loci but lay them out differently.
+
+3. **Verify against an INDEPENDENT signal.** A cluster found in locus-position
+   space must also be tight in layout-occupancy space, which the clustering never
+   saw. A cluster that is not is a MIXTURE, and hand-authoring cell boxes against
+   a mixture would map cells to the wrong locus on part of the family — the exact
+   failure the OCR spec forbids. Verified clusters are the only ones eligible for
+   registry authoring.
+
+Output: `data/derived/template_families.json` (gitignored; it references PHI
+images by hash and path).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sqlite3
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DB = ROOT / "data/derived/ocr_pass.sqlite"
+DEFAULT_OUT = ROOT / "data/derived/template_families.json"
+
+LOCI = ["DRB1", "DRB3", "DRB4", "DRB5", "DQA1", "DQB1", "DPA1", "DPB1"]
+LOCUS_RE = re.compile(r"\b(DRB1|DRB3|DRB4|DRB5|DQA1|DQB1|DPA1|DPB1)\b", re.I)
+
+GRID = 16  # layout-occupancy resolution, used only for verification
+MIN_GROUP = 200  # smallest presence group worth clustering
+MIN_CLUSTER = 60  # smallest cluster worth proposing as a family
+TIGHT_SD = 0.035  # mean coordinate sd below which a cluster is geometrically tight
+MIN_LIFT = 0.10  # coherence lift over baseline required to call it a template
+
+
+def load(db: Path):
+    con = sqlite3.connect(db)
+    keys, pos, occ = [], [], []
+    for sha, boxes_json, texts_json in con.execute(
+        "SELECT sha256,boxes_json,texts_json FROM ocr_result WHERE n_boxes>0"
+    ):
+        boxes = json.loads(boxes_json)
+        texts = json.loads(texts_json)
+        if not boxes or len(boxes) != len(texts):
+            continue
+
+        centres = np.full((len(LOCI), 2), -1.0, dtype=np.float32)
+        seen = np.zeros(len(LOCI), dtype=np.float32)
+        grid = np.zeros((GRID, GRID), dtype=np.float32)
+        for (x0, y0, x1, y1), text in zip(boxes, texts, strict=True):
+            gx0, gx1 = int(np.clip(x0 * GRID, 0, GRID - 1)), int(np.clip(x1 * GRID, 0, GRID - 1))
+            gy0, gy1 = int(np.clip(y0 * GRID, 0, GRID - 1)), int(np.clip(y1 * GRID, 0, GRID - 1))
+            grid[gy0 : gy1 + 1, gx0 : gx1 + 1] += 1.0
+            match = LOCUS_RE.search(text or "")
+            if match:
+                i = LOCI.index(match.group(1).upper())
+                if not seen[i]:
+                    centres[i] = ((x0 + x1) / 2, (y0 + y1) / 2)
+                    seen[i] = 1.0
+
+        if seen.sum() < 2:
+            continue
+        flat = grid.ravel()
+        norm = np.linalg.norm(flat)
+        if norm == 0:
+            continue
+        keys.append(sha)
+        pos.append(np.concatenate([centres.ravel(), seen]))
+        occ.append(flat / norm)
+
+    con.close()
+    return keys, np.asarray(pos, np.float32), np.asarray(occ, np.float32)
+
+
+def coherence(occ: np.ndarray, rows: np.ndarray, rng: np.random.Generator) -> float | None:
+    """Mean pairwise cosine similarity in layout space — the independent check."""
+    if len(rows) < 20:
+        return None
+    sel = rng.choice(rows, min(300, len(rows)), replace=False)
+    v = occ[sel]
+    v = v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
+    sim = v @ v.T
+    n = len(sim)
+    return float((sim.sum() - n) / (n * n - n))
+
+
+def discover(db: Path, out: Path) -> int:
+    from sklearn.cluster import HDBSCAN
+
+    keys, pos, occ = load(db)
+    print(f"documents with >=2 located loci: {len(keys):,}")
+    presence = pos[:, len(LOCI) * 2 :] > 0
+    rng = np.random.default_rng(0)
+
+    patterns: dict[bytes, np.ndarray] = {}
+    for i, row in enumerate(presence):
+        patterns.setdefault(row.tobytes(), []).append(i)
+    big = {k: np.asarray(v) for k, v in patterns.items() if len(v) >= MIN_GROUP}
+    print(f"presence patterns: {len(patterns):,} total, {len(big)} with >={MIN_GROUP} documents\n")
+
+    families = []
+    for pat_bytes, rows in sorted(big.items(), key=lambda kv: -len(kv[1])):
+        pat = np.frombuffer(pat_bytes, dtype=bool)
+        name = "+".join(loc for loc, f in zip(LOCI, pat, strict=True) if f)
+        cols = [c for i, f in enumerate(pat) if f for c in (2 * i, 2 * i + 1)]
+        sub = pos[rows][:, cols]
+
+        labels = HDBSCAN(
+            min_cluster_size=MIN_CLUSTER, min_samples=10, cluster_selection_epsilon=0.02, copy=True
+        ).fit_predict(sub)
+        base = coherence(occ, rows, rng)
+        if base is None:
+            continue
+
+        for cluster in sorted(set(labels[labels >= 0])):
+            member_rows = rows[labels == cluster]
+            sd = float(sub[labels == cluster].std(axis=0).mean())
+            coh = coherence(occ, member_rows, rng)
+            if coh is None:
+                continue
+            lift = coh - base
+            verified = bool(lift >= MIN_LIFT and sd <= TIGHT_SD)
+            families.append(
+                {
+                    "family_id": f"{name}#{cluster}",
+                    "presence_pattern": name,
+                    "n_documents": int(len(member_rows)),
+                    "position_sd": round(sd, 4),
+                    "layout_coherence": round(coh, 3),
+                    "baseline_coherence": round(base, 3),
+                    "coherence_lift": round(lift, 3),
+                    "verified_single_template": verified,
+                    "sha256": [keys[i] for i in member_rows],
+                }
+            )
+
+    families.sort(key=lambda f: (-f["verified_single_template"], -f["n_documents"]))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(families, indent=2), encoding="utf-8", newline="\n")
+
+    verified = [f for f in families if f["verified_single_template"]]
+    print(f"{'family':<28}{'docs':>8}{'pos sd':>9}{'lift':>8}  verdict")
+    for f in families[:20]:
+        verdict = (
+            "VERIFIED single template" if f["verified_single_template"] else "candidate / mixture"
+        )
+        print(
+            f"{f['family_id']:<28}{f['n_documents']:>8,}{f['position_sd']:>9.4f}"
+            f"{f['coherence_lift']:>+8.3f}  {verdict}"
+        )
+    print(f"\ntotal candidate families : {len(families)}")
+    print(
+        f"VERIFIED single templates: {len(verified)}  "
+        f"covering {sum(f['n_documents'] for f in verified):,} documents"
+    )
+    print(f"written to {out.relative_to(ROOT)}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    args = parser.parse_args()
+    if not args.db.exists():
+        print(f"missing {args.db}; run scripts/ocr_pass.py first")
+        return 2
+    return discover(args.db, args.out)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
