@@ -22,10 +22,11 @@ Every dependency requires:
 | Telegram HTML parse | lxml / BeautifulSoup | ADOPT |
 | Batch ETL | Polars + Parquet | ADOPT after dependency install/spike |
 | Images | Pillow + OpenCV | ADOPT |
-| Primary Persian OCR | PaddleOCR PP-OCRv5 Arabic recognizer | ADOPT after golden benchmark |
-| Second OCR | Tesseract 5 (`fas`, `eng`) | ADOPT as second opinion |
+| Primary Persian OCR | PaddleOCR PP-OCRv5 Arabic recognizer | **BENCHMARKED 2026-09-01 — 6,045 ms/img, 6x slower than RapidOCR; needs `enable_mkldnn=False` to run at all on Zen 5. Best HLA recall (61.8%) but too slow for the iterate loop.** |
+| Second OCR | Tesseract 5 (`fas`, `eng`) | **BENCHMARKED — 283 ms/img, the ONLY engine that reads Persian (34.5%). Contributes 0 extra HLA values. Adopt for Persian METADATA, not for HLA cells.** |
 | VLM fallback | PaddleOCR-VL | ADOPT after resource/accuracy benchmark |
 | OCR alternative | Surya | BENCHMARK, not mandatory |
+| Latin/HLA OCR | RapidOCR (PP-OCR ONNX) | **BENCHMARKED — 984 ms/img, 47.7% HLA recall, no PaddlePaddle dependency. Fastest usable Latin path; recommended default.** |
 | HLA nomenclature | py-ard | ADOPT with pinned IPD release and license review |
 | Fuzzy text | RapidFuzz | ADOPT |
 | Perceptual hashing | imagehash or `perception` | SPIKE then pin one |

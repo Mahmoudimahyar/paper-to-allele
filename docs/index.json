@@ -12,14 +12,16 @@
       "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
       "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md",
       "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md",
-      "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md"
+      "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
+      "docs/ingestion/OCR_ENGINE_BENCHMARK_2026-09-01.md"
     ],
     "ocr": [
       "docs/ingestion/OCR_SPEC.md",
       "docs/clinical/HLA_VALIDATION_SPEC.md",
       "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
       "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md",
-      "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md"
+      "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
+      "docs/ingestion/OCR_ENGINE_BENCHMARK_2026-09-01.md"
     ],
     "matching": [
       "docs/clinical/MATCHING_POLICY_V1.md",
