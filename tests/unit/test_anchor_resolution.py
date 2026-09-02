@@ -98,7 +98,11 @@ def test_the_locus_comes_from_the_anchor_never_from_the_value_text() -> None:
     misleading = Box(x0=0.22, y0=0.50, x1=0.30, y1=0.53, text="DQB1*03")
     result = resolve([LABEL, misleading])
     assert result.locus == "DRB1"
-    assert result.status is not ResolutionStatus.RESOLVED or result.locus == "DRB1"
+    # This was `status is not RESOLVED or locus == "DRB1"`, which cannot fail:
+    # the locus is set from the argument, so the right side is always true.
+    # What must actually hold is that a value naming another gene is refused.
+    assert result.status is ResolutionStatus.REVIEW_REQUIRED
+    assert result.values == []
 
 
 def test_a_value_prefix_never_matches_the_anchor() -> None:

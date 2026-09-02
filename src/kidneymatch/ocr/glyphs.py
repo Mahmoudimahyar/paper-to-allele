@@ -53,9 +53,22 @@ CLASS_II_LOCI = frozenset({"DRB1", "DRB3", "DRB4", "DRB5", "DQA1", "DQB1", "DPA1
 CLASS_I_LOCI = frozenset({"A", "B", "C", "Cw"})
 
 # Glyphs the recognizer substitutes for a digit, in the FINAL position of a
-# locus label. `1` and `5` are the only locus-final digits that have letter
-# lookalikes; `3` and `4` have none in the measured confusion set, which is why
-# no repair can move a label between the DRB genes.
+# locus label.
+#
+# For `DQA`, `DQB`, `DPA` and `DPB` only one gene exists, so the final character
+# carries no gene information and repairing it cannot rename anything. For `DRB`
+# the final character IS the gene, so these substitutions CAN rename it: a
+# printed `DRB3` whose `3` was read as `I` canonicalises to `DRB1`. An earlier
+# comment here claimed no repair could move a label between the DRB genes; an
+# exhaustive sweep disproves that, and `test_the_set_of_gene_renaming_repairs_is
+# _exactly_the_accepted_one` now pins the six renames that are possible.
+#
+# They are accepted on measured evidence: P(DRB1 | "DRBI") is about 99.90% by
+# likelihood ratio with 368 of 368 geometry checks consistent, and `DRBS`
+# matches a DRB5-expecting genotype in 99.2% of 1,020 cases against 17.7% for
+# DRB3. The residual — a printed 3/4/5 misread as one of these letters — is
+# roughly 0.09% for `3` to `I`. Refusing the repair would cost 12,679 anchors,
+# since `DRBI` outnumbers `DRB1` 3.5 to 1.
 _FINAL_DIGIT_REPAIRS = {
     "I": "1",
     "i": "1",

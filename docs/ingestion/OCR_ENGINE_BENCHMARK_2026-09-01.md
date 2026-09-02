@@ -581,7 +581,10 @@ of the exposure. Raised as a human decision, not applied unilaterally.
 > (§2.2) and KI-010. The section is kept as the record of what was tried.
 
 
-`src/kidneymatch/ocr/anchors.py`, driven by `scripts/resolve_loci.py`.
+`src/kidneymatch/ocr/anchors.py`. The `scripts/resolve_loci.py` that drove
+this section was deleted on 2026-09-02: it passed its row tolerance into the
+overlap parameter, still defaulted to the retired `below` direction, and read
+thumbnail rows, so it measured nothing. `scripts/extract_facts.py` replaces it.
 
 ## The layout is columnar, not row-based
 

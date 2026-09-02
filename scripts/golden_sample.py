@@ -36,7 +36,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sqlite3
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -80,18 +79,16 @@ def allele_fingerprints(db: Path) -> dict[str, str]:
     times and report it as independent evidence, which would inflate every
     confidence bound computed from the golden corpus.
     """
-    con = sqlite3.connect(db)
     out: dict[str, str] = {}
-    for sha, texts_json in con.execute("SELECT sha256, texts_json FROM ocr_result WHERE n_boxes>0"):
+    for doc in read_corpus(db, with_boxes_only=True):
         tokens = sorted(
             {
                 m.group(0).replace(" ", "").upper()
-                for m in ALLELE_RE.finditer(" ".join(json.loads(texts_json)))
+                for m in ALLELE_RE.finditer(" ".join(b.text or "" for b in doc.boxes))
             }
         )
         if len(tokens) >= 4:
-            out[sha] = "|".join(tokens)
-    con.close()
+            out[doc.sha256] = "|".join(tokens)
     return out
 
 

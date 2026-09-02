@@ -124,19 +124,66 @@ def test_every_canonical_locus_name_survives_a_round_trip(locus: str) -> None:
     assert canonical_locus_label(prefixed) == locus
 
 
-def test_no_repair_can_turn_one_locus_into_another() -> None:
-    """The safety property the whole design rests on.
+def test_the_set_of_gene_renaming_repairs_is_exactly_the_accepted_one() -> None:
+    """The safety property the whole design rests on, stated honestly.
 
-    Every locus name, damaged in every way the repair understands, must still
-    canonicalise to itself or to nothing — never to a different gene.
+    For `DQA`, `DQB`, `DPA` and `DPB` only one gene exists, so the final
+    character carries no gene information and repairing it cannot rename
+    anything. For `DRB` the final character IS the gene, so every repair there
+    is a potential rename, and the module docstring used to deny this.
+
+    Sweeping every single-character mutation over printable ASCII finds exactly
+    30 renames, all within the DRB family and all of the form "a letter the
+    repair table maps to `1` or `5`". They are accepted with evidence:
+
+    * `I/i/l/L/T/t/!/|` to `1`: the likelihood ratio for a printed `1` over a
+      printed `3` reading as `I` is about 891, giving P(DRB1 | "DRBI") ~ 99.90%,
+      with 368 of 368 same-column geometry checks consistent. `DRBI` outnumbers
+      `DRB1` 3.5 to 1, so refusing it would cost 12,679 anchors.
+    * `S/s` to `5`: measured against the independently-read DRB1 row, standalone
+      `DRBS` matches a genotype expecting DRB5 in 99.2% of 1,020 cases against
+      17.7% for DRB3 (ADR 0008).
+
+    The residual risk is a printed `3`, `4` or `5` misread as one of those
+    letters, measured at roughly 0.09% for `3` to `I`. This test pins the set so
+    that adding any new substitution has to confront the list rather than
+    quietly widening it.
     """
-    substitutions = {"1": "IilL|Tt!", "5": "Ss"}
+    canonical_names = {name.upper() for name in CLASS_II_LOCI}
+    renames = set()
     for locus in sorted(CLASS_II_LOCI):
-        head, last = locus[:-1], locus[-1]
-        for glyph in substitutions.get(last, ""):
-            damaged = head + glyph
-            result = canonical_locus_label(damaged)
-            assert result in (locus, None), f"{damaged!r} became {result!r}, expected {locus!r}"
+        for position in range(len(locus)):
+            for glyph in (chr(code) for code in range(33, 127)):
+                damaged = locus[:position] + glyph + locus[position + 1 :]
+                if damaged == locus or damaged.upper() in canonical_names:
+                    # A mutation that spells another gene's real name is not a
+                    # repair: reading `DQA1` as DQA1 is correct.
+                    continue
+                result = canonical_locus_label(damaged)
+                if result is not None and result != locus:
+                    renames.add((locus, result))
+
+    assert renames == {
+        ("DRB1", "DRB5"),  # the final 1 read as S
+        ("DRB3", "DRB1"),  # the final 3 read as a 1-lookalike
+        ("DRB3", "DRB5"),
+        ("DRB4", "DRB1"),
+        ("DRB4", "DRB5"),
+        ("DRB5", "DRB1"),
+    }, "a repair renames a gene in a way this test has not accepted"
+
+
+def test_no_repair_renames_a_gene_outside_the_DRB_family() -> None:
+    """The stems with only one gene can never be renamed by a repair."""
+    single_gene = {"DQA1", "DQB1", "DPA1", "DPB1"}
+    canonical_names = {name.upper() for name in CLASS_II_LOCI}
+    for locus in sorted(single_gene):
+        for position in range(len(locus)):
+            for glyph in (chr(code) for code in range(33, 127)):
+                damaged = locus[:position] + glyph + locus[position + 1 :]
+                if damaged == locus or damaged.upper() in canonical_names:
+                    continue
+                assert canonical_locus_label(damaged) in (locus, None), damaged
 
 
 # --- the permissive side: rejecting a value ------------------------------

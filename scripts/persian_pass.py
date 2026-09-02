@@ -34,11 +34,17 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from kidneymatch.ocr.glyphs import canonical_locus_label  # noqa: E402
+from kidneymatch.ocr.store import read_corpus  # noqa: E402
+
 ENGINE_VERSION = "easyocr-fa+en/gpu"
 PREPROC_VERSION = "v1-none"
 
@@ -46,7 +52,6 @@ DEFAULT_SRC = ROOT / "data/derived/ocr_pass.sqlite"
 DEFAULT_DB = ROOT / "data/derived/persian_pass.sqlite"
 DEFAULT_EXPORT = ROOT / "data/raw/ChatExport_2026-08-31"
 
-LOCUS_RE = re.compile(r"\b(DRB1|DRB3|DRB4|DRB5|DQA1|DQB1|DPA1|DPB1)\b", re.I)
 PERSIAN_RE = re.compile(r"[؀-ۿ]")
 
 SCHEMA = """
@@ -78,16 +83,24 @@ def connect(path: Path) -> sqlite3.Connection:
 
 
 def targets(src: Path, min_loci: int) -> list[tuple[str, str]]:
-    """Report documents, identified by unambiguous locus labels in the Latin pass."""
-    con = sqlite3.connect(src)
+    """Report documents, identified by unambiguous locus LABELS in the Latin pass.
+
+    Read through the shared corpus reader, so thumbnail copies are excluded
+    (KI-009) — 1,164 of them were processed by an earlier version of this
+    selection — and labels are identified by `canonical_locus_label`, which
+    matches whole tokens. The regex it replaces searched for a locus name
+    anywhere in a token, so `DRB1*11` counted as a DRB1 label and inflated
+    apparent presence 5.18x (ADR 0007).
+    """
     out = []
-    for sha, rel, texts_json in con.execute(
-        "SELECT sha256, rel_path, texts_json FROM ocr_result WHERE n_boxes>0"
-    ):
-        found = {m.group(1).upper() for m in LOCUS_RE.finditer(" ".join(json.loads(texts_json)))}
+    for doc in read_corpus(src, with_boxes_only=True):
+        found = {
+            locus
+            for box in doc.boxes
+            if (locus := canonical_locus_label(box.text or "")) is not None
+        }
         if len(found) >= min_loci:
-            out.append((sha, rel))
-    con.close()
+            out.append((doc.sha256, doc.rel_path))
     return sorted(out)
 
 
