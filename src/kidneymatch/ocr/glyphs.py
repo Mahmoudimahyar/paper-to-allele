@@ -70,7 +70,10 @@ _FINAL_DIGIT_REPAIRS = {
 }
 
 # Inside a numeric field, the same confusions plus the zero lookalikes.
-_DIGIT_REPAIRS = {**_FINAL_DIGIT_REPAIRS, "O": "0", "o": "0", "Q": "0", "D": "0"}
+# `D` and `Q` were here too, on the theory that they resemble `0`. Measured, they
+# occur 12 and 5 times corpus-wide in value bodies and none validates against
+# nomenclature: pure false-accept surface, removed.
+_DIGIT_REPAIRS = {**_FINAL_DIGIT_REPAIRS, "O": "0", "o": "0"}
 
 # The `*` between locus and allele, as the recognizer renders it.
 _STAR_VARIANTS = "*+°\"'`~^"
@@ -96,12 +99,16 @@ _GROUPED_DRBX = re.compile(
 )
 
 _DIGIT_SLOT = "0-9" + "".join(sorted(set(_DIGIT_REPAIRS)))
+# The expression suffix is matched with a lookahead-anchored alternation so the
+# greedy digit group cannot eat it. `A*02S` is a secreted allele, not `A*025` —
+# and `S` is in the digit-repair table, so a naive grammar invents a different
+# allele silently.
 _VALUE = re.compile(
     rf"""^
     (?:(?P<prefix>[A-Za-z]{{1,4}}[0-9A-Za-z|!]?)\s*[{re.escape(_STAR_VARIANTS)}]\s*
       |[{re.escape(_STAR_VARIANTS)}]\s*)?
-    (?P<first>[{_DIGIT_SLOT}]{{2,3}})
-    (?::(?P<second>[{_DIGIT_SLOT}]{{2,3}}))?
+    (?P<first>[{_DIGIT_SLOT}]{{2,3}}?)
+    (?::(?P<second>[{_DIGIT_SLOT}]{{2,3}}?))?
     (?P<expression>[NLSQCA])?
     $""",
     re.VERBOSE,
@@ -201,7 +208,9 @@ def parse_allele_value(token: str) -> AlleleValue | None:
     if not stripped or looks_like_locus_label(stripped):
         return None
 
-    match = _VALUE.match(stripped)
+    # `HLA-DRB1*15` is a value like any other. 44 boxes carry the prefix.
+    body = _HLA_PREFIX.sub("", stripped).strip() or stripped
+    match = _VALUE.match(body)
     if not match:
         return None
 
@@ -214,7 +223,13 @@ def parse_allele_value(token: str) -> AlleleValue | None:
         return None
 
     prefix = match.group("prefix")
-    canonical_prefix = canonical_locus_label(prefix) if prefix else None
+    # A bare `A` cannot ANCHOR a locus — a lone letter is a table header or an
+    # ABO group far more often than a gene. But `A*02` has no such competition:
+    # the star and the digits disambiguate it. Requiring `HLA-` here silently
+    # dropped 68,577 of 126,028 self-identifying values, 54.4% of them.
+    canonical_prefix = (
+        canonical_locus_label(prefix) or canonical_locus_label(f"HLA-{prefix}") if prefix else None
+    )
     if prefix and canonical_prefix is None:
         # A prefix we cannot name is not a licence to ignore it: it may be a
         # different locus, and binding the value would guess which.

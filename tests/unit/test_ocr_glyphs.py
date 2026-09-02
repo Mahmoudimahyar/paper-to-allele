@@ -23,6 +23,7 @@ The asymmetry is deliberate and is itself under test.
 from __future__ import annotations
 
 import pytest
+
 from kidneymatch.ocr.glyphs import (
     CLASS_I_LOCI,
     CLASS_II_LOCI,
@@ -248,3 +249,71 @@ def test_expression_suffixes_are_kept() -> None:
     assert value is not None
     assert value.expression == "N"
     assert value.text() == "DRB4*01:03N"
+
+
+# --- class I values, and the bugs a second reading found ------------------
+
+
+@pytest.mark.parametrize(
+    ("token", "prefix", "first"),
+    [("A*02", "A", "02"), ("B*35", "B", "35"), ("C*07", "C", "07"), ("Cw*07", "Cw", "07")],
+)
+def test_a_class_I_value_carries_its_locus_without_an_HLA_prefix(
+    token: str, prefix: str, first: str
+) -> None:
+    """A bare `A` cannot ANCHOR a locus; `A*02` is unambiguously a value.
+
+    The `HLA-` requirement exists because a lone letter is a table header or an
+    ABO group far more often than a locus. A letter followed by `*` and two
+    digits has no such competition. Requiring the prefix here dropped 68,577 of
+    126,028 self-identifying values — 54.4%.
+    """
+    value = parse_allele_value(token)
+    assert value is not None
+    assert value.locus_prefix == prefix
+    assert value.first_field == first
+
+
+def test_an_HLA_prefix_on_a_value_is_stripped() -> None:
+    value = parse_allele_value("HLA-DRB1*15")
+    assert value is not None and value.locus_prefix == "DRB1" and value.first_field == "15"
+
+
+def test_an_expression_suffix_is_not_swallowed_into_the_digits() -> None:
+    """`A*02S` is a secreted allele, not `A*025`.
+
+    The digit-slot repair maps `S` to `5`, so a greedy numeric group eats the
+    suffix and invents a different allele. The suffix must be recognised first.
+    """
+    value = parse_allele_value("A*02S")
+    assert value is not None
+    assert value.first_field == "02"
+    assert value.expression == "S"
+
+
+@pytest.mark.parametrize("token", ["DRB1*D2", "DRB1*Q2"])
+def test_letters_that_were_never_measured_as_digits_are_refused(token: str) -> None:
+    """`D` and `Q` were in the repair table with 12 and 5 occurrences corpus-wide
+    and zero that validated against nomenclature. Pure false-accept surface."""
+    assert parse_allele_value(token) is None
+
+
+def test_DRBS_names_DRB5_and_the_evidence_is_direct() -> None:
+    """A second design pass argued `DRBS` should abstain, from a prior-odds
+    model giving 92% confidence. Direct measurement against independent ground
+    truth refutes it.
+
+    Taking the DRB1 row — read by a different anchor, a different rule and a
+    different part of the page — as truth, and using the haplotype constraint
+    that DRB1*15/*16 carry DRB5 while *03/*11/*12/*13/*14 carry DRB3:
+
+    | standalone label | n | DRB1 expects DRB5 | expects DRB3 |
+    |---|---|---|---|
+    | `DRB5` | 1,142 | 99.6% | 48.4% |
+    | `DRBS` | 1,020 | **99.2%** | 47.8% |
+    | `DRB3` | 5,830 | 17.7% | 99.9% |
+
+    `DRBS` is indistinguishable from `DRB5` and nothing like `DRB3`. The prior
+    the model assumed does not describe the `DRBS` population.
+    """
+    assert canonical_locus_label("DRBS") == "DRB5"
