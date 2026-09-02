@@ -31,20 +31,26 @@ ledger guard entirely, an unprotected `WORK_QUEUE.json` that made the whole
 COMPLETE gate optional, and a hook that edited files outside the repository.
 Residual limits and unverified claims: `KNOWN_ISSUES.md` KI-005/KI-006.
 
-**P2 (test depth) is NOT done.** `TEST_PLAN.md` lists ten test layers; four exist. Remaining, in priority order:
-- P2-1 invariant→test markers plus a lint that fails when a live spec invariant has no covering test (the `invariant` marker is already registered in `tests/conftest.py`, unused);
-- P2-2 property tests (`hypothesis` installed, `tests/property/` still empty);
-- P2-3 mutation testing (no tool chosen);
-- P2-4 metamorphic OCR tests; P2-5 synthetic Persian lab-form corpus generator (longest pole);
-- P2-6 Playwright + axe on the review UI; P2-7 coverage/determinism/security scanning; P2-8 real PII scanner.
+**P2 (test depth) is done** (2026-09-01) except for layers blocked on code that
+does not exist yet. `verify_repo.py` is now a 12-step gate. What landed:
+- invariant->test traceability (`scripts/invariant_lint.py`), enforced at task COMPLETE;
+- property-based tests (Hypothesis) on HLA normalization and media resolution;
+- coverage gate: repo ratchet 65%, medical modules (hla, domain, ingestion/media) 100%;
+- Iranian PII scanner with the national-ID mod-11 checksum, redacted output;
+- bandit + gitleaks + osv-scanner + SBOM path; mutmut configured with a threshold gate;
+- synthetic Telegram export fixture corpus + `docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md`.
+
+Still blocked on code that does not exist: OCR golden/metamorphic tests, the
+synthetic Persian lab-form generator, DB constraint tests, Playwright/axe UI
+tests. See `docs/operations/TEST_PLAN.md` section 10 for the honest layer list.
 
 ## Current blockers
 None for HIST-001. The human must provide a local Telegram export path when running against real data, but tests use synthetic fixtures.
 
 ## Next actions
-1. P2-1/P2-2: invariant→test markers with a coverage lint, then property tests on `normalize_reported_hla` and `resolve_best_available_media`.
-2. P2-5: synthetic Persian lab-form generator — schedule early, all OCR work depends on it.
-3. Implement/finish HIST-001 parser against synthetic HTML fixtures and characterize real export structure locally.
+1. **Implement HIST-001 test-first.** The fixture corpus, the DOM reference and the acceptance command all exist. Write one failing test per spec invariant (`python scripts/invariant_lint.py` lists the five HIST-001 owns), then the parser.
+2. HIST-002 bundle reconstruction, then MEDIA-001 / DEDUPE-001.
+3. P2-5 synthetic Persian lab-form generator — schedule early; all OCR work depends on it and it unblocks the 200-document golden-corpus gate.
 
 Acceptance state: run `python scripts/acceptance.py status`. All 9 criteria across the 4 live tasks are unmet by design; `HIST-002`/`DEDUPE-001` have no tests yet, so their acceptance command exits non-zero rather than empty-passing.
 

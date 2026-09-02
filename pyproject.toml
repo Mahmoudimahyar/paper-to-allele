@@ -61,3 +61,48 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["kidneymatch"]
+
+[dependency-groups]
+dev = [
+    "bandit[toml]>=1.8,<2",
+    "mutmut>=3.7,<4",
+    "pytest-randomly>=3.16,<4",
+]
+
+[tool.coverage.run]
+source = ["src/kidneymatch"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]
+# Ratchet. Raise it as coverage rises; never lower it to make a build pass.
+fail_under = 65
+show_missing = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]
+# B101 (assert_used) is noise in a project that never ships with -O.
+skips = ["B101"]
+
+[tool.mutmut]
+# Scoped to the code where a surviving mutant is a clinical safety risk, not to
+# the whole tree: mutation testing the scaffolding would cost hours and prove
+# nothing. Widen `only_mutate` as matching/OCR come online.
+source_paths = ["src/kidneymatch"]
+pytest_add_cli_args_test_selection = ["tests/unit", "tests/property"]
+only_mutate = [
+  "src/kidneymatch/hla/*",
+  "src/kidneymatch/matching/*",
+  "src/kidneymatch/ocr/*",
+  "src/kidneymatch/ingestion/media.py",
+]
+do_not_mutate = ["src/kidneymatch/*/__init__.py"]
+also_copy = ["config", "schemas", "tests/conftest.py"]
+mutate_only_covered_lines = true
+timeout_constant = 1.0
+timeout_multiplier = 15.0

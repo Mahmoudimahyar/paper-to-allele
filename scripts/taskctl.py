@@ -14,6 +14,29 @@ def load() -> dict[str, object]:
     return json.loads(PATH.read_text(encoding="utf-8"))
 
 
+def uncovered_invariants(task_id: str) -> list[tuple[str, str]]:
+    """Invariants this task owns that no test claims.
+
+    A task owns every invariant of its spec unless the queue narrows that with
+    `spec_invariants`, which exists so two tasks can share one spec without each
+    being blocked by the other's obligations.
+    """
+    import invariant_lint
+
+    queue = load()
+    task = next((t for t in queue["tasks"] if t["id"] == task_id), None)  # type: ignore[index]
+    if task is None or not task.get("spec"):
+        return []
+
+    spec = json.loads((ROOT / str(task["spec"])).read_text(encoding="utf-8"))
+    spec_id = spec["id"]
+    owned = task.get("spec_invariants") or spec.get("invariants", [])
+
+    claims, _ = invariant_lint.collect_claims()
+    covered = {text for (claimed_spec, text) in claims if claimed_spec == spec_id}
+    return [(spec_id, text) for text in owned if text not in covered]
+
+
 def completion_blockers(task_id: str) -> list[str]:
     """Reasons a task may not be marked COMPLETE. Empty list means it may."""
     import acceptance  # local import: taskctl stays usable if the ledger is absent
@@ -37,6 +60,12 @@ def completion_blockers(task_id: str) -> list[str]:
             blockers.append(
                 f"criterion {index} references missing evidence {criterion['evidence']}"
             )
+
+    # P2-1: a task is not done while an invariant it owns has no test proving it.
+    # This is where invariant coverage is enforced; invariant_lint only reports,
+    # because an unimplemented task legitimately has uncovered invariants.
+    for spec_id, text in uncovered_invariants(task_id):
+        blockers.append(f"invariant has no covering test: {spec_id}: {text}")
 
     if not entry["commands"]:
         blockers.append("no acceptance command is defined")

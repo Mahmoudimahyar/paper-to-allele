@@ -20,16 +20,20 @@ before it was stopped. All 5 confirmed findings were fixed. The following were
 reported but never reached a verdict, and are worth a look during P2. Treat them
 as unverified claims, not facts:
 
-- acceptance commands run with no subprocess timeout, so a hung command stalls
-  an unattended run (`scripts/acceptance.py`);
-- `shlex.split` may mangle Windows paths in acceptance commands;
-- `stop_checkpoint.sh` on a detached HEAD would commit onto the detached HEAD,
-  producing a commit git will eventually garbage-collect;
-- `stop_checkpoint.sh` leaves the index staged when a commit fails;
+- ~~acceptance commands run with no subprocess timeout~~ **FIXED**: 900s
+  timeout, and both a timeout and an unrunnable command now write FAILED
+  evidence rather than raising;
+- `shlex.split` may mangle Windows paths in acceptance commands — still open;
+- ~~`stop_checkpoint.sh` on a detached HEAD~~ **FIXED**: it now refuses and says
+  so, rather than creating a commit git would garbage-collect;
+- ~~`stop_checkpoint.sh` leaves the index staged when a commit fails~~
+  **FIXED**: the index is reset;
 - `post_edit_check.sh` extracts `file_path` with `sed`, so JSON escaping and
   MultiEdit-shaped payloads are not handled;
-- `permissions.allow` may omit commands a normal TDD loop needs; `just` and
-  `make` are allow-listed but neither is installed here;
+- ~~`permissions.allow` omits commands a normal TDD loop needs~~ **FIXED**:
+  26 rules added (file inspection, search, `python -c/-m`, coverage, bandit,
+  mutmut, pre-commit, uv add/lock/export, git worktree/restore). `just` and
+  `make` remain allow-listed but are not installed on the dev machine;
 - per-tool-call hook latency (~140ms, ~370ms on Edit/Write/Bash);
 - acceptance evidence lives in gitignored `.artifacts/`, so a criterion marked
   on one machine cannot be completed from a fresh clone without re-running.

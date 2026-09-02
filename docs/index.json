@@ -9,7 +9,8 @@
     ],
     "historical-ingestion": [
       "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
-      "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+      "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
+      "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md"
     ],
     "ocr": [
       "docs/ingestion/OCR_SPEC.md",

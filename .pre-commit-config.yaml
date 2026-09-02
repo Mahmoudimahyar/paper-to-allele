@@ -1,3 +1,11 @@
+# Pre-commit sees only STAGED files and must stay fast; whole-repo and
+# whole-history scanning belongs in CI. Every hook here runs in well under a
+# second on a normal change.
+#
+# Escape hatch for one hook: `SKIP=bandit git commit -m "..."`. Prefer that over
+# `--no-verify`, which disables every hook including the PII scan.
+default_install_hook_types: [pre-commit]
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.5
@@ -5,6 +13,7 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -14,3 +23,36 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: detect-private-key
+      # Protected health information arrives as a stray 40MB scan or
+      # spreadsheet far more often than as a pasted string.
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+
+  # Secret scanning. The hook's own entry is already
+  # `gitleaks git --pre-commit --redact --staged --verbose`: staged-only and
+  # redacted. Do not add args - overriding them is how full-history scanning
+  # ends up in pre-commit and makes every commit slow.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: [-c, pyproject.toml, -ll, -ii]
+        # `-c pyproject.toml` silently does nothing without the toml extra.
+        additional_dependencies: ["bandit[toml]"]
+        exclude: ^tests/
+
+  - repo: local
+    hooks:
+      # Iranian national ID (mod-11 checksum) and mobile numbers. Findings are
+      # redacted; the scanner never echoes what it found.
+      - id: iran-pii-scan
+        name: Iranian PII scan (national ID checksum + mobile)
+        entry: python scripts/scan_pii.py
+        language: system
+        pass_filenames: true
+        types: [text]

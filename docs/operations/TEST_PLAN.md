@@ -73,9 +73,38 @@ Before processing full corpus:
 
 The system optimizes for precision and safe abstention, not maximum automation.
 
-## 9. CI commands
-- `just check`: formatting/lint/types/fast unit tests
-- `just verify`: full unit/property/parser/integration/security suite
-- `just verify-ocr`: golden OCR benchmark
-- `just verify-match`: matching corpus + property tests + mutation tests
-- `just release-verify`: all above + backup restore + dependency/security scan
+## 9. Commands
+
+| Command | What it runs |
+|---|---|
+| `just lint` | docs/spec/architecture/invariant lints, ruff check + format |
+| `just types` | mypy |
+| `just unit` | unit + contract tests |
+| `just security` | Iranian PII scan, bandit |
+| `just audit` | osv-scanner against `uv.lock` |
+| `just verify` | **the gate** - 12 mandatory steps, identical to CI, nothing skipped |
+| `just accept <TASK>` | that task's acceptance commands, writing evidence |
+| `just verify-mutation` | mutmut + threshold gate (**Linux/WSL only**: mutmut uses `os.fork()`) |
+
+## 10. Current state (2026-09-01)
+
+Layers that exist, with counts, so this document cannot drift into fiction:
+
+| Layer | Status |
+|---|---|
+| unit | yes - `tests/unit` |
+| contract / repo-invariant | yes - `tests/contracts` (harness, hooks, acceptance gate) |
+| property-based | yes - `tests/property`, Hypothesis |
+| integration | yes - `tests/integration`, against the synthetic export fixture |
+| security / privacy | yes - `tests/security`, PII scanner with checksum |
+| coverage gate | yes - repo ratchet 65%, medical modules 100% |
+| mutation | configured (`[tool.mutmut]`, `scripts/mutation_gate.py`), CI job present |
+| invariant traceability | yes - `scripts/invariant_lint.py`, enforced at task COMPLETE |
+| OCR golden / metamorphic | **not yet** - blocked on the synthetic lab-form generator |
+| Gherkin / acceptance BDD | **not yet** |
+| DB constraint | **not yet** - no database layer yet |
+| end-to-end / UI (Playwright, axe) | **not yet** - no UI yet; see P2-6 |
+| backup/restore | **not yet** |
+
+The gaps are real and deliberate: each is blocked on code that does not exist.
+Do not mark this section complete without adding the corresponding tests.

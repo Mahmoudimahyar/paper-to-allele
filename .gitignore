@@ -48,3 +48,6 @@ STEER.md
 
 # machine-local Claude Code overrides (never committed)
 .claude/settings.local.json
+
+# mutation testing workspace
+mutants/

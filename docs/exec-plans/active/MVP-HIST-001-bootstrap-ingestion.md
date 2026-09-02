@@ -23,7 +23,10 @@ Build an idempotent parser that converts Telegram Desktop HTML exports into sour
 - repeated ingestion is idempotent.
 
 ## Milestones
-- [ ] Define synthetic HTML fixtures for normal, joined, forwarded, reply, image-only, text-only and service messages.
+- [x] Define synthetic HTML fixtures for normal, joined, forwarded, reply, image-only, text-only and service messages.
+      `tests/fixtures/synthetic/telegram_export/`, structure documented in
+      `docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md`, guarded by
+      `tests/integration/test_synthetic_export_fixture.py`.
 - [ ] Parse stable fields with no third-party dependency requirement in the test core or with a pinned HTML parser after spike.
 - [ ] Preserve unknown/unparsed fragments for forensic review.
 - [ ] Add idempotency contract and parser-version field.
@@ -31,14 +34,19 @@ Build an idempotent parser that converts Telegram Desktop HTML exports into sour
 
 ## Acceptance commands
 ```bash
-pytest tests/unit tests/contracts -q
-python scripts/spec_lint.py
-python scripts/docs_lint.py
-python scripts/architecture_lint.py
+uv run --frozen pytest --task HIST-001 -q   # the task's acceptance command
+python scripts/verify_repo.py              # the repo gate, 12 steps
 ```
+
+HIST-001 owns five spec invariants, none of which has a covering test yet.
+`python scripts/taskctl.py set HIST-001 COMPLETE` will refuse until each has one
+(`python scripts/invariant_lint.py` lists them).
 
 ## Progress log
 - 2026-09-01: starter repository and contract created; implementation intentionally minimal.
+- 2026-09-01: P0/P1/P2 harness work complete. Synthetic fixture corpus and the
+  Telegram DOM reference are in place, so implementation can start test-first
+  against realistic input without any real archive.
 
 ## Rollback
 Parser is append-only at the evidence layer. Rollback the parser version/code; never mutate raw archive files.

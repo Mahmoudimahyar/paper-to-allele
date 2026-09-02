@@ -14,6 +14,7 @@ lint:
     {{uv}} python scripts/docs_lint.py
     {{uv}} python scripts/spec_lint.py
     {{uv}} python scripts/architecture_lint.py
+    {{uv}} python scripts/invariant_lint.py
     {{uv}} ruff check .
     {{uv}} ruff format --check .
 
@@ -23,9 +24,29 @@ types:
 unit:
     {{uv}} pytest tests/unit tests/contracts
 
+# Security and privacy checks that do not need a network.
+security:
+    {{uv}} python scripts/scan_pii.py
+    {{uv}} bandit -c pyproject.toml -r src -ll -ii
+
+# Dependency vulnerabilities. Reads uv.lock directly, no export step.
+audit:
+    osv-scanner scan -L uv.lock
+
 # Full gate. Identical to what CI runs.
 verify:
     {{uv}} python scripts/verify_repo.py
+
+# Acceptance for one task, writing evidence to .artifacts/<TASK>/.
+accept task:
+    {{uv}} python scripts/acceptance.py run {{task}}
+
+# Mutation testing. LINUX/WSL ONLY - mutmut calls os.fork(), which does not
+# exist on Windows. CI runs this on ubuntu.
+verify-mutation min_score="80":
+    {{uv}} mutmut run
+    {{uv}} mutmut export-cicd-stats
+    {{uv}} python scripts/mutation_gate.py --min-score {{min_score}}
 
 handoff agent task summary next="":
     {{uv}} python scripts/handoff.py --agent {{agent}} --task {{task}} --summary {{summary}} --next {{next}}

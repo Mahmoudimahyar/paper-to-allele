@@ -93,6 +93,9 @@
       ],
       "spec_criteria": [
         "THUMBNAIL_ONLY is assigned when no better file exists"
+      ],
+      "spec_invariants": [
+        "missing higher-resolution asset is not treated as an error"
       ]
     },
     {
@@ -110,6 +113,11 @@
       "spec_criteria": [
         "byte-identical renamed thumbnails dedupe",
         "source provenance count survives dedupe"
+      ],
+      "spec_invariants": [
+        "same path or SHA256 maps to one MediaAsset",
+        "all source-message links are retained",
+        "HLA similarity alone never merges people"
       ]
     },
     {

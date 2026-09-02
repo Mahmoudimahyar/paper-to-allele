@@ -37,6 +37,9 @@ LEDGER_PATH = ROOT / "docs/work/acceptance.json"
 ARTIFACTS = ROOT / ".artifacts"
 LIVE = {"READY", "ACTIVE"}
 
+# An acceptance command that hangs must fail rather than stall the session.
+COMMAND_TIMEOUT_SECONDS = 900
+
 
 def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -111,8 +114,30 @@ def run_commands(task_id: str, commands: list[str]) -> tuple[bool, list[Path]]:
     ok = True
 
     for index, command in enumerate(commands, 1):
-        proc = subprocess.run(shlex.split(command), cwd=ROOT, text=True, capture_output=True)
+        # A hung or unrunnable command must FAIL with recorded evidence. Left
+        # unbounded it would silently burn an unattended run, and an exception
+        # would produce no evidence file at all.
         log = outdir / f"acceptance-{index}.log"
+        try:
+            proc = subprocess.run(
+                shlex.split(command),
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            reason = (
+                f"TIMEOUT after {COMMAND_TIMEOUT_SECONDS}s"
+                if isinstance(exc, subprocess.TimeoutExpired)
+                else "NOT_RUNNABLE (command not found)"
+            )
+            log.write_text(f"$ {command}\nexit={reason}\n", encoding="utf-8", newline="\n")
+            evidence.append(log)
+            print(f"  [FAIL({reason.split()[0].lower()})] {command}")
+            ok = False
+            continue
+
         log.write_text(
             f"$ {command}\nexit={proc.returncode}\n\n"
             f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}",

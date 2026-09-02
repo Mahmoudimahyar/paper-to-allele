@@ -12,6 +12,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       # --frozen fails if uv.lock is stale rather than silently re-resolving,
       # so CI can never install a dependency set the lockfile does not describe.
@@ -28,3 +30,44 @@ jobs:
           name: verify-logs
           path: .artifacts/verify/
           if-no-files-found: ignore
+
+  mutation:
+    # mutmut calls os.fork(), so this cannot run on the Windows dev box. It is a
+    # separate job so that a mutation regression is visible on its own rather
+    # than hidden behind the main gate.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen mutmut run
+      - run: uv run --frozen mutmut export-cicd-stats
+      # mutmut 3.7 exits 0 even when mutants survive, so the threshold is
+      # enforced by our own gate rather than by the runner.
+      - run: uv run --frozen python scripts/mutation_gate.py --min-score 80
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret removed in a later commit is still a secret.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependencies:
+    # The PR-delta workflow reports only NEWLY introduced vulnerabilities, so a
+    # pre-existing advisory does not block unrelated work. It is a
+    # pull_request-only workflow; a scheduled full scan belongs in its own file.
+    if: github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.5.1"

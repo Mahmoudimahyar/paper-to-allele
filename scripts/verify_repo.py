@@ -43,10 +43,22 @@ STEPS = [
     step("python", "scripts/docs_lint.py"),
     step("python", "scripts/spec_lint.py"),
     step("python", "scripts/architecture_lint.py"),
+    step("python", "scripts/invariant_lint.py"),
+    step("python", "scripts/scan_pii.py"),
     step("ruff", "check", "."),
     step("ruff", "format", "--check", "."),
     step("mypy", "src"),
-    step("pytest", "-q"),
+    step("bandit", "-c", "pyproject.toml", "-r", "src", "-ll", "-ii", "-q"),
+    step("pytest", "-q", "--cov", "--cov-report=term-missing"),
+    # The medical-logic modules are held to 100% separately from the repo-wide
+    # ratchet: a global average lets a safety-critical branch go untested while
+    # scaffolding coverage carries the number.
+    step(
+        "coverage",
+        "report",
+        "--include=*/kidneymatch/hla/*,*/kidneymatch/domain/*,*/kidneymatch/ingestion/media.py",
+        "--fail-under=100",
+    ),
 ]
 
 

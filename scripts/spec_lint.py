@@ -48,6 +48,8 @@ LIVE = {"READY", "ACTIVE"}
 
 # spec path -> {criterion: [task ids that claim it]}
 claimed: dict[str, dict[str, list[str]]] = {}
+# spec path -> {invariant: [task ids that own it]}
+claimed_invariants: dict[str, dict[str, list[str]]] = {}
 
 for task in queue["tasks"]:
     spec_path = task.get("spec")
@@ -88,6 +90,18 @@ for task in queue["tasks"]:
             )
         claimed.setdefault(spec_path, {}).setdefault(criterion, []).append(task["id"])
 
+    # Invariant ownership. Unlike criteria this is optional: a task with no
+    # `spec_invariants` owns every invariant of its spec, which is the right
+    # default when one task delivers the whole feature.
+    spec_invariants = list(spec.get("invariants", []))
+    for invariant in task.get("spec_invariants", []) or []:
+        if invariant not in spec_invariants:
+            errors.append(
+                f"work queue {task['id']}: spec_invariants entry is not a verbatim "
+                f"invariant of {spec_path}: {invariant!r}"
+            )
+        claimed_invariants.setdefault(spec_path, {}).setdefault(invariant, []).append(task["id"])
+
 # No acceptance criterion of a live spec may be unowned or double-owned:
 # an unowned criterion is a requirement nobody is accountable for.
 for spec_path, owners in claimed.items():
@@ -102,6 +116,23 @@ for spec_path, owners in claimed.items():
             errors.append(
                 f"{spec_path}: acceptance criterion owned by multiple tasks "
                 f"{holders}: {criterion!r}"
+            )
+
+# When a spec's invariants are split across tasks at all, the split must be
+# total: an unowned invariant is an obligation nobody has to prove before their
+# task can be marked COMPLETE.
+for spec_path, owners in claimed_invariants.items():
+    spec = json.loads((ROOT / spec_path).read_text(encoding="utf-8"))
+    for invariant in spec.get("invariants", []):
+        holders = owners.get(invariant, [])
+        if not holders:
+            errors.append(
+                f"{spec_path}: invariant is owned by no live task, so no task has to "
+                f"prove it: {invariant!r}"
+            )
+        elif len(holders) > 1:
+            errors.append(
+                f"{spec_path}: invariant owned by multiple tasks {holders}: {invariant!r}"
             )
 
 if errors:

@@ -38,21 +38,31 @@ for state in MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD BISECT_LOG rebase-merge reb
   fi
 done
 
+# A commit on a detached HEAD is unreferenced and git will eventually collect
+# it, so the "checkpoint" would silently preserve nothing.
+if ! branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"; then
+  echo "stop_checkpoint: HEAD is detached; NOTHING was checkpointed." >&2
+  echo "Create a branch (git switch -c <name>) to enable checkpoints." >&2
+  exit 0
+fi
+
 git diff --quiet && git diff --cached --quiet && [ -z "$(git status --porcelain)" ] && exit 0
 
 git add -A >/dev/null 2>&1 || exit 0
 
 stamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
-task="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
 
 # Unlike the reference hook, failures are reported rather than swallowed. A
 # missing git identity or a rejecting pre-commit hook would otherwise make this
 # backstop preserve nothing while appearing to work.
-if ! out="$(git commit -q -m "chore(wip): checkpoint on ${task} at ${stamp}" 2>&1)"; then
+if ! out="$(git commit -q -m "chore(wip): checkpoint on ${branch} at ${stamp}" 2>&1)"; then
   {
     echo "stop_checkpoint: COMMIT FAILED - your work is NOT checkpointed."
     printf '%s\n' "$out"
   } >&2
+  # Leaving everything staged after a failed commit silently changes the
+  # working state the next session inherits. Put the index back.
+  git reset --quiet >/dev/null 2>&1 || true
 fi
 
 exit 0
