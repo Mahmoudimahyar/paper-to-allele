@@ -121,12 +121,33 @@ Three outcomes: `CONFIRMED` (auto-accept candidate), `CONTRADICTED` (review
 budget), `UNCONFIRMED` (no second opinion; the value stands on the primary
 engine alone).
 
-**Measured result is well below what was predicted, and is reported as
-measured.** A design pass reported 86.3% agreement on a 300-cell DRB1/DQB1
-sample; across all eight loci the confirmation rate is far lower. The gap is not
-explained — the smaller `C` and `DQA1` cells are a candidate — and it is not
-worth closing by tuning, because the confirmer's value is settled by the golden
-corpus and not by its own agreement rate.
+### Measured over all 46,221 resolved cells
+
+| locus | cells | confirmed | contradicted | no opinion |
+|---|---|---|---|---|
+| DRB1 | 11,112 | **60.4%** | 15.0% | 24.6% |
+| DQB1 | 9,675 | **60.0%** | 16.3% | 23.7% |
+| DQA1 | 725 | 52.6% | 17.7% | 29.8% |
+| A | 11,628 | 31.4% | 13.5% | 55.1% |
+| B | 10,911 | 28.5% | 12.7% | 58.8% |
+| C | 3,114 | 27.2% | 12.1% | 60.7% |
+| **all** | **46,221** | **43.5%** | **14.2%** | **42.2%** |
+
+A design pass reported 86.3% agreement on a 300-cell DRB1/DQB1 sample. On those
+same two loci this measures **60.2%**, so most of the apparent shortfall was the
+class I loci being pooled in — but a real gap of about 26 points remains and is
+**not explained**. It is reported as measured rather than closed by tuning,
+because the confirmer's worth is settled by the golden corpus and not by its own
+agreement rate.
+
+The class I pattern is the clearer finding: `A`, `B` and `C` yield *no opinion*
+on 55–61% of cells, against 24% for `DRB1`. Tesseract is not contradicting those
+readings, it simply cannot read the cells, and that is where any future work on
+the confirmer belongs.
+
+`DPA1` and `DPB1` show 56–67% contradiction on 24 and 32 cells respectively —
+too few to mean anything, and consistent with those rows being blank on this
+corpus (KI-013).
 
 ## 5. What none of this establishes
 

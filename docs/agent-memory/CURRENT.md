@@ -36,8 +36,14 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
   `tools/golden_label.html`, a third adjudicates, and `scripts/golden_score.py`
   is the gate — it exits non-zero on a single cell resolved to something the
   corpus contradicts. Zero failures over the 948 resolved cells would bound
-  false acceptance at 0.32%. Remaining agent work: P4 (Tesseract confirmer),
-  P5 (constrained CTC decode), P6 (PCR-SSP form).
+  false acceptance at 0.32%.
+- **Independent confirmation runs (P4, ADR 0009).** Tesseract re-reads every
+  resolved cell from the original: 43.5% confirmed, 14.2% contradicted, 42.2%
+  no opinion over 46,221 cells. On DRB1/DQB1 it is 60%; on class I only 28-31%,
+  because Tesseract cannot read those smaller cells at all. The confirmed set is
+  the auto-accept candidate and the contradicted set the review budget; neither
+  is an accuracy. Remaining agent work: P5 (constrained CTC decode), P6
+  (PCR-SSP form, which needs a human to confirm five forms first).
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.
