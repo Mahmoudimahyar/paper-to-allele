@@ -131,3 +131,31 @@ and its agreement with the caption is not independent corroboration because both
 can descend from the same statement. `MATCH-ABO-001` must not accept it as a
 verified blood group.
 
+## KI-015 — A single resolved allele is read as complete; the second allele is truncated at max_gap
+Found by the skeptical review of ADR 0008 (`docs/ingestion/EXTRACTION_REVIEW_2026-09-02.md`,
+W1). In two-allele cells the gap to the second allele is median 15.3 label heights,
+p90 18.4, max exactly 20.0 — the cap. 6,597 single-allele cells have the
+heterozygous second allele just beyond the chain (self-prefixed with the same locus
+in 98–99% of cases). 29–36% of resolved A/B/DRB1 cells are single-allele, far above
+any homozygosity rate, and `LocusResolution` cannot say whether one allele was
+printed or one was read. Any consumer treating a single value as homozygous will
+miscount every mismatch. Fix: second allele `UNREAD`; any aligned value box beyond
+the chain → `REVIEW_REQUIRED`; validate the gap on the golden set, never retune by
+yield. Until fixed, no single-value resolution may be consumed as a genotype.
+
+## KI-016 — The resolver has no first-field admissibility gate
+480 resolved values (0.64%) carry a first field that does not exist for their locus,
+mostly a leading `0` read as `8`/`9` with clean digits (`A*83`, `C*84`, `DQB1*83`,
+`DRB1*93/97`), which glyph repair cannot see. Fix: a fifth gate from per-locus
+first-field vocabularies (class I from the py-ard table, HA-006); outside it →
+`REVIEW`; never repair `8`/`9`→`0`; refuse value bodies with no digit at all.
+
+## KI-017 — 39 confirmed review findings against ADR 0008 are open
+The review raised 42 findings; 39 survived three-refuter verification, 16 able to
+emit a wrong fact (KI-015, KI-016, a value box bound to two loci, a recipient regex
+matching the verb `کرده` on 2,062 documents, a choice label read as DONOR,
+comparison sheets resolving two people's cells, the grouped row's centre band, the
+wrapped ABO disclaimer). The consistency check's 99.62% is the two-value subset:
+one-value DRB1 rows are doubled and manufacture 1,315 false flags. The ranked fix
+plan is section 4 of the review. Nothing extracted may be published (KI-012 stands).
+

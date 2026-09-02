@@ -29,6 +29,14 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
 - Donor/recipient role is read from the form's own printed field, never from a
   whole-page word search, which would invert it on hundreds of documents. Plan of
   record: `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`.
+- **Skeptical review of ADR 0008 done (2026-09-02):** 42 findings, 39 confirmed by
+  independent refuters, 16 wrong-fact class. The biggest: a single resolved allele
+  is treated as complete while the second allele sits just past `max_gap` on 6,597
+  cells (KI-015); no nomenclature gate (KI-016). Ranked fix plan and the next
+  accuracy gains (Yekta per-family rule, template-discovery rewrite to 63% coverage,
+  labelling tool, Tesseract confirmer at 86% agreement, constrained CTC decode):
+  `docs/ingestion/EXTRACTION_REVIEW_2026-09-02.md` section 4. **Do P0 before
+  labelling — it changes what the golden set scores.**
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.
