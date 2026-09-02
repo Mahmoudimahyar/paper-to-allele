@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
@@ -58,6 +59,53 @@ def quality_band(width: int | None, height: int | None) -> str:
     if longest <= 900:
         return "mid_561-900"
     return "high_>900"
+
+
+ALLELE_RE = re.compile(
+    r"\b(?:DRB1|DQB1|DQA1|DPB1|DPA1|DRB3|DRB4|DRB5|[ABC])\s?\*?\s?(\d{2})(?::(\d{2,3}))?\b"
+)
+
+
+def allele_fingerprints(db: Path) -> dict[str, str]:
+    """Map sha256 -> the sorted set of allele tokens the document reports.
+
+    These images are already SHA-256 unique, so a shared fingerprint means NEAR
+    duplication: the same report rephotographed or recompressed. Measured on this
+    corpus, 62.9% of documents carrying >=4 allele tokens share a fingerprint with
+    another, and one family of 83 documents collapses to just 3 distinct
+    fingerprints.
+
+    Sampling without collapsing these would draw the SAME patient's report many
+    times and report it as independent evidence, which would inflate every
+    confidence bound computed from the golden corpus.
+    """
+    con = sqlite3.connect(db)
+    out: dict[str, str] = {}
+    for sha, texts_json in con.execute("SELECT sha256, texts_json FROM ocr_result WHERE n_boxes>0"):
+        tokens = sorted(
+            {
+                m.group(0).replace(" ", "").upper()
+                for m in ALLELE_RE.finditer(" ".join(json.loads(texts_json)))
+            }
+        )
+        if len(tokens) >= 4:
+            out[sha] = "|".join(tokens)
+    con.close()
+    return out
+
+
+def collapse_near_duplicates(pool: list[dict], fingerprints: dict[str, str]) -> list[dict]:
+    """Keep at most one document per allele fingerprint."""
+    seen: set[str] = set()
+    kept = []
+    for row in pool:
+        fp = fingerprints.get(row["sha256"])
+        if fp is not None:
+            if fp in seen:
+                continue
+            seen.add(fp)
+        kept.append(row)
+    return kept
 
 
 def stratified(pool: list[dict], n: int, rng: np.random.Generator) -> list[dict]:
@@ -102,6 +150,7 @@ def build(db: Path, families_path: Path, out: Path, total: int) -> int:
     }
     con.close()
 
+    fingerprints = allele_fingerprints(db)
     families = json.loads(families_path.read_text(encoding="utf-8"))
     verified = [f for f in families if f["verified_single_template"]]
     mixture = [f for f in families if not f["verified_single_template"]]
@@ -119,7 +168,7 @@ def build(db: Path, families_path: Path, out: Path, total: int) -> int:
             for s in fam["sha256"]
             if s in meta
         ]
-        sample += stratified(pool, per_family, rng)
+        sample += stratified(collapse_near_duplicates(pool, fingerprints), per_family, rng)
 
     # 20% from mixtures — where matching should abstain
     mix_pool = [
@@ -128,7 +177,7 @@ def build(db: Path, families_path: Path, out: Path, total: int) -> int:
         for s in f["sha256"]
         if s in meta
     ]
-    sample += stratified(mix_pool, int(total * 0.20), rng)
+    sample += stratified(collapse_near_duplicates(mix_pool, fingerprints), int(total * 0.20), rng)
 
     # 10% LOW-RESOLUTION reports, sampled regardless of family.
     #
@@ -143,13 +192,13 @@ def build(db: Path, families_path: Path, out: Path, total: int) -> int:
         for s in in_family
         if s in meta and meta[s]["quality_band"] == "low_<=560"
     ]
-    sample += stratified(low_pool, int(total * 0.10), rng)
+    sample += stratified(collapse_near_duplicates(low_pool, fingerprints), int(total * 0.10), rng)
 
     # remainder: non-reports — the only way to measure false acceptance
     non_pool = [
         dict(meta[s], family_id=None, stratum="non_report") for s in meta if s not in in_family
     ]
-    sample += stratified(non_pool, total - len(sample), rng)
+    sample += stratified(collapse_near_duplicates(non_pool, fingerprints), total - len(sample), rng)
 
     seen, unique = set(), []
     for row in sample:

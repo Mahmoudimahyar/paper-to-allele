@@ -454,3 +454,50 @@ occupies one position.** That is a much smaller base than the earlier numbers
 implied, and it is the honest one. It also strengthens the case for the
 relation-based registry: per-document anchoring does not need a family to be
 positionally uniform at all.
+
+
+## Near-duplicate collapse — the golden corpus is smaller than it looked
+
+These images are already SHA-256 unique, so a shared allele fingerprint means
+NEAR duplication: the same report rephotographed or recompressed.
+
+| | |
+|---|---|
+| documents with >=4 allele tokens | 17,830 |
+| **distinct allele fingerprints** | **9,738** |
+| documents sharing a fingerprint | 11,207 (**62.9%**) |
+| largest repeat group | 81 documents |
+
+Per family it is worse than the corpus average. Two of the five verified
+families are near-duplicate collapses:
+
+| family | documents | distinct fingerprints | ratio |
+|---|---|---|---|
+| `DRB1+DRB3+DRB5+DQB1#4` | 304 | 154 | 0.51 |
+| `DRB1+DRB3+DQB1#11` | 83 | **3** | **0.04** |
+| `DRB1+DRB3+DQB1#6` | 62 | **5** | **0.08** |
+
+A family of 83 documents that is really 3 patients' reports photographed
+repeatedly is **3 independent observations, not 83**. Sampling it without
+collapsing would draw the same report many times and count it as independent
+evidence, inflating every confidence bound computed from the golden corpus.
+
+`golden_sample.py` now collapses to one document per allele fingerprint. The
+effect is visible and material: the verified-template stratum fell from 120
+documents to **80**, because only 80 independent ones exist. The shortfall is
+made up from the non-report stratum, which is where false acceptance is measured
+anyway.
+
+**This changes the power calculation.** The earlier "~800 cells" figure assumed
+200 independent documents. With collapse the sample is ~199 documents but fewer
+independent typing reports, so the cell count backing a >= 99.5% precision claim
+should be recomputed from the labelled set rather than assumed.
+
+### A bug worth recording
+
+The first implementation of this collapse silently did nothing. Writing the
+pattern through a non-raw Python string turned `` into a literal **backspace
+character (0x08)**, which is invisible in an editor, passes lint, and makes the
+regex match nothing. It was caught only by checking that the fingerprint count
+matched an earlier standalone measurement. **Verify that a new filter actually
+fires, rather than trusting that it ran.**
