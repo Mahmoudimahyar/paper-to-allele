@@ -107,7 +107,6 @@ def coherence(occ: np.ndarray, rows: np.ndarray, rng: np.random.Generator) -> fl
     return float((sim.sum() - n) / (n * n - n))
 
 
-
 def anchor_purity(pos: np.ndarray, rows: np.ndarray, pat: np.ndarray) -> dict:
     """Do the members print each locus label in ONE place, or in several?
 
@@ -172,9 +171,7 @@ def discover(db: Path, out: Path) -> int:
             lift = coh - base
             purity = anchor_purity(pos, member_rows, pat)
             verified = bool(
-                lift >= MIN_LIFT
-                and sd <= TIGHT_SD
-                and purity["modal_share"] >= MIN_MODAL_SHARE
+                lift >= MIN_LIFT and sd <= TIGHT_SD and purity["modal_share"] >= MIN_MODAL_SHARE
             )
             families.append(
                 {
