@@ -35,18 +35,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
-import sqlite3
+import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from kidneymatch.ocr.glyphs import canonical_locus_label  # noqa: E402
+from kidneymatch.ocr.store import read_corpus  # noqa: E402
+
 DEFAULT_DB = ROOT / "data/derived/ocr_pass.sqlite"
 DEFAULT_OUT = ROOT / "data/derived/template_families.json"
 
 LOCI = ["DRB1", "DRB3", "DRB4", "DRB5", "DQA1", "DQB1", "DPA1", "DPB1"]
-LOCUS_RE = re.compile(r"\b(DRB1|DRB3|DRB4|DRB5|DQA1|DQB1|DPA1|DPB1)\b", re.I)
 
 GRID = 16  # layout-occupancy resolution, used only for verification
 MIN_GROUP = 200  # smallest presence group worth clustering
@@ -57,26 +60,29 @@ MIN_MODAL_SHARE = 0.70  # each locus label must sit in one modal position
 
 
 def load(db: Path):
-    con = sqlite3.connect(db)
-    keys, pos, occ = [], [], []
-    for sha, boxes_json, texts_json in con.execute(
-        "SELECT sha256,boxes_json,texts_json FROM ocr_result WHERE n_boxes>0"
-    ):
-        boxes = json.loads(boxes_json)
-        texts = json.loads(texts_json)
-        if not boxes or len(boxes) != len(texts):
-            continue
+    """Layout signatures over the corpus.
 
+    Reads through `kidneymatch.ocr.store`, so thumbnail copies are excluded
+    (KI-009), and identifies locus labels with `glyphs.canonical_locus_label`,
+    which repairs the recognizer's final-character confusions. The earlier
+    version used neither: it clustered 9,581 thumbnails alongside originals and
+    saw `DRB1` on 3,511 documents instead of 16,025, because the label is read
+    `DRBI` more often than correctly. Both figures in the previous family set
+    are therefore superseded.
+    """
+    keys, pos, occ = [], [], []
+    for doc in read_corpus(db, with_boxes_only=True):
         centres = np.full((len(LOCI), 2), -1.0, dtype=np.float32)
         seen = np.zeros(len(LOCI), dtype=np.float32)
         grid = np.zeros((GRID, GRID), dtype=np.float32)
-        for (x0, y0, x1, y1), text in zip(boxes, texts, strict=True):
+        for box in doc.boxes:
+            x0, y0, x1, y1 = box.x0, box.y0, box.x1, box.y1
             gx0, gx1 = int(np.clip(x0 * GRID, 0, GRID - 1)), int(np.clip(x1 * GRID, 0, GRID - 1))
             gy0, gy1 = int(np.clip(y0 * GRID, 0, GRID - 1)), int(np.clip(y1 * GRID, 0, GRID - 1))
             grid[gy0 : gy1 + 1, gx0 : gx1 + 1] += 1.0
-            match = LOCUS_RE.match((text or "").strip())
-            if match:
-                i = LOCI.index(match.group(1).upper())
+            locus = canonical_locus_label(box.text or "")
+            if locus in LOCI:
+                i = LOCI.index(locus)
                 if not seen[i]:
                     centres[i] = ((x0 + x1) / 2, (y0 + y1) / 2)
                     seen[i] = 1.0
@@ -87,11 +93,10 @@ def load(db: Path):
         norm = np.linalg.norm(flat)
         if norm == 0:
             continue
-        keys.append(sha)
+        keys.append(doc.sha256)
         pos.append(np.concatenate([centres.ravel(), seen]))
         occ.append(flat / norm)
 
-    con.close()
     return keys, np.asarray(pos, np.float32), np.asarray(occ, np.float32)
 
 

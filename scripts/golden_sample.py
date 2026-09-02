@@ -37,28 +37,29 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from kidneymatch.ingestion.photos import quality_band  # noqa: E402
+from kidneymatch.ocr.store import read_corpus  # noqa: E402
+
 DEFAULT_DB = ROOT / "data/derived/ocr_pass.sqlite"
 DEFAULT_FAMILIES = ROOT / "data/derived/template_families.json"
 DEFAULT_OUT = ROOT / "data/derived/golden_sample.json"
 
 
-# Quality bands by longest edge. 520 px is the corpus median, so the bands are
-# chosen to split the real distribution rather than to look tidy.
-def quality_band(width: int | None, height: int | None) -> str:
-    longest = max(width or 0, height or 0)
-    if longest == 0:
-        return "unknown"
-    if longest <= 560:
-        return "low_<=560"
-    if longest <= 900:
-        return "mid_561-900"
-    return "high_>900"
+# Quality bands come from `kidneymatch.ingestion.photos`, the one definition
+# (KI-009). This file used to carry its own copy, built on the belief that
+# 520 px was the corpus median; that median was an artefact of 9,581 thumbnail
+# copies. The true corpus is 90.0% above 900 px.
+def band_name(width: int | None, height: int | None) -> str:
+    return quality_band(width, height).value
 
 
 ALLELE_RE = re.compile(
@@ -134,21 +135,20 @@ def stratified(pool: list[dict], n: int, rng: np.random.Generator) -> list[dict]
 
 
 def build(db: Path, families_path: Path, out: Path, total: int) -> int:
-    con = sqlite3.connect(db)
+    # Read through the shared corpus reader so thumbnail copies cannot be
+    # sampled. The previous draw contained 54 of them out of 199 documents,
+    # including every member of its low-resolution stratum.
     meta = {
-        sha: {
-            "sha256": sha,
-            "rel_path": rel,
-            "n_boxes": nb,
-            "quality_band": quality_band(w, h),
-            "width": w,
-            "height": h,
+        doc.sha256: {
+            "sha256": doc.sha256,
+            "rel_path": doc.rel_path,
+            "n_boxes": len(doc.boxes),
+            "quality_band": doc.quality_band.value,
+            "width": doc.width,
+            "height": doc.height,
         }
-        for sha, rel, w, h, nb in con.execute(
-            "SELECT sha256, rel_path, width, height, n_boxes FROM ocr_result"
-        )
+        for doc in read_corpus(db)
     }
-    con.close()
 
     fingerprints = allele_fingerprints(db)
     families = json.loads(families_path.read_text(encoding="utf-8"))
@@ -179,7 +179,7 @@ def build(db: Path, families_path: Path, out: Path, total: int) -> int:
     ]
     sample += stratified(collapse_near_duplicates(mix_pool, fingerprints), int(total * 0.20), rng)
 
-    # 10% LOW-RESOLUTION reports, sampled regardless of family.
+    # 5% LOW-RESOLUTION reports, sampled regardless of family.
     #
     # This stratum exists because template discovery is strongly resolution
     # biased: only 0.05% of images <=560 px reach a VERIFIED family, against
@@ -190,9 +190,9 @@ def build(db: Path, families_path: Path, out: Path, total: int) -> int:
     low_pool = [
         dict(meta[s], family_id=None, stratum="low_res_report")
         for s in in_family
-        if s in meta and meta[s]["quality_band"] == "low_<=560"
+        if s in meta and meta[s]["quality_band"] == "LOW"
     ]
-    sample += stratified(collapse_near_duplicates(low_pool, fingerprints), int(total * 0.10), rng)
+    sample += stratified(collapse_near_duplicates(low_pool, fingerprints), int(total * 0.05), rng)
 
     # remainder: non-reports — the only way to measure false acceptance
     non_pool = [

@@ -20,13 +20,23 @@ def load(name: str):
 
 
 def test_template_discovery_excludes_single_letter_loci() -> None:
-    """A bare 'A'/'B'/'C' matches far too much incidental text to be a locus."""
+    """A bare 'A'/'B'/'C' matches far too much incidental text to be a locus.
+
+    The property is unchanged; the mechanism moved. Discovery used to carry its
+    own `LOCUS_RE`, which matched a locus name ANYWHERE in a token and so placed
+    the locus wherever a patient value happened to sit (ADR 0007). It now uses
+    `glyphs.canonical_locus_label`, which matches whole tokens, repairs the
+    recognizer's final-character confusions, and refuses a bare class I letter.
+    """
+    from kidneymatch.ocr.glyphs import canonical_locus_label
+
     mod = load("template_discovery")
     assert mod.LOCI == ["DRB1", "DRB3", "DRB4", "DRB5", "DQA1", "DQB1", "DPA1", "DPB1"]
-    for stray in ("A", "B", "C", "CW"):
-        assert not mod.LOCUS_RE.fullmatch(stray)
-    for real in ("DRB1", "DQB1", "DPA1"):
-        assert mod.LOCUS_RE.fullmatch(real)
+    assert not hasattr(mod, "LOCUS_RE"), "the value-matching regex must not come back"
+    for stray in ("A", "B", "C", "CW", "DRB1*11"):
+        assert canonical_locus_label(stray) not in mod.LOCI
+    for real in ("DRB1", "DQB1", "DPA1", "HLA-DPBI"):
+        assert canonical_locus_label(real) in mod.LOCI
 
 
 def test_a_family_is_only_verified_when_an_independent_signal_agrees() -> None:

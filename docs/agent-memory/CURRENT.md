@@ -15,12 +15,20 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
   77% ≤640 px" counted 9,581 thumbnail copies (`_thumb (n).jpg`) as originals.
   Quality is still judged on pixel dimensions, never on filename (KI-007,
   HA-003), but low resolution is a small band, not the corpus.
-- **Accuracy status (2026-09-02):** no extracted value has been validated against
-  ground truth; the anchor resolver's earlier resolve rates bound the wrong token
-  (KI-010). Plan of record: `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`
-  — P0 data integrity → P1 resolver correctness → P3 golden labelling before any
-  batch extraction. Donor/recipient role is decidable for 80.5% of typing reports
-  from the form's own printed field plus captions; the rest is `UNKNOWN_ROLE`.
+- **Extraction (ADR 0008, 2026-09-02).** The binding gates, glyph repair, grouped
+  DRB3/4/5 rule, role field and ABO cell are implemented and measured on the
+  corrected corpus. A/B/DRB1/DQB1 resolve on 9,411–10,967 documents each; the
+  DRB3/4/5 row yields 29,820 per-gene facts against 3 before. **These
+  laboratories print DQA1/DPA1/DPB1 rows and leave them blank (KI-013)**, so the
+  archive supports DR/DQB matching and not DP.
+- **Accuracy status: still unvalidated (KI-012).** Every figure above is a yield
+  or an internal-consistency rate. No extracted value has been compared to a
+  human reading. The golden corpus is drawn (199 documents, thumbnail-free) and
+  unlabelled; labelling it is the next binding constraint and the only route out
+  of `BLOCKED_BY_BENCHMARK` for OCR-001.
+- Donor/recipient role is read from the form's own printed field, never from a
+  whole-page word search, which would invert it on hundreds of documents. Plan of
+  record: `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`.
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.

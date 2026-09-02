@@ -136,6 +136,38 @@ set of 18,615 typing reports (true originals, ≥2 canonical loci):
 - Golden sample must be **redrawn** after P0/P1: it selects documents, but 54 are
   thumbnails and its low-res stratum no longer describes the corpus.
 
+## 2.7 What was fixed on 2026-09-02 (ADR 0008)
+
+P0, P1, P4 and P5 of the plan below are **implemented and measured**. Results:
+
+| change | before | after |
+|---|---|---|
+| documents with 3+ locus anchors | 3,873 | **17,041** |
+| DRB1 / DQB1 resolved, all gates on | 185 / 111 value-shaped | **9,700 / 10,061** |
+| HLA-A / -B / -C resolved | 0 (values were dropped) | **10,967 / 9,411 / 3,038** |
+| DRB3/4/5 per-gene facts | 3 | **29,820** over 12,488 documents |
+| ABO read from an anchored cell | shape-only, O at 12% | **2,995 documents**, O+ 28.9% |
+| role from the printed field | not built | **tiered, with the caption as veto only** |
+
+Two external consistency checks, neither of which existed before:
+
+- The DRB1 haplotype constraint agrees with the independently-read DRB3/4/5 row
+  on **99.62%** of the 5,326 documents where both were read.
+- The anchored ABO distribution matches the Iranian population, where the
+  shape-only reading did not.
+
+**Three findings changed what the product can promise.** These laboratories
+print DQA1, DPA1 and DPB1 rows and leave them blank (KI-013), so the archive
+supports DR/DQB-prioritised matching and not DP. The dominant letterhead
+disclaims its own blood-group field as patient-reported (KI-014), so a printed
+ABO is not a laboratory measurement. And a whole-page search for the English
+words "donor" and "recipient" would have inverted the role on hundreds of
+documents; only a value in an identified cell counts.
+
+**What is still not measured (KI-012):** no extracted value has been compared to
+a human reading. P2 and P3 below are untouched, and they are what converts every
+number here from a yield into an accuracy.
+
 ## 3. The plan, in order of accuracy gained per hour
 
 Effort: A = agent-days, H = human-hours (H figures are estimates). Everything

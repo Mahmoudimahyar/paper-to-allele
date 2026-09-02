@@ -69,7 +69,7 @@ is not what the export contains. Read it for the per-image failure modes, which
 remain valuable, and read the characterization document for the population
 figures.
 
-## KI-009 — Thumbnail copies contaminated every derived artefact (found 2026-09-02)
+## KI-009 — Thumbnail copies contaminated every derived artefact (FIXED 2026-09-02)
 The export contains `photo_N@date_thumb (n).jpg` copies (113,008 files). The
 manifest filter in `scripts/ocr_pass.py` tested `endswith("_thumb.jpg")`, so
 9,581 of them entered the OCR pass as "unique originals" — 29% of it, the entire
@@ -80,7 +80,7 @@ manifest filter in `scripts/ocr_pass.py` tested `endswith("_thumb.jpg")`, so
 excluded by `rel_path LIKE '%_thumb%'`; golden sample and template families must
 be regenerated. Review: `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`.
 
-## KI-010 — Resolver bound the next row's label as the value; glyph confusions in labels and values
+## KI-010 — Resolver bound the next row's label as the value (FIXED 2026-09-02)
 Under the `below` rule, of 2,977 DRB1 RESOLVED bindings only 185 were
 value-shaped and 988 were the next locus label; DPA1/DPB1 had zero value-shaped
 bindings. The 34–44% "resolve rates" in `OCR_ENGINE_BENCHMARK_2026-09-01.md`
@@ -89,8 +89,12 @@ dominant form is a vertical stack of row labels with values to the right), and
 the recognizer reading the trailing `1` of locus labels as `I` (60,995 boxes) and
 `DRB5` as `DRBS`, which hid 4.6–7.7× of the anchors. Values: 20.7% of allele
 boxes carry a letter in a digit slot (`II`=11, `LS`=15), `*` read as `+ ° - "`.
-Fix plan: P1 in the accuracy review (label canonicaliser, value-shape gate, row
-rule, prefix consistency, cell-grammar canonicalisation or CTC logit masking).
+**FIXED** by ADR 0008: four binding gates, overlap alignment, and a bounded
+glyph repair. Documents with 3+ locus anchors rose 3,873 -> 17,041; A/B/DRB1/DQB1
+now resolve on 9,411-10,967 documents each with every gate on. CTC logit masking
+at decode time (ADR 0006) is still the stronger remedy and is NOT done — it
+would fix errors a post-hoc repair cannot, namely a glyph that decodes to a
+valid but wrong digit.
 
 ## KI-011 — py-ard is 1.5.5, not 2.4.0; IMGT 3650 does not load
 `pyproject.toml` pins `py-ard>=1,<2`; the lock resolves 1.5.5. `init(imgt_version="3650")`
@@ -98,4 +102,32 @@ raises `IndexError`; `"3620"` loads. `ard.validate("DRB1*11")` rejects
 first-field-only alleles by design, so per-locus first-field vocabularies must be
 derived from the allele table. The spec's 3.65 pin is unimplementable as locked:
 HA-006.
+
+## KI-012 — No extracted value has been compared to a human reading
+Every figure in ADR 0008 is a yield or an internal-consistency rate. The strongest
+external checks available today are indirect: the DRB1 haplotype constraint agrees
+with the grouped DRB3/4/5 row on 99.62% of documents where both were read, and the
+anchored ABO distribution matches the Iranian population. Neither measures
+wrong-locus false acceptance, which is the failure the project exists to prevent.
+The golden corpus is drawn (199 documents, thumbnail-free, all five verified
+families) and **unlabelled**. `OCR-001` must stay `BLOCKED_BY_BENCHMARK` until it
+is labelled. Nothing extracted so far may be published to Gold.
+
+## KI-013 — These laboratories do not type DQA1, DPA1 or DPB1
+Measured over 23,485 documents: the forms print a DPB1 row and leave its cell
+empty on 12,739 of the 12,770 documents that carry the label; DPA1 12,595 of
+12,626; DQA1 11,284; C 10,833. Under the same rule DRB1's cell is empty on 3,662
+of 13,362. This is the laboratory not performing the test, not a rule failure.
+Consequence: the archive supports DR/DQB-prioritised matching (KI-004) and cannot
+support DP matching at all. `MATCH-HLA-001` must treat DP as structurally UNKNOWN
+for historical records rather than as missing data to chase.
+
+## KI-014 — The dominant letterhead disclaims its own blood-group field
+The Yekta form prints "information regarding the blood group is based on the
+attendee's own account, and the laboratory bears no responsibility for its
+accuracy" — 2,928 documents, 97.7% of them carrying the Yekta marker. A printed
+ABO from that family is `PATIENT_REPORTED_ON_FORM`, not a laboratory measurement,
+and its agreement with the caption is not independent corroboration because both
+can descend from the same statement. `MATCH-ABO-001` must not accept it as a
+verified blood group.
 
