@@ -9,7 +9,9 @@
 Build the local, idempotent historical Telegram ingestion foundation. Parse source messages/media metadata first; do **not** begin batch OCR until inventory/dedup and the low-resolution benchmark gates exist.
 
 ## Locked facts
-- Current archive contains many low-resolution images; some have no better source. Use best physically available media and preserve `THUMBNAIL_ONLY` provenance.
+- **The real archive is present**, local-only and gitignored, at `data/raw/ChatExport_2026-08-31`: 178,660 files, 7.0 GB, 183,897 messages, 145,697 photos. Measured figures: `docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md`.
+- Images are low resolution (median longest edge **520 px**, 77% ≤640 px) — but **not** because thumbnails replaced missing originals. Every asset has its original; there are **zero** thumbnail-only assets. Quality must therefore be judged on pixel dimensions, not on a `_thumb` filename. See KI-007 and HA-003; this is a safety gate, not a cosmetic detail.
+- Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.
 - HLA geometry determines locus; OCR may not assign loci from token text alone.

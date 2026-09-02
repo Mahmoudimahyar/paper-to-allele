@@ -58,6 +58,8 @@ mutants/
 # Real historical archives, wherever they land. A Telegram export dropped at the
 # repo root is untracked but NOT ignored, and the Stop hook runs `git add -A`,
 # so without this a session ending commits real patient data.
-ChatExport_*/
-Telegram*Export*/
+# No trailing slash: a `dir/` pattern only matches an existing directory, so a
+# zip named ChatExport_2020-01-01, or a path git has not seen yet, slipped past.
+ChatExport_*
+Telegram*Export*
 *.tgs

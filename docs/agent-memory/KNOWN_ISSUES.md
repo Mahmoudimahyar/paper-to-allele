@@ -46,3 +46,25 @@ also shrink the definition of done by deleting acceptance bullets from a spec
 (`spec_lint` checks ownership, not that the set has not shrunk). The independent
 review pass in `AGENTS.md` is therefore load-bearing, not optional.
 See `docs/agent-harness/OPERATOR_CONTROLS.md` section 6.
+
+## KI-007 — Media quality is keyed on filename, which never fires on the real archive
+`resolve_best_available_media` assigns `THUMBNAIL_ONLY` from a `_thumb` filename
+or a missing original. The real export has **zero** thumbnail-only assets, so
+every one of its 145,697 photos would be classified `HIGH_RES_AVAILABLE` -
+including the 77% whose longest edge is ~520 px. Low-resolution critical values
+would therefore skip the mandatory review the product constitution requires.
+
+Quality must be derived from pixel dimensions. The threshold is a clinical
+decision: see `HUMAN_ACTIONS.md` HA-003. Evidence:
+`docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md`.
+
+Note the existing code is not *wrong* about the case it handles - a missing
+original really should degrade quality - it is that the case does not occur here,
+so the rule needs a second, dimension-based arm.
+
+## KI-008 — OCR_IMAGE_REVIEW_2026-08-31 generalized from 10 samples
+Its resolution finding ("around 520 px") is confirmed at scale, but its
+explanation - that the archive supplies thumbnails whose originals are missing -
+is not what the export contains. Read it for the per-image failure modes, which
+remain valuable, and read the characterization document for the population
+figures.

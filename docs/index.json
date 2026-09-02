@@ -10,12 +10,14 @@
     "historical-ingestion": [
       "docs/ingestion/HISTORICAL_INGESTION_MVP.md",
       "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
-      "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md"
+      "docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md",
+      "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md"
     ],
     "ocr": [
       "docs/ingestion/OCR_SPEC.md",
       "docs/clinical/HLA_VALIDATION_SPEC.md",
-      "docs/ingestion/LOW_RES_MEDIA_POLICY.md"
+      "docs/ingestion/LOW_RES_MEDIA_POLICY.md",
+      "docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md"
     ],
     "matching": [
       "docs/clinical/MATCHING_POLICY_V1.md",
