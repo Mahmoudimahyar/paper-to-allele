@@ -86,3 +86,34 @@ Never put secret values in this file.
 
 ## Closed
 <!-- Move completed items here without inserting credentials. -->
+
+### HA-007 — Label the golden corpus (the one thing blocking every accuracy claim)
+- **Needed by:** OCR-001 (leaves `BLOCKED_BY_BENCHMARK` only on this), and every
+  number in ADR 0008 and the extraction review, all of which are yields rather
+  than accuracies until this is done (KI-012).
+- **Why now:** the tooling is built and the tasks are generated. 199 documents,
+  **2,189 cells**, of which the pipeline resolved 948. Zero failures over those
+  948 bounds wrong-value false acceptance at **0.32%** by the rule of three; the
+  document, as a unit, could only ever bound it at 1.5%.
+- **What to do**, in order:
+  1. **Two different people** each open `tools/golden_label.html` in a browser,
+     enter their own name, and load `data/review/golden/tasks.json`. The page
+     never shows the machine's answer, and each person's name seeds a different
+     order, so the two readings stay independent. Roughly 4 hours each if the
+     948 resolved cells are done first. Each downloads `labels_<name>.json`.
+  2. Run `python scripts/golden_adjudicate.py --labels <a> <b>` to produce the
+     disputes.
+  3. **A third person** answers the disputes against the image and saves
+     `adjudicated.json`. The two labellers must NOT settle their own
+     disagreements: measured, people reconciling their own double entry make the
+     entries match, sometimes by introducing new errors.
+  4. Run the scorer. It exits non-zero if a single cell was resolved to
+     something the corpus contradicts:
+     `python scripts/golden_score.py --labels <a> <b> --adjudicated adjudicated.json`
+- **Acceptance command for OCR-001 when it goes live:** that `golden_score.py`
+  invocation. Its output is the evidence file `scripts/acceptance.py` records.
+- **Secret?** No, but the crops are PHI: `data/review/` is gitignored and must
+  stay local.
+- **Blocking now?** Yes. Nothing extracted may be published to Gold until it
+  passes, and no precision figure may be quoted before it.
+

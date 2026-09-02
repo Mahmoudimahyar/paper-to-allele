@@ -30,11 +30,14 @@ Build the local, idempotent historical Telegram ingestion foundation. Parse sour
   whole-page word search, which would invert it on hundreds of documents.
 - **Accuracy is still unvalidated (KI-012), and this is the binding
   constraint.** Every figure above is a yield or an internal-consistency rate;
-  no extracted value has been compared to a human reading. **Next: P3 — build
-  the labelling tool and label the golden corpus** (199 documents, thumbnail-free,
-  about 1,650 cells). It is the only route out of `BLOCKED_BY_BENCHMARK` for
-  OCR-001. Then P4 (Tesseract confirmer), P5 (constrained CTC decode), P6
-  (PCR-SSP form).
+  no extracted value has been compared to a human reading. **The labelling
+  tooling is built (P3); the labelling itself is HUMAN work: see HA-007.** 2,189
+  cells are generated in `data/review/golden/`; two people label with
+  `tools/golden_label.html`, a third adjudicates, and `scripts/golden_score.py`
+  is the gate — it exits non-zero on a single cell resolved to something the
+  corpus contradicts. Zero failures over the 948 resolved cells would bound
+  false acceptance at 0.32%. Remaining agent work: P4 (Tesseract confirmer),
+  P5 (constrained CTC decode), P6 (PCR-SSP form).
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%, so "current poster ≠ forwarded author" and sender carry-forward are mainstream paths, not edge cases.
 - HTML structure is useful; JSON export is optional improvement, not a blocker.
 - Raw historical inputs are immutable/local-only and never committed.

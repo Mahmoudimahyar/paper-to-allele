@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KidneyMatch — golden corpus labelling</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 1rem 1.2rem; max-width: 60rem; }
+  header { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: .6rem; }
+  h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  .muted { opacity: .65; }
+  .crop { border: 1px solid var(--line); max-width: 100%; display: block; margin: .5rem 0; image-rendering: crisp-edges; }
+  .cell img { max-height: 9rem; }
+  .row img { max-height: 6rem; width: 100%; object-fit: contain; }
+  .page img { max-height: 34rem; }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; margin: .7rem 0; padding: .5rem .8rem; }
+  legend { font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+  button { font: inherit; padding: .3rem .7rem; margin: .15rem .2rem .15rem 0; border-radius: 5px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+  button.on { outline: 2px solid currentColor; font-weight: 600; }
+  input[type=text] { font: inherit; padding: .3rem .4rem; width: 7rem; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: .5rem 0; }
+  .bar > i { display: block; height: 100%; background: currentColor; }
+  .hint { font-size: .85rem; opacity: .75; }
+  details { margin: .4rem 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Golden corpus labelling</h1>
+  <span class="muted" id="who"></span>
+  <span class="muted" id="progress"></span>
+  <button id="save">Download my labels</button>
+</header>
+
+<p class="hint" id="instructions"></p>
+
+<section id="setup">
+  <fieldset>
+    <legend>Start</legend>
+    <p class="hint">
+      Load <code>tasks.json</code> from <code>data/review/golden/</code>. Your name
+      seeds the order, so two people never see the cells in the same sequence.
+    </p>
+    <label>Your name <input type="text" id="annotator" autocomplete="off"></label>
+    <input type="file" id="file" accept="application/json">
+  </fieldset>
+</section>
+
+<section id="work" hidden>
+  <div class="bar"><i id="barfill"></i></div>
+  <p><strong id="locus"></strong> <span class="muted" id="cellid"></span></p>
+
+  <div class="cell"><img class="crop" id="cropCell" alt="the cell"></div>
+  <details><summary>Show the whole row (r)</summary><div class="row"><img class="crop" id="cropRow" alt="the row"></div></details>
+  <details><summary>Show the whole page (p)</summary><div class="page"><img class="crop" id="cropPage" alt="the page"></div></details>
+
+  <fieldset>
+    <legend>What does the form say?</legend>
+    <div id="states"></div>
+  </fieldset>
+
+  <fieldset id="valueBox">
+    <legend>Values</legend>
+    <div id="picklist"></div>
+    <p>
+      <label>Alleles <input type="text" id="alleles" placeholder="11 15" autocomplete="off"></label>
+      <span class="hint">Two alleles, space separated. Type what is printed.</span>
+    </p>
+    <div id="resolutions"></div>
+  </fieldset>
+
+  <p>
+    <button id="unsure">Flag as unsure (u)</button>
+    <button id="back">Back (&larr;)</button>
+    <button id="next">Next (&rarr; or Enter)</button>
+  </p>
+  <p class="hint">
+    Record what the form says, never what you expect. If you cannot read it,
+    choose UNREADABLE: a guess is worse than no answer. Your work is saved in
+    this browser as you go; download the file when you finish.
+  </p>
+</section>
+
+<script>
+// The OCR proposal is deliberately absent from tasks.json. A proposal shown
+// beside a blurry crop is an anchor, and an anchored labeller measures
+// agreement with the machine rather than reading the form.
+let tasks = [], order = [], at = 0, labels = {}, annotator = "", crops = "crops/";
+
+const $ = id => document.getElementById(id);
+const key = () => "km-golden-" + annotator;
+
+function seeded(list, seed) {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const out = list.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const j = h % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function save() {
+  try { localStorage.setItem(key(), JSON.stringify(labels)); } catch (e) { /* private window */ }
+}
+
+function current() { return tasks[order[at]]; }
+
+function draw() {
+  const task = current();
+  if (!task) return;
+  $("locus").textContent = task.locus + (task.kind === "presence" ? "  (present or absent?)" : "");
+  $("cellid").textContent = task.cell_id;
+  for (const [which, node] of [["cell", "cropCell"], ["row", "cropRow"], ["page", "cropPage"]]) {
+    const name = task.crops && task.crops[which];
+    $(node).src = name ? crops + name : "";
+    $(node).style.display = name ? "" : "none";
+  }
+  const saved = labels[task.cell_id] || {};
+
+  $("states").innerHTML = "";
+  task.states.forEach((state, index) => {
+    const button = document.createElement("button");
+    button.textContent = `${state} (${index + 1})`;
+    button.className = saved.state === state ? "on" : "";
+    button.onclick = () => { setState(state); };
+    $("states").append(button);
+  });
+
+  $("picklist").innerHTML = "";
+  (task.picklist || []).forEach(family => {
+    const button = document.createElement("button");
+    button.textContent = family;
+    button.onclick = () => {
+      const box = $("alleles");
+      box.value = (box.value + " " + family).trim();
+      record();
+    };
+    $("picklist").append(button);
+  });
+
+  $("resolutions").innerHTML = "";
+  (task.resolutions || []).forEach(resolution => {
+    const button = document.createElement("button");
+    button.textContent = resolution;
+    button.className = saved.resolution === resolution ? "on" : "";
+    button.onclick = () => { saved.resolution = resolution; labels[task.cell_id] = saved; save(); draw(); };
+    $("resolutions").append(button);
+  });
+
+  $("alleles").value = (saved.alleles || []).join(" ");
+  $("valueBox").hidden = saved.state && saved.state !== "VALUE";
+  $("unsure").className = saved.unsure ? "on" : "";
+  const done = Object.keys(labels).length;
+  $("progress").textContent = `${done} of ${tasks.length} labelled`;
+  $("barfill").style.width = (100 * done / tasks.length) + "%";
+}
+
+function record() {
+  const task = current();
+  const entry = labels[task.cell_id] || { state: "VALUE" };
+  entry.alleles = $("alleles").value.trim().split(/\s+/).filter(Boolean);
+  entry.annotator = annotator;
+  labels[task.cell_id] = entry;
+  save();
+}
+
+function setState(state) {
+  const task = current();
+  const entry = labels[task.cell_id] || {};
+  entry.state = state;
+  entry.annotator = annotator;
+  if (state !== "VALUE") entry.alleles = [];
+  labels[task.cell_id] = entry;
+  save();
+  draw();
+}
+
+function move(step) {
+  record();
+  at = Math.min(tasks.length - 1, Math.max(0, at + step));
+  draw();
+}
+
+$("file").onchange = async event => {
+  annotator = ($("annotator").value || "").trim();
+  if (!annotator) { alert("Please enter your name first: it seeds your order."); return; }
+  const payload = JSON.parse(await event.target.files[0].text());
+  tasks = payload.tasks;
+  $("instructions").textContent = payload.instructions || "";
+  order = seeded(tasks.map((_, i) => i), annotator);
+  try { labels = JSON.parse(localStorage.getItem(key()) || "{}"); } catch (e) { labels = {}; }
+  $("who").textContent = annotator;
+  $("setup").hidden = true;
+  $("work").hidden = false;
+  draw();
+};
+
+$("next").onclick = () => move(1);
+$("back").onclick = () => move(-1);
+$("alleles").oninput = record;
+$("unsure").onclick = () => {
+  const entry = labels[current().cell_id] || { state: "VALUE" };
+  entry.unsure = !entry.unsure;
+  labels[current().cell_id] = entry;
+  save();
+  draw();
+};
+
+$("save").onclick = () => {
+  record();
+  const blob = new Blob(
+    [JSON.stringify({ schema: "golden-labels/v1", annotator, cells: labels }, null, 1)],
+    { type: "application/json" }
+  );
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `labels_${annotator}.json`;
+  a.click();
+};
+
+document.onkeydown = event => {
+  if (event.target.tagName === "INPUT") return;
+  const task = current();
+  if (!task) return;
+  if (event.key === "ArrowRight" || event.key === "Enter") move(1);
+  else if (event.key === "ArrowLeft") move(-1);
+  else if (event.key === "u") $("unsure").click();
+  else if (event.key === "r" || event.key === "p") {
+    const which = event.key === "r" ? 0 : 1;
+    document.querySelectorAll("details")[which].open = !document.querySelectorAll("details")[which].open;
+  } else if (/^[1-9]$/.test(event.key)) {
+    const state = task.states[Number(event.key) - 1];
+    if (state) setState(state);
+  }
+};
+</script>
+</body>
+</html>
