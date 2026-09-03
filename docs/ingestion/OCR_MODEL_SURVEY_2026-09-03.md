@@ -146,8 +146,11 @@ but there is no reason to keep provoking a marginal machine for a result that
 would not change the recommendation: the leader on this benchmark already runs
 on the CPU in 13 ms.
 
-The environments and adapters remain under the session scratch directory, so the
-runs can be completed later at low cost if the machine is fixed.
+The environments and adapters remain under the session scratch directory
+(`%TEMP%\claude\C--Users-Mahyar-kidneymatch\<session>\scratchpad\ocrbench`),
+so the runs can be completed later at low cost if the machine is fixed. They
+hold about **22 GB** of model weights and eleven virtual environments; deleting
+that directory costs nothing but the re-download.
 
 ## 8. Recommendation
 
