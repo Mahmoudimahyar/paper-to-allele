@@ -38,10 +38,11 @@ inventory/dedup and the low-resolution benchmark gates exist.
   decode, after correcting a DIGITS_LOST gate that fired on the locus digit:
   44,504 UNANIMOUS / 2,255 SPLIT / 459 DIGITS_LOST resolved facts; SPLIT
   verdicts are real digit disagreements. ADR 0009 section 6 has the numbers.
-- **The zero-fact documents are a layout problem, not noise (KI-018).** 4,944
-  documents carry bare `A`/`B`/`C`/`DQ`/`DR` labels the resolver cannot anchor;
-  2,572 anchor labels and refuse every cell. P6 (template work) is larger than
-  the PCR-SSP estimate.
+- **The zero-fact documents are mostly not reports (KI-018, corrected).** Of
+  the 4,944 that anchor nothing, 72% hold no allele-shaped value either and
+  only 9% carry a locus label, against 99% of the documents that did produce
+  facts. Just 170 are genuinely recoverable. The corpus is not hiding thousands
+  of readable forms, so the work that pays is validating what is extracted.
 - **OCR engine survey (2026-09-02):** `docs/ingestion/OCR_MODEL_SURVEY_2026-09-02.md`.
   Cloud models were never shown real data (PHI) and had no keys (HA-010).
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%:

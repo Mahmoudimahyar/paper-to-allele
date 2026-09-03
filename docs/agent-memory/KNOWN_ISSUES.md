@@ -162,17 +162,38 @@ one-value DRB1 rows are doubled and manufacture 1,315 false flags. The ranked fi
 plan is section 4 of the review. Nothing extracted may be published (KI-012 stands).
 **Status 2026-09-02:** P0-P5 and P7 done (ADR 0009 and its amendment); P6 open (KI-018).
 
-## KI-018 — 4,944 documents carry HLA text the resolver cannot anchor
-Of 7,516 zero-fact documents, 4,944 have no anchored locus label at all, yet 79%
-of zero-fact documents contain both label-shaped and allele-shaped OCR boxes. The
-labels that fail to anchor are bare `A` (3,058 documents), bare `C` (740), bare
-`B` (507), `DQ` (302), `DR` (212), `CW` (55): forms that print class I loci
-without the `HLA-` prefix and class II as serologic families. The resolver
-requires the prefix on purpose (a bare `A` is also a blood group), so these are
-a layout-template task (P6), and the population is larger than the 2,631 first
-estimated for the PCR-SSP form. A further 2,572 zero-fact documents anchor
-labels but refuse every cell ("N candidates", "2 anchors": multi-column
-layouts). Measured 2026-09-02; the review pack draws from both populations.
+## KI-018 — The 4,944 documents that yield nothing are mostly not reports
+7,516 documents produced no fact. 2,572 of them anchored a locus label and had
+every cell refused (multi-column layouts, "N candidates", "2 anchors"). The
+other 4,944 anchored nothing at all, and an earlier note here blamed forms that
+print class I loci without the `HLA-` prefix. **That was wrong, and the
+correction shrinks the work by an order of magnitude.**
+
+Measured 2026-09-02 against the 16,050 documents that did produce facts:
+
+| signal | produced facts | anchored nothing |
+|---|---:|---:|
+| carries a canonical locus label | 98.9% | 9.0% |
+| carries ≥1 allele with a star or colon | 98.6% | 27.8% |
+| carries ≥4 such alleles | 95.0% | 9.3% |
+| carries ≥8 such alleles | 63.6% | 6.1% |
+
+A bare `A` box, the shape the earlier note named, is **less** common in the
+failing group (1.8% of documents carry three or more) than in the working one
+(3.2%): it is background noise present in both, not a missing label. The
+failing documents do not lack labels while holding values; **72% hold no
+allele-shaped value either**, and 8.5% carry almost no text at all. They are
+photographs, screenshots, chat images and other non-reports.
+
+Only **170** documents carry both a canonical label and four or more starred
+alleles, and the labels they carry are DRB3/DRB4/DRB5 (127/41/71) with almost
+no A, B, C, DRB1 or DQB1 — the grouped DRBX row was read and the main rows were
+not. That is the real P6 target and it is a few hundred documents, not
+thousands.
+
+**Consequence for the plan.** The recoverable corpus is close to what is already
+extracted. Effort belongs on validating the 16,050 documents that did produce
+facts (HA-008, HA-007), not on recovering the rest.
 See `docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md` issue 6c.
 
 ## KI-019 — Tesseract has no opinion on half the class I cells

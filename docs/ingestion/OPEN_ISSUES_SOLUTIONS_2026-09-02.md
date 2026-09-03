@@ -294,30 +294,43 @@ are real digit disagreements between offsets, not prefix rendering. C is the
 unstable locus (30% SPLIT on FORM#1 versus 3–4% for A and B): the narrowest
 crops with the `Cw` prefix.
 
-### 6c. The 7,516 zero-fact documents are two populations
+### 6c. The 7,516 zero-fact documents, and the correction that shrank them
 
-| population | docs | what the OCR boxes contain |
-|---|---:|---|
-| no locus label anchored anywhere | 4,944 | 79% of zero-fact docs have label-shaped AND allele-shaped boxes; the labels just do not anchor |
-| labels anchored, every cell refused | 2,572 | "N candidates exceeds 2" and "2 anchors" dominate: multi-column layouts |
-| genuinely not a report (fewer than 8 boxes, or no text) | 209 | photos of people, chat screenshots |
+A first pass split them by what their OCR boxes contained and concluded that
+4,944 documents were readable forms whose class I labels lacked the `HLA-`
+prefix. **Measuring it properly reversed that**, and the reversal is the most
+useful thing in this document.
 
-The label shapes that fail to anchor, by documents containing them: bare `A`
-(3,058 docs), bare `C` (740), bare `B` (507), `DQ` (302), `DR` (212), `CW` (55),
-`DRB` followed by digits (47). These are forms that print class I loci without
-the `HLA-` prefix and class II loci as serologic families. The resolver
-requires the prefix for class I on purpose (a bare `A` is also a blood group
-and a grade), and the doctrine says OCR text alone may not assign a locus. The
-way through is the one the doctrine names: **template geometry**. Cluster the
-4,944 no-anchor documents by layout, have a human read five exemplars per
-cluster (this is P6, the PCR-SSP form, and it is larger than the 2,631 first
-estimated), and write a family rule where a bare `A` anchors only when the
-template places it in the class I label column.
+| signal | the 16,050 that produced facts | the 4,944 that anchored nothing |
+|---|---:|---:|
+| carries a canonical locus label | 98.9% | 9.0% |
+| carries ≥1 allele with a star or colon | 98.6% | 27.8% |
+| carries ≥4 such alleles | 95.0% | 9.3% |
+| carries ≥8 such alleles | 63.6% | 6.1% |
 
-The pack now draws twenty documents from these two populations so the labeller
-sees what they are.
+The bare `A` boxes that suggested the first reading are *less* frequent in the
+failing group (1.8% of documents carry three or more) than in the working one
+(3.2%). They are noise in both. And the failing documents are not forms holding
+unread values: **72% contain no allele-shaped value at all** and 8.5% contain
+almost no text. They are photographs, screenshots and other non-reports, which
+is what a public Telegram channel is mostly made of.
 
----
+The genuinely recoverable subset is **170 documents** carrying both a canonical
+label and four or more starred alleles. Their labels are DRB3, DRB4 and DRB5
+(127, 41 and 71 documents) with almost no A, B, C, DRB1 or DQB1: the grouped
+DRBX row was read and the main rows were not. A template pass over those is
+worth a day, and it is P6's real size.
+
+The other zero-fact population, the 2,572 documents that anchored labels and
+had every cell refused, is a different and better prospect: those are
+multi-column layouts hitting "N candidates exceeds max_values=2" and "2 anchors
+found". The review pack draws from both so a person can confirm this reading.
+
+**What this changes about the plan.** The corpus is not hiding thousands of
+readable reports. What exists is roughly what has been extracted, so the work
+that raises the value of this database is validating the 16,050 documents that
+did produce facts, not recovering the rest. That is issue 1, and it is waiting
+on a person.
 
 ## What was built or changed today
 

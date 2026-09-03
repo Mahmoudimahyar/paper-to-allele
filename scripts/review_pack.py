@@ -70,7 +70,7 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     (
         "zero_fact_no_anchor",
         10,
-        "no locus label anchored anywhere; a layout the resolver cannot read",
+        "no locus label anchored anywhere; measured, most of these are not reports",
     ),
     ("zero_fact_refused", 10, "labels anchored but every cell refused; nothing extracted"),
     ("clean_control", 20, "every signal agrees; measures how often 'clean' is still wrong"),
