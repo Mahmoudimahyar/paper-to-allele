@@ -84,6 +84,47 @@ Never put secret values in this file.
 - **Action:** Human chooses project license. Third-party OSS licenses remain tracked independently.
 - **Blocking now?** No.
 
+### HA-008 — Label the anchored review pack (150 documents, ~2.5 hours)
+- **Needed by:** every accuracy claim (KI-012); the ordering of the review
+  queue; HA-003's MID-band decision.
+- **Why:** the blind golden corpus (HA-007) measures the published bound; this
+  pack finds where the pipeline is wrong, fast. 150 documents drawn from fifteen
+  failure strata plus a clean control, with every engine's reading shown.
+- **What to do:** run `uv run --frozen --extra ocr python scripts/review_pack.py`
+  (already built once into `data/review/hla_pack/`), open
+  `data/review/hla_pack/index.html` in a browser, enter your name, approve or
+  correct each cell (Enter approves), export the labels, and hand the JSON to
+  an agent. Score with `python scripts/golden_score.py --labels x.json x.json
+  --hidden data/review/hla_pack/pipeline.json`. Details:
+  `docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md` issue 1.
+- **Secret?** No. The pack is PHI and stays under gitignored `data/review/`.
+- **Blocking now?** Blocks any accuracy number and the review-queue design.
+
+### HA-009 — Approve the empty-cell policy (turns ~20,000 review items into one rule)
+- **Needed by:** REVIEW-001 (the queue), OCR-001.
+- **Why:** 24,142 REVIEW_REQUIRED cells are "label printed, cell empty" on loci
+  these laboratories do not type (KI-013: DQA1 10,766, C 9,906, and so on).
+  Reviewing them one by one is wasted human time.
+- **Decision required:** may an anchored label with no box in its cell resolve
+  to `NOT_TESTED` for a layout family where the cell is measured empty on ≥95%
+  of that family's documents, with the rate recorded as provenance? This changes
+  what UNKNOWN means for those cells, so it is a spec line, not an agent call.
+- **Secret?** No.
+- **Blocking now?** Blocks the queue's size; nothing else.
+
+### HA-010 — Cloud model API keys, only if a synthetic-only comparison is wanted
+- **Needed by:** the OCR model survey's cloud rows (Claude, GPT, Gemini).
+- **Why:** no real lab-report crop may reach a cloud API (PHI). A synthetic,
+  rendered sample of 220 crops exists locally for a legal comparison, and the
+  adapter refuses any other input. No provider key is present, so 0 of 6 cloud
+  models were called. A synthetic score says little about the real forms; the
+  local engines already measured are the ones that can be deployed.
+- **Decision required:** whether to fund the comparison at all. If yes, set
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` in the ignored `.env`
+  and an agent runs the synthetic sample only (cap 220 requests per model).
+- **Secret?** Yes: the keys. Never in Markdown or memory files.
+- **Blocking now?** No.
+
 ## Closed
 <!-- Move completed items here without inserting credentials. -->
 

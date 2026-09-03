@@ -156,3 +156,61 @@ independently spot-checked, and it still has never been compared to a human
 reading (KI-012). Everything above is a yield, an internal-consistency rate, or
 an agreement rate between two machines. **HA-007** is the work that changes
 that, and until it is done nothing may be published to Gold.
+
+## 6. Amendment 2026-09-02: the anchored review pack, and three measured corrections
+
+Written after the constrained decode (P5) ran over the corpus and the six open
+issues were reviewed (`docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md`).
+
+### The decode's corpus-wide verdicts
+
+Over 53,789 cells: UNANIMOUS 79.8%, DIGITS_LOST 10.5%, SPLIT 6.1%, PROPOSAL
+3.2%, ILLEGIBLE 0.4%. On resolved facts alone, before the correction below:
+43,326 UNANIMOUS, 2,222 SPLIT, 1,670 DIGITS_LOST, 3 ILLEGIBLE.
+
+SPLIT was checked and stands: 93-100% of SPLIT cells per locus are real digit
+disagreements between one-pixel offsets, not the prefix rendering differently.
+C is the unstable locus (30% SPLIT on FORM#1 against 3-4% for A and B).
+
+**DIGITS_LOST was firing on the locus digit.** Re-examined on 300 demoted cells
+(349 boxes): 240 fired only because the greedy path dropped the star, so the
+`1` of `DRB1` was compared as a value digit; 108 were the decode adding a digit
+the model never read, which is the loss the gate exists for. `digits_preserved`
+now strips the leading letters of a star-less reading and forgives exactly one
+locus digit; the value digits must still survive in full, in both directions
+(tests pin `DQB1103` against `DQB1*03` as lost). The DIGITS_LOST cells were
+re-decoded under the corrected gate; see the handoff for the count restored.
+
+### The confirmer confirms star-less digits too
+
+Section 4 left the class I gap unexplained. Measured on FORM#1: the class I
+value box is 57% the width of a class II box at the same height (`A*02` is four
+glyphs, `DRB1*11` seven), Tesseract returns nothing on 19-32% of those crops,
+and only 7-14% of its remaining unconfirmed readings contain a star. `_read`
+now treats `A02`, `Cw07` and `DRB111` the way `digits_preserved` does. Re-judged
+over the 47,621 stored readings with no OCR re-run (`confirm_pass.py
+--rescore`): CONFIRMED 20,613 → 22,969, CONTRADICTED 6,795 → 6,633, UNCONFIRMED
+20,213 → 18,019. Most of the gap is the empty readings, and that is a recognizer
+question, answered in `docs/ingestion/OCR_MODEL_SURVEY_2026-09-02.md`.
+
+### `ABSENT` is a label state
+
+DRB3/4/5 resolve to PRESENT or ABSENT. The golden schema could only say
+PRESENT_ONLY, against which any pipeline value scored as correct, so a form
+printing "not present" could never contradict a pipeline PRESENT. `ABSENT` is
+added and scored: PRESENT_ONLY against a pipeline ABSENT, and ABSENT against a
+pipeline PRESENT, are false acceptances.
+
+### The anchored pack is a second instrument, not a replacement
+
+`scripts/review_pack.py` draws documents from fifteen strata (one per failure
+signal the pipeline emits, rarest first, plus a clean control) and
+`tools/hla_review.html` shows each cell with every engine's reading and the
+pipeline's value pre-filled. It is faster than the blind tool and it anchors
+the reader, so every cell records APPROVED / EDITED / ADDED and the export is
+marked `anchored: true`. The blind corpus (section 3) remains the instrument
+for the published bound; the pack is the instrument for *which signal predicts
+errors*. Labels are `golden-labels/v1` and are scored by `golden_score.py`
+against the pack's `pipeline.json`.
+
+Section 5 stands unchanged: still no accuracy, still nothing to Gold.

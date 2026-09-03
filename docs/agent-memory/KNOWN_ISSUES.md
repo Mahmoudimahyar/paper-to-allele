@@ -160,4 +160,25 @@ comparison sheets resolving two people's cells, the grouped row's centre band, t
 wrapped ABO disclaimer). The consistency check's 99.62% is the two-value subset:
 one-value DRB1 rows are doubled and manufacture 1,315 false flags. The ranked fix
 plan is section 4 of the review. Nothing extracted may be published (KI-012 stands).
+**Status 2026-09-02:** P0-P5 and P7 done (ADR 0009 and its amendment); P6 open (KI-018).
 
+## KI-018 — 4,944 documents carry HLA text the resolver cannot anchor
+Of 7,516 zero-fact documents, 4,944 have no anchored locus label at all, yet 79%
+of zero-fact documents contain both label-shaped and allele-shaped OCR boxes. The
+labels that fail to anchor are bare `A` (3,058 documents), bare `C` (740), bare
+`B` (507), `DQ` (302), `DR` (212), `CW` (55): forms that print class I loci
+without the `HLA-` prefix and class II as serologic families. The resolver
+requires the prefix on purpose (a bare `A` is also a blood group), so these are
+a layout-template task (P6), and the population is larger than the 2,631 first
+estimated for the PCR-SSP form. A further 2,572 zero-fact documents anchor
+labels but refuse every cell ("N candidates", "2 anchors": multi-column
+layouts). Measured 2026-09-02; the review pack draws from both populations.
+See `docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md` issue 6c.
+
+## KI-019 — Tesseract has no opinion on half the class I cells
+On FORM#1 the class I value box is 57% the width of a class II box (`A*02` is
+four glyphs). Tesseract returns nothing on 19-32% of those crops and a star-less
+string on most of the rest. The star-less parse (2026-09-02) moved 2,356 cells
+to CONFIRMED and 162 out of CONTRADICTED over the stored readings; 18,019 cells
+still have no second opinion. A second independent recognizer is the remaining
+route: see `docs/ingestion/OCR_MODEL_SURVEY_2026-09-02.md`.

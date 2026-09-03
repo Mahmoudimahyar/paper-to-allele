@@ -48,6 +48,7 @@ both would let a glyph through twice.
 
 from __future__ import annotations
 
+import re
 import string
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -81,6 +82,8 @@ PREFIXES = (
 # than the brevity.
 DIGITS = string.digits
 EXPRESSION = "NLSQCA"
+# The digit a locus name carries, which a star-less reading glues onto the value.
+LOCUS_DIGITS = frozenset({"", "1", "3", "4", "5"})
 
 _NEG = -1e9
 
@@ -348,4 +351,15 @@ def digits_preserved(model_reading: str, decoded: str) -> bool:
             if character.isdigit() or character in aliases
         )
 
-    return digits(model_reading) == digits(decoded)
+    seen, kept = digits(model_reading), digits(decoded)
+    if seen == kept:
+        return True
+    if "*" in model_reading:
+        return False
+    # The model dropped the star. Its "body" then starts with the locus name,
+    # whose letters can alias to digits (the Q of DQB1 reads as 0) and whose
+    # own digit (the 1 of DRB1, the 3/4/5 of DRB3/4/5) is not a value digit.
+    # Measured, 240 of 349 DIGITS_LOST boxes were exactly this. The letters go,
+    # one locus digit is forgiven, and the value digits must survive in full.
+    seen = digits(re.sub(r"^[A-Za-z]+", "", model_reading))
+    return seen.endswith(kept) and seen[: len(seen) - len(kept)] in LOCUS_DIGITS

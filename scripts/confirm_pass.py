@@ -160,14 +160,14 @@ def run(facts_db: Path, export: Path, binary: str, limit: int | None, batch: int
 
     started = time.perf_counter()
     tally: Counter[str] = Counter()
-    pending: list[tuple] = []
+    pending: list[tuple[str, str, str, str, str, str, str]] = []
     now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
 
     for start in range(0, len(work), batch):
         chunk = work[start : start + batch]
         with tempfile.TemporaryDirectory(prefix="km-crops-") as work_dir:
             crops: list[Path] = []
-            kept: list[tuple] = []
+            kept: list[tuple[str, str, str | None]] = []
             for index, (sha, field, value, value_boxes, rel_path) in enumerate(chunk):
                 source = export / rel_path
                 if not source.exists():
@@ -187,7 +187,9 @@ def run(facts_db: Path, export: Path, binary: str, limit: int | None, batch: int
                 if x1 <= x0 or y1 <= y0:
                     continue
                 crop = image.crop((x0, y0, x1, y1))
-                crop = crop.resize((crop.width * UPSCALE, crop.height * UPSCALE), Image.LANCZOS)
+                crop = crop.resize(
+                    (crop.width * UPSCALE, crop.height * UPSCALE), Image.Resampling.LANCZOS
+                )
                 path = Path(work_dir) / f"{index:05d}.png"
                 crop.save(path)
                 crops.append(path)
@@ -227,6 +229,42 @@ def run(facts_db: Path, export: Path, binary: str, limit: int | None, batch: int
     return 0
 
 
+def rescore(facts_db: Path) -> int:
+    """Re-judge every stored reading under the current `confirm_value`.
+
+    The reading is Tesseract's and does not change; the comparison rule does
+    (star-less readings, 2026-09-02). Re-running Tesseract to re-apply a rule
+    would cost hours and change nothing about the evidence, so the verdicts are
+    recomputed in place from the stored readings. Nothing here reads an image.
+    """
+    vocabulary = load_vocabulary()
+    con = sqlite3.connect(facts_db)
+    rows = con.execute(
+        "SELECT c.sha256, c.field, c.verdict, c.reading, f.value FROM confirmation c "
+        "JOIN fact f ON f.sha256=c.sha256 AND f.field=c.field "
+        "AND f.extraction_version=c.extraction_version"
+    ).fetchall()
+    before: Counter[str] = Counter()
+    after: Counter[str] = Counter()
+    changed: list[tuple[str, str, str]] = []
+    for sha, field, old, reading, value in rows:
+        accepted = tuple(part for part in (value or "").split() if part)
+        new = confirm_value(field, accepted, reading or "", vocabulary).value
+        before[old] += 1
+        after[new] += 1
+        if new != old:
+            changed.append((new, sha, field))
+    con.executemany("UPDATE confirmation SET verdict=? WHERE sha256=? AND field=?", changed)
+    con.commit()
+    con.close()
+    print(f"rescored {len(rows):,} stored readings; {len(changed):,} verdicts changed")
+    for verdict in (Confirmation.CONFIRMED, Confirmation.CONTRADICTED, Confirmation.UNCONFIRMED):
+        key = verdict.value
+        print(f"  {key:<14}{before[key]:>8,} -> {after[key]:>8,}")
+    print("The readings are unchanged; only the comparison rule moved.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
@@ -234,7 +272,17 @@ def main() -> int:
     parser.add_argument("--tesseract", default=None)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=200)
+    parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="re-judge the stored readings under the current rule; runs no OCR",
+    )
     args = parser.parse_args()
+    if args.rescore:
+        if not args.facts.exists():
+            print(f"missing {args.facts}")
+            return 2
+        return rescore(args.facts)
 
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")

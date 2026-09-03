@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HLA review</title>
+<style>
+  :root { --ok:#d7f5dc; --edit:#ffe9b8; --add:#dbe9ff; --pend:#f3f3f3; --bad:#ffd6d6; --line:#ccc; --ink:#222; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.35 system-ui, Segoe UI, Arial, sans-serif; color:var(--ink); background:#fafafa; }
+  header { display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:center; padding:.5rem .8rem; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header input[type=text] { width:11rem; }
+  header .progress { font-variant-numeric:tabular-nums; }
+  button { cursor:pointer; padding:.25rem .6rem; }
+  main { display:grid; grid-template-columns: minmax(380px, 46%) 1fr; gap:.6rem; padding:.6rem; height:calc(100vh - 3.2rem); }
+  #viewer { position:relative; overflow:auto; border:1px solid var(--line); background:#333; }
+  #stage { position:relative; display:inline-block; }
+  #stage img { display:block; }
+  .hl { position:absolute; border:2px solid #ff3b3b; box-shadow:0 0 0 2px rgba(255,255,255,.7); pointer-events:none; display:none; }
+  .hl.anchor { border-color:#2d7cff; }
+  #panel { overflow:auto; }
+  .doc { background:#fff; border:1px solid var(--line); padding:.6rem; margin-bottom:.6rem; }
+  .tags span { display:inline-block; background:#eee; border-radius:3px; padding:0 .4rem; margin:.1rem .2rem .1rem 0; font-size:12px; }
+  .tags span.primary { background:#ffd27a; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border-bottom:1px solid #e5e5e5; padding:.3rem .35rem; vertical-align:middle; text-align:left; }
+  th { font-size:12px; color:#555; font-weight:600; }
+  tr.cell { background:var(--pend); }
+  tr.cell.APPROVED { background:var(--ok); }
+  tr.cell.EDITED { background:var(--edit); }
+  tr.cell.ADDED { background:var(--add); }
+  tr.cell.NONE { background:#fff; }
+  tr.cell.current td:first-child { box-shadow: inset 4px 0 #2d7cff; }
+  td.locus { font-weight:700; width:3.6rem; }
+  td.crop img { max-height:48px; max-width:260px; cursor:zoom-in; image-rendering:auto; }
+  td.crop img.big { max-height:140px; max-width:640px; cursor:zoom-out; }
+  td.sugg { font-family:ui-monospace, Consolas, monospace; font-size:12.5px; white-space:nowrap; }
+  td.sugg .eng { color:#666; display:inline-block; width:6.2rem; }
+  td.sugg .v { color:#000; }
+  td.sugg .verdict { color:#777; }
+  td.sugg .CONTRADICTED, td.sugg .SPLIT, td.sugg .DIGITS_LOST { color:#b00020; font-weight:600; }
+  td.sugg.hidden > div { visibility:hidden; }
+  td.edit input[type=text] { width:9.5rem; font-family:ui-monospace, Consolas, monospace; }
+  td.edit select { max-width:9rem; }
+  td.edit label { white-space:nowrap; font-size:12px; }
+  .doclevel { display:flex; flex-wrap:wrap; gap:.6rem 1.2rem; margin:.4rem 0 .6rem; align-items:center; }
+  .doclevel .pipe { color:#666; font-size:12px; }
+  .help { font-size:12px; color:#555; }
+  kbd { background:#eee; border:1px solid #ccc; border-radius:3px; padding:0 .3rem; font-size:11px; }
+  #jump { max-width:14rem; }
+  .warn { color:#b00020; }
+</style>
+</head>
+<body>
+<header>
+  <label>Annotator <input id="annotator" type="text" placeholder="your name"></label>
+  <span class="progress" id="progress"></span>
+  <button id="prev">◀ prev</button>
+  <button id="next">next ▶</button>
+  <select id="jump"></select>
+  <label><input type="checkbox" id="hideSugg"> hide suggestions until I type</label>
+  <button id="export">Export labels</button>
+  <label><button type="button" onclick="document.getElementById('import').click()">Import labels</button><input id="import" type="file" accept="application/json" hidden></label>
+  <span class="help"><kbd>Enter</kbd> approve/confirm &amp; next · <kbd>Alt+↓</kbd>/<kbd>Alt+↑</kbd> next/prev doc · click a row to highlight it on the image · zoom: <button id="zoomOut">−</button><button id="zoomFit">fit</button><button id="zoomIn">+</button></span>
+</header>
+<main>
+  <div id="viewer"><div id="stage"><img id="page" alt="report"><div class="hl" id="hlValue"></div><div class="hl anchor" id="hlAnchor"></div></div></div>
+  <div id="panel"></div>
+</main>
+<script src="pack.js"></script>
+<script>
+(function () {
+  'use strict';
+  const PACK = window.PACK;
+  if (!PACK) { document.getElementById('panel').innerHTML = '<p class="warn">pack.js not found next to this page. Run scripts/review_pack.py and open the index.html it writes.</p>'; return; }
+
+  // ---- state -------------------------------------------------------------
+  const ALLELE = /^(?:[A-Z]{1,4}[0-9]?\*)?\*?(\d{2,4}(?::\d{2,4})?)([NLSQCA])?$/i;
+  const STATES_HLA = ['VALUE', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
+  const STATES_DRBX = ['PRESENT_ONLY', 'ABSENT', 'VALUE', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
+  let docIndex = 0;
+  let zoom = null; // null = fit width
+  const key = () => 'hla_review:' + PACK.pack_id + ':' + (document.getElementById('annotator').value.trim() || 'anon');
+  let labels = load();
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(key()) || '{}'); } catch (e) { return {}; }
+  }
+  function save() {
+    try { localStorage.setItem(key(), JSON.stringify(labels)); } catch (e) { /* private window */ }
+    renderProgress();
+  }
+  labels.cells = labels.cells || {};
+  labels.documents = labels.documents || {};
+
+  // ---- helpers -----------------------------------------------------------
+  function bodies(value) {
+    // "DRB1*11 DRB1*15" -> ["11", "15"]; locus prefix is provenance, not the reading.
+    if (!value) return [];
+    return value.split(/\s+/).filter(Boolean).map(p => p.split('*').pop());
+  }
+  function normaliseInput(text) {
+    const out = [];
+    for (const tok of (text || '').trim().split(/[\s,;/]+/).filter(Boolean)) {
+      const m = ALLELE.exec(tok);
+      if (!m) return null;
+      out.push(m[1] + (m[2] ? m[2].toUpperCase() : ''));
+    }
+    return out;
+  }
+  function sameSet(a, b) {
+    const x = [...a].sort().join(' '), y = [...b].sort().join(' ');
+    return x === y;
+  }
+  function decision(cell, state, alleles) {
+    const pipe = bodies(cell.value);
+    const pipeState = cell.status === 'RESOLVED' ? (cell.kind === 'DRBX' ? (cell.value === 'ABSENT' ? 'ABSENT' : 'PRESENT_ONLY') : 'VALUE') : null;
+    if (state === 'VALUE' || state === 'PRESENT_ONLY' || state === 'ABSENT') {
+      if (pipeState === null) return 'ADDED';
+      if (cell.kind === 'DRBX') return (state === pipeState && (state !== 'VALUE' || sameSet(alleles, pipe))) ? 'APPROVED' : 'EDITED';
+      return sameSet(alleles, pipe) ? 'APPROVED' : 'EDITED';
+    }
+    return pipeState === null ? 'APPROVED' : 'EDITED'; // human says no value; pipeline agreed (abstained) or not
+  }
+  function fmtVotes(votes) {
+    // {"0:11": 7, "0:17": 2, "1:15": 9} -> "pos0: 11×7 17×2 | pos1: 15×9"
+    const by = {};
+    for (const k in votes) { const [pos, txt] = k.split(/:(.*)/); (by[pos] = by[pos] || []).push((txt || '∅') + '×' + votes[k]); }
+    return Object.keys(by).sort().map(p => by[p].join(' ')).join(' | ');
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // ---- rendering ---------------------------------------------------------
+  const panel = document.getElementById('panel');
+  const page = document.getElementById('page');
+  const stage = document.getElementById('stage');
+  const viewer = document.getElementById('viewer');
+
+  function renderProgress() {
+    const total = PACK.n_cells;
+    const done = Object.keys(labels.cells).filter(id => PACK.documents.some(d => d.cells.some(c => c.cell_id === id))).length;
+    const docsDone = PACK.documents.filter(d => d.cells.length && d.cells.every(c => labels.cells[c.cell_id])).length;
+    document.getElementById('progress').textContent = `doc ${docIndex + 1}/${PACK.n_documents} · ${docsDone} docs done · ${done}/${total} cells`;
+    const jump = document.getElementById('jump');
+    if (jump.options.length !== PACK.documents.length) {
+      jump.innerHTML = PACK.documents.map((d, i) => `<option value="${i}">${i + 1}. ${esc(d.primary_tag)} ${esc(d.family || '')}</option>`).join('');
+    }
+    jump.value = String(docIndex);
+    for (const [i, d] of PACK.documents.entries()) {
+      const complete = d.cells.length && d.cells.every(c => labels.cells[c.cell_id]);
+      jump.options[i].textContent = `${complete ? '✓' : '·'} ${i + 1}. ${d.primary_tag} ${d.family || ''}`;
+    }
+  }
+
+  function layoutImage() {
+    const doc = PACK.documents[docIndex];
+    const w = zoom ? doc.width * zoom : viewer.clientWidth - 2;
+    stage.style.width = w + 'px';
+    page.style.width = w + 'px';
+    page.style.height = (w * doc.height / doc.width) + 'px';
+  }
+  function highlight(cell) {
+    const hv = document.getElementById('hlValue'), ha = document.getElementById('hlAnchor');
+    const place = (el, box) => {
+      if (!box) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.style.left = (box[0] * 100) + '%'; el.style.top = (box[1] * 100) + '%';
+      el.style.width = ((box[2] - box[0]) * 100) + '%'; el.style.height = ((box[3] - box[1]) * 100) + '%';
+    };
+    if (!cell) { place(hv, null); place(ha, null); return; }
+    const vb = cell.value_boxes && cell.value_boxes.length ? [
+      Math.min(...cell.value_boxes.map(b => b[0])), Math.min(...cell.value_boxes.map(b => b[1])),
+      Math.max(...cell.value_boxes.map(b => b[2])), Math.max(...cell.value_boxes.map(b => b[3]))] : null;
+    place(hv, vb); place(ha, cell.anchor_box);
+    const box = vb || cell.anchor_box;
+    if (box) {
+      const y = box[1] * page.clientHeight, x = box[0] * page.clientWidth;
+      viewer.scrollTo({ top: Math.max(0, y - viewer.clientHeight / 2), left: Math.max(0, x - viewer.clientWidth / 3), behavior: 'smooth' });
+    }
+  }
+
+  function suggestionHtml(cell) {
+    const s = cell.suggestions || {};
+    const rows = [];
+    const p = s.pipeline || {};
+    rows.push(`<div><span class="eng">pipeline</span><span class="v">${esc(p.value || '—')}</span> <span class="verdict">${esc(p.status)}${p.repaired ? ' · repaired' : ''}${p.second_allele === 'UNREAD' ? ' · 2nd UNREAD' : ''}${p.stability && p.stability !== 'NOT_CHECKED' ? ' · ' + esc(p.stability) : ''}</span></div>`);
+    if (p.raw && p.raw !== p.value) rows.push(`<div><span class="eng">raw OCR</span><span class="v">${esc(p.raw)}</span></div>`);
+    if (p.status !== 'RESOLVED' && p.reason) rows.push(`<div><span class="eng">why refused</span><span class="verdict">${esc(p.reason)}</span></div>`);
+    if (s.tesseract) rows.push(`<div><span class="eng">tesseract</span><span class="v">${esc(s.tesseract.reading || '—')}</span> <span class="verdict ${esc(s.tesseract.verdict)}">${esc(s.tesseract.verdict)}</span></div>`);
+    if (s.decode) rows.push(`<div><span class="eng">decode</span><span class="v">${esc(s.decode.reading || '—')}</span> <span class="verdict ${esc(s.decode.verdict)}">${esc(s.decode.verdict)}</span>${s.decode.verdict === 'SPLIT' ? ` <span class="verdict">${esc(fmtVotes(s.decode.votes || {}))}</span>` : ''}</div>`);
+    for (const eng of PACK.engines || []) {
+      const txt = (PACK.suggestions[eng] || {})[cell.cell_id];
+      if (txt !== undefined) rows.push(`<div><span class="eng">${esc(eng)}</span><span class="v">${esc(txt || '—')}</span></div>`);
+    }
+    return rows.join('');
+  }
+
+  function renderDoc() {
+    const doc = PACK.documents[docIndex];
+    page.src = doc.image;
+    zoom = null; layoutImage(); highlight(null);
+    const dl = labels.documents[doc.id] || {};
+    const hide = document.getElementById('hideSugg').checked;
+    const roleOpts = ['', 'DONOR', 'RECIPIENT', 'BOTH', 'UNKNOWN'];
+    const aboOpts = ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'];
+    const rhOpts = ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'];
+    const sel = (id, opts, val) => `<select data-doc="${id}">${opts.map(o => `<option value="${o}" ${o === (val || '') ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
+    let html = `<div class="doc">
+      <div class="tags">${doc.tags.map(t => `<span class="${t === doc.primary_tag ? 'primary' : ''}">${esc(t)}</span>`).join('')}
+        <span>${esc(doc.quality_band || '?')}</span><span>${esc(doc.family || 'no family')}</span>${doc.comparison_sheet ? '<span>comparison sheet</span>' : ''}${doc.consistency && doc.consistency !== 'CONSISTENT' && doc.consistency !== 'NOT_CHECKABLE' ? `<span class="warn">${esc(doc.consistency)}</span>` : ''}</div>
+      <div class="doclevel">
+        <label>Role ${sel('role', roleOpts, dl.role)} <span class="pipe">pipeline: ${esc(doc.role.value || doc.role.status || '—')}${doc.role.source && doc.role.source !== 'NONE' ? ' (' + esc(doc.role.source) + ')' : ''}</span></label>
+        <label>ABO ${sel('abo', aboOpts, dl.abo)} <span class="pipe">pipeline: ${esc(doc.abo.value || doc.abo.status || '—')}</span></label>
+        <label>Rh ${sel('rh', rhOpts, dl.rh)} <span class="pipe">pipeline: ${esc(doc.rh.value || '—')}</span></label>
+        <label><input type="checkbox" data-doc="not_a_report" ${dl.not_a_report ? 'checked' : ''}> not a lab report</label>
+        <label><input type="checkbox" data-doc="unsure" ${dl.unsure ? 'checked' : ''}> unsure about this document</label>
+      </div>
+      <table><thead><tr><th>locus</th><th>crop</th><th>suggestions</th><th>your reading</th></tr></thead><tbody>`;
+    for (const cell of doc.cells) {
+      const lab = labels.cells[cell.cell_id];
+      const states = cell.kind === 'DRBX' ? STATES_DRBX : STATES_HLA;
+      const defaultState = cell.status === 'RESOLVED' ? (cell.kind === 'DRBX' ? (cell.value === 'ABSENT' ? 'ABSENT' : 'PRESENT_ONLY') : 'VALUE') : 'VALUE';
+      const state = lab ? lab.state : defaultState;
+      const text = lab ? lab.alleles.join(' ') : (cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
+      html += `<tr class="cell ${lab ? lab.decision : ''}" data-cell="${cell.cell_id}">
+        <td class="locus">${esc(cell.locus)}</td>
+        <td class="crop">${cell.crop ? `<img src="${cell.crop}" alt="">` : '<span class="help">no box</span>'}</td>
+        <td class="sugg ${hide && !lab ? 'hidden' : ''}">${suggestionHtml(cell)}</td>
+        <td class="edit">
+          <select data-state>${states.map(s => `<option value="${s}" ${s === state ? 'selected' : ''}>${s}</option>`).join('')}</select>
+          <input type="text" data-alleles value="${esc(text)}" placeholder="e.g. 11 15  or  11:01" ${state === 'VALUE' ? '' : 'disabled'}>
+          <label><input type="checkbox" data-unsure ${lab && lab.unsure ? 'checked' : ''}> unsure</label>
+          <button data-confirm>${lab ? '✓' : 'confirm'}</button>
+        </td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    panel.innerHTML = html;
+    renderProgress();
+    const first = panel.querySelector('tr.cell:not(.APPROVED):not(.EDITED):not(.ADDED) input[data-alleles]') || panel.querySelector('input[data-alleles]');
+    if (first) { setCurrent(first.closest('tr')); first.focus(); first.select(); }
+  }
+
+  function setCurrent(tr) {
+    for (const r of panel.querySelectorAll('tr.cell')) r.classList.toggle('current', r === tr);
+    const doc = PACK.documents[docIndex];
+    highlight(doc.cells.find(c => c.cell_id === tr.dataset.cell));
+  }
+
+  function confirmRow(tr) {
+    const doc = PACK.documents[docIndex];
+    const cell = doc.cells.find(c => c.cell_id === tr.dataset.cell);
+    const state = tr.querySelector('[data-state]').value;
+    const input = tr.querySelector('[data-alleles]');
+    let alleles = [];
+    if (state === 'VALUE') {
+      alleles = normaliseInput(input.value);
+      if (alleles === null || alleles.length === 0 || alleles.length > 2) {
+        input.style.outline = '2px solid #b00020'; input.focus();
+        return false;
+      }
+    }
+    input.style.outline = '';
+    const dec = decision(cell, state, alleles);
+    labels.cells[cell.cell_id] = {
+      locus: cell.locus, state, alleles,
+      resolution: state === 'VALUE' ? (alleles.some(a => a.includes(':')) ? 'TWO_FIELD' : 'FIRST_FIELD') : null,
+      unsure: tr.querySelector('[data-unsure]').checked,
+      decision: dec, pipeline_value: cell.value, pipeline_status: cell.status,
+      labelled_utc: new Date().toISOString(),
+    };
+    tr.className = 'cell ' + dec + ' current';
+    tr.querySelector('[data-confirm]').textContent = '✓';
+    tr.querySelector('td.sugg').classList.remove('hidden');
+    save();
+    return true;
+  }
+
+  function focusNextRow(tr) {
+    let next = tr.nextElementSibling;
+    while (next && (next.classList.contains('APPROVED') || next.classList.contains('EDITED') || next.classList.contains('ADDED'))) next = next.nextElementSibling;
+    if (next) { setCurrent(next); const i = next.querySelector('[data-alleles]'); if (i && !i.disabled) { i.focus(); i.select(); } else next.querySelector('[data-state]').focus(); }
+    else if (docIndex + 1 < PACK.documents.length) { docIndex++; renderDoc(); }
+  }
+
+  // ---- events ------------------------------------------------------------
+  panel.addEventListener('click', e => {
+    const tr = e.target.closest('tr.cell');
+    if (tr) setCurrent(tr);
+    if (e.target.matches('[data-confirm]')) { if (confirmRow(tr)) focusNextRow(tr); }
+    if (e.target.matches('td.crop img')) e.target.classList.toggle('big');
+  });
+  panel.addEventListener('focusin', e => { const tr = e.target.closest('tr.cell'); if (tr) setCurrent(tr); });
+  panel.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.closest('tr.cell')) { e.preventDefault(); const tr = e.target.closest('tr.cell'); if (confirmRow(tr)) focusNextRow(tr); }
+  });
+  panel.addEventListener('change', e => {
+    const doc = PACK.documents[docIndex];
+    if (e.target.matches('[data-state]')) {
+      const tr = e.target.closest('tr.cell'); const input = tr.querySelector('[data-alleles]');
+      input.disabled = e.target.value !== 'VALUE';
+      if (!input.disabled) input.focus();
+    }
+    if (e.target.matches('[data-doc]')) {
+      const d = labels.documents[doc.id] = labels.documents[doc.id] || {};
+      d[e.target.dataset.doc] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+      if (e.target.dataset.doc === 'not_a_report' && e.target.checked) {
+        for (const cell of doc.cells) labels.cells[cell.cell_id] = { locus: cell.locus, state: 'NOT_A_REPORT', alleles: [], resolution: null, unsure: false, decision: cell.status === 'RESOLVED' ? 'EDITED' : 'APPROVED', pipeline_value: cell.value, pipeline_status: cell.status, labelled_utc: new Date().toISOString() };
+        save(); renderDoc(); return;
+      }
+      save();
+    }
+  });
+  panel.addEventListener('input', e => {
+    if (e.target.matches('[data-alleles]')) e.target.closest('tr').querySelector('td.sugg').classList.remove('hidden');
+  });
+  document.getElementById('prev').onclick = () => { if (docIndex > 0) { docIndex--; renderDoc(); } };
+  document.getElementById('next').onclick = () => { if (docIndex + 1 < PACK.documents.length) { docIndex++; renderDoc(); } };
+  document.getElementById('jump').onchange = e => { docIndex = Number(e.target.value); renderDoc(); };
+  document.getElementById('hideSugg').onchange = renderDoc;
+  document.getElementById('annotator').onchange = () => { labels = load(); labels.cells = labels.cells || {}; labels.documents = labels.documents || {}; renderDoc(); };
+  document.getElementById('zoomIn').onclick = () => { zoom = (zoom || page.clientWidth / PACK.documents[docIndex].width) * 1.4; layoutImage(); };
+  document.getElementById('zoomOut').onclick = () => { zoom = (zoom || page.clientWidth / PACK.documents[docIndex].width) / 1.4; layoutImage(); };
+  document.getElementById('zoomFit').onclick = () => { zoom = null; layoutImage(); };
+  window.addEventListener('resize', layoutImage);
+  document.addEventListener('keydown', e => {
+    if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); document.getElementById('next').click(); }
+    if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); document.getElementById('prev').click(); }
+  });
+
+  document.getElementById('export').onclick = () => {
+    const name = document.getElementById('annotator').value.trim() || 'anon';
+    const payload = {
+      schema: 'golden-labels/v1', tool: 'hla_review.html', pack: PACK.pack_id, annotator: name,
+      exported_utc: new Date().toISOString(), anchored: true,
+      n_cells: Object.keys(labels.cells).length,
+      documents: labels.documents, cells: labels.cells,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `hla_review_${name}_${PACK.pack_id}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  document.getElementById('import').onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    file.text().then(text => {
+      const payload = JSON.parse(text);
+      if (payload.pack !== PACK.pack_id && !confirm('This file was exported from a different pack. Import anyway?')) return;
+      labels.cells = Object.assign(labels.cells, payload.cells || {});
+      labels.documents = Object.assign(labels.documents, payload.documents || {});
+      if (payload.annotator) document.getElementById('annotator').value = payload.annotator;
+      save(); renderDoc();
+    });
+  };
+
+  renderDoc();
+})();
+</script>
+</body>
+</html>

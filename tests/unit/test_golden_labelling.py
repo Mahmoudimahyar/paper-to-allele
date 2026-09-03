@@ -23,6 +23,7 @@ Three design decisions carry evidence and are tested here:
 from __future__ import annotations
 
 import pytest
+
 from kidneymatch.review.golden import (
     Adjudication,
     CellLabel,
@@ -196,3 +197,36 @@ def test_per_locus_results_are_reported() -> None:
     )
     assert report.per_locus["DRB1"].correct == 1
     assert report.per_locus["DQB1"].correct == 1
+
+
+# --- presence-typed genes -----------------------------------------------
+
+
+def test_absent_is_a_reading_of_its_own_for_a_presence_typed_gene() -> None:
+    """DRB3/4/5 resolve to PRESENT or ABSENT, not to alleles.
+
+    Before `ABSENT` existed a human could only say PRESENT_ONLY, and the score
+    counted any pipeline value as correct against it, so a form that printed
+    "not present" could never contradict a pipeline that said PRESENT.
+    """
+    truth = adjudicate(
+        {"d:DRB3": label(LabelState.ABSENT), "d:DRB4": label(LabelState.PRESENT_ONLY)},
+        {
+            "d:DRB3": label(LabelState.ABSENT, annotator="b"),
+            "d:DRB4": label(LabelState.PRESENT_ONLY, annotator="b"),
+        },
+    )
+    right = score_against_pipeline(
+        truth,
+        {"d:DRB3": ("RESOLVED", "DRB3", ("ABSENT",)), "d:DRB4": ("RESOLVED", "DRB4", ("PRESENT",))},
+    )
+    assert right.correct == 2 and not right.false_acceptances
+
+    wrong = score_against_pipeline(
+        truth,
+        {"d:DRB3": ("RESOLVED", "DRB3", ("PRESENT",)), "d:DRB4": ("RESOLVED", "DRB4", ("ABSENT",))},
+    )
+    assert wrong.false_acceptances == ["d:DRB3", "d:DRB4"]
+
+    declined = score_against_pipeline(truth, {"d:DRB3": ("REVIEW_REQUIRED", "DRB3", ())})
+    assert declined.missed == 1

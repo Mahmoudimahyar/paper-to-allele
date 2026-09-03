@@ -30,6 +30,7 @@ Three outcomes, and the difference between the last two matters:
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
 from kidneymatch.hla.vocabulary import FirstFieldVocabulary
@@ -70,6 +71,16 @@ def _read(
             # were perfectly clear — so a body after a star is read on its own.
             body = token.split("*")[-1] if "*" in token else token
             value = parse_allele_value(body)
+            if value is None and "*" not in token:
+                # No star at all: the locus name is glued to the digits (`A02`,
+                # `Cw07`, `DRB111`). Measured on FORM#1, this is most of the
+                # class I "no opinion" verdicts. The letters go; the locus's
+                # own digit goes if the rest still reads as a value.
+                stripped = re.sub(r"^[A-Za-z]+", "", token)
+                if locus[-1].isdigit() and stripped.startswith(locus[-1]):
+                    value = parse_allele_value(stripped[1:])
+                if value is None:
+                    value = parse_allele_value(stripped)
             if value is None:
                 continue
         if not vocabulary.is_admissible(locus, value.first_field):

@@ -116,3 +116,36 @@ def test_letter_noise_with_no_digits_withholds(vocabulary) -> None:
     opinion about the value."""
     for reading in ("aa", "DR", "B"):
         assert confirm_value("DRB1", ("DRB1*11",), reading, vocabulary) is Confirmation.UNCONFIRMED
+
+
+# --- the star the confirmer drops ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("locus", "accepted", "reading"),
+    [("A", ("02",), "A02"), ("C", ("07",), "Cw07"), ("DRB1", ("11", "15"), "DRB111 DRB115")],
+)
+def test_a_reading_that_dropped_the_star_still_confirms_the_digits(
+    locus: str, accepted: tuple[str, ...], reading: str, vocabulary
+) -> None:
+    """Measured on FORM#1: class I cells are UNCONFIRMED 52-59% of the time
+    against 19% for class II, and only 7-14% of those unconfirmed readings
+    contain a star. The crop is four glyphs wide and Tesseract reads `A02`.
+    The digits are there; the confirmer confirms digits."""
+    assert confirm_value(locus, accepted, reading, vocabulary) is Confirmation.CONFIRMED
+
+
+def test_a_reading_that_dropped_the_star_can_still_contradict(vocabulary) -> None:
+    assert confirm_value("A", ("02",), "A03", vocabulary) is Confirmation.CONTRADICTED
+
+
+def test_a_star_less_reading_without_a_whole_field_withholds(vocabulary) -> None:
+    """`B7` is not a first field; there is no digit pair to compare."""
+    assert confirm_value("B", ("07",), "B7", vocabulary) is Confirmation.UNCONFIRMED
+
+
+def test_the_locus_digit_glued_to_the_value_is_not_a_value_digit(vocabulary) -> None:
+    """`DRB111` is DRB1 + 11, not DRB + 111: 111 is not an admissible DRB1
+    family and the comparison would be wrong in both directions."""
+    assert confirm_value("DRB1", ("11",), "DRB111", vocabulary) is Confirmation.CONFIRMED
+    assert confirm_value("DRB1", ("15",), "DRB111", vocabulary) is Confirmation.CONTRADICTED

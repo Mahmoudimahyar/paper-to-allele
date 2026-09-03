@@ -219,3 +219,31 @@ def test_the_grammar_version_is_recorded() -> None:
     measured label floor from 89.7 to 40.8 to 15.51, so a decode that cannot say
     which grammar produced it cannot be judged."""
     assert GRAMMAR_VERSION
+
+
+@pytest.mark.parametrize(
+    ("model_read", "decoded"),
+    [("DRB111", "DRB1*11"), ("DQB10301", "DQB1*03:01"), ("DRB3", "DRB3*01:01"), ("A02", "A*02")],
+)
+def test_a_dropped_star_does_not_count_the_locus_digit_as_lost(
+    model_read: str, decoded: str
+) -> None:
+    """Measured on 300 demoted cells: 240 of 349 DIGITS_LOST boxes fired only
+    because the greedy path skipped the star, so the 1 of DRB1 was compared as
+    a value digit. The locus digit is provenance, not part of the reading."""
+    if model_read == "DRB3":
+        # No value digits at all in the model's reading: nothing to preserve
+        # against, and the decode invented two fields. That IS a loss.
+        assert digits_preserved(model_read, decoded) is False
+    else:
+        assert digits_preserved(model_read, decoded) is True
+
+
+@pytest.mark.parametrize(
+    ("model_read", "decoded"),
+    [("DQB1103", "DQB1*03"), ("A0201", "A*02"), ("DRB111", "DRB1*15"), ("B7", "B*07")],
+)
+def test_a_dropped_star_still_requires_every_value_digit(model_read: str, decoded: str) -> None:
+    """The leniency is exactly one locus digit. A second leading digit, a
+    trailing digit, a different digit, or a digit the decode added all fail."""
+    assert digits_preserved(model_read, decoded) is False

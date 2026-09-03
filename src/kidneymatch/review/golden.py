@@ -51,6 +51,7 @@ class LabelState(StrEnum):
     BLANK = "BLANK"
     UNREADABLE = "UNREADABLE"
     PRESENT_ONLY = "PRESENT_ONLY"
+    ABSENT = "ABSENT"
     NOT_A_REPORT = "NOT_A_REPORT"
 
 
@@ -182,11 +183,17 @@ def score_against_pipeline(
         tally = report.per_locus.setdefault(locus, LocusTally())
 
         if status == "RESOLVED":
+            # A presence-typed gene (DRB3/4/5) resolves to PRESENT or ABSENT
+            # rather than to alleles; ABSENT is a reading in its own right.
+            absent = values == ("ABSENT",)
             if (
                 label.state is LabelState.VALUE
                 and sorted(values) == sorted(label.alleles)
                 or label.state is LabelState.PRESENT_ONLY
                 and values
+                and not absent
+                or label.state is LabelState.ABSENT
+                and absent
             ):
                 report.correct += 1
                 tally.correct += 1
@@ -196,7 +203,7 @@ def score_against_pipeline(
                 # failure the project exists to prevent.
                 report.false_acceptances.append(cell_id)
                 tally.false_acceptances += 1
-        elif label.state in (LabelState.VALUE, LabelState.PRESENT_ONLY):
+        elif label.state in (LabelState.VALUE, LabelState.PRESENT_ONLY, LabelState.ABSENT):
             # A real value the pipeline declined to read. The record stays
             # incomplete, which is a cost rather than a harm.
             report.missed += 1
