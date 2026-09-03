@@ -49,6 +49,7 @@
   kbd { background:#eee; border:1px solid #ccc; border-radius:3px; padding:0 .3rem; font-size:11px; }
   #jump { max-width:14rem; }
   .warn { color:#b00020; }
+  .warnbar { background:#ffd6d6; border-bottom:1px solid #b00020; color:#7a0016; padding:.5rem .8rem; font-weight:600; }
 </style>
 </head>
 <body>
@@ -83,12 +84,38 @@
   const key = () => 'hla_review:' + PACK.pack_id + ':' + (document.getElementById('annotator').value.trim() || 'anon');
   let labels = load();
 
+  // Whether this browser will actually keep anything. Opened straight off the
+  // disk, or in a private window, localStorage can be unavailable — and a
+  // labelling tool that silently forgets two hours of work is worse than one
+  // that refuses to start, so this is probed once and said out loud.
+  let storageWorks = (function () {
+    try {
+      localStorage.setItem('hla_review:probe', '1');
+      localStorage.removeItem('hla_review:probe');
+      return true;
+    } catch (e) { return false; }
+  })();
+
   function load() {
+    if (!storageWorks) return {};
     try { return JSON.parse(localStorage.getItem(key()) || '{}'); } catch (e) { return {}; }
   }
   function save() {
-    try { localStorage.setItem(key(), JSON.stringify(labels)); } catch (e) { /* private window */ }
+    if (storageWorks) {
+      try { localStorage.setItem(key(), JSON.stringify(labels)); }
+      catch (e) { storageWorks = false; warnAboutStorage(); }
+    }
     renderProgress();
+  }
+  function warnAboutStorage() {
+    if (document.getElementById('storageWarning')) return;
+    const bar = document.createElement('div');
+    bar.id = 'storageWarning';
+    bar.className = 'warnbar';
+    bar.textContent = 'This browser will not save your progress here, so nothing is being kept between reloads. '
+      + 'Serve the folder instead — run  python -m http.server 8765  inside it and open http://localhost:8765 — '
+      + 'or export your labels before you close the tab.';
+    document.body.insertBefore(bar, document.querySelector('main'));
   }
   labels.cells = labels.cells || {};
   labels.documents = labels.documents || {};
@@ -341,6 +368,10 @@
     if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); document.getElementById('prev').click(); }
   });
 
+  window.addEventListener('beforeunload', event => {
+    if (!storageWorks && Object.keys(labels.cells).length) { event.preventDefault(); event.returnValue = ''; }
+  });
+
   document.getElementById('export').onclick = () => {
     const name = document.getElementById('annotator').value.trim() || 'anon';
     const payload = {
@@ -367,6 +398,7 @@
   };
 
   renderDoc();
+  if (!storageWorks) warnAboutStorage();
 })();
 </script>
 </body>

@@ -90,12 +90,17 @@ Never put secret values in this file.
 - **Why:** the blind golden corpus (HA-007) measures the published bound; this
   pack finds where the pipeline is wrong, fast. 150 documents drawn from fifteen
   failure strata plus a clean control, with every engine's reading shown.
-- **What to do:** run `uv run --frozen --extra ocr python scripts/review_pack.py`
-  (already built once into `data/review/hla_pack/`), open
-  `data/review/hla_pack/index.html` in a browser, enter your name, approve or
-  correct each cell (Enter approves), export the labels, and hand the JSON to
-  an agent. Score with `python scripts/golden_score.py --labels x.json x.json
-  --hidden data/review/hla_pack/pipeline.json`. Details:
+- **What to do:** the pack is already built at `data/review/hla_pack/`.
+  Double-click `serve.cmd` inside it; a browser opens on the page. Enter your
+  name, then work down each document: Enter approves the row as shown, typing
+  replaces it. Cells the pipeline never anchored are pre-set to NOT_PRINTED or
+  BLANK, so most rows are one keystroke. Export the labels when done and hand
+  the JSON to an agent. Score with `python scripts/golden_score.py --labels
+  x.json x.json --hidden data/review/hla_pack/pipeline.json`.
+  (Rebuild or resize with `uv run --frozen --extra ocr python
+  scripts/review_pack.py --n 150 --suggestions data/review/suggestions`;
+  rebuilding after the fact database changes reshuffles the strata, so finish a
+  pack before regenerating it.) Details:
   `docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md` issue 1.
 - **Secret?** No. The pack is PHI and stays under gitignored `data/review/`.
 - **Blocking now?** Blocks any accuracy number and the review-queue design.

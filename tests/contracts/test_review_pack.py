@@ -263,13 +263,20 @@ def test_a_refused_cell_shows_the_row_not_nothing(tmp_path: Path) -> None:
         assert cell["suggestions"]["pipeline"]["reason"]
 
 
-def test_the_page_is_self_contained_and_records_anchoring() -> None:
-    """The pack opens from disk with no server, and an export from it says it
-    was made with the suggestions visible, so it is never mistaken for a blind
-    golden label."""
+def test_the_page_never_reaches_the_network_and_records_anchoring() -> None:
+    """The reports are the patients'. Nothing on this page may leave the
+    machine, and an export from it says it was made with the suggestions
+    visible, so it is never mistaken for a blind golden label.
+
+    The check is on what the page LOADS, not on the characters `http`: the
+    storage warning names a localhost address in prose, which fetches nothing.
+    """
     page = PAGE.read_text(encoding="utf-8")
     assert "window.PACK" in page
-    assert "fetch(" not in page and "http://" not in page and "https://" not in page
+    for reaching_out in ("fetch(", "XMLHttpRequest", "WebSocket", "navigator.sendBeacon"):
+        assert reaching_out not in page
+    for attribute in ('src="http', "src='http", 'href="http', "href='http", "@import"):
+        assert attribute not in page
     assert "anchored: true" in page
     assert "golden-labels/v1" in page
     for decision in ("APPROVED", "EDITED", "ADDED"):
@@ -289,6 +296,22 @@ def test_the_page_is_self_contained_and_records_anchoring() -> None:
 def test_the_pack_directory_is_never_committable() -> None:
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "data/review/*" in ignore
+
+
+def test_the_pack_can_serve_itself(tmp_path: Path) -> None:
+    """A browser may refuse `localStorage` to a page opened off the disk, and
+    the labels live there. The page says so if it happens, but the pack also
+    ships the one click that makes the question moot."""
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=8)
+    module.build_pack(db, export, tmp_path / "pack", 4, 1, PAGE)
+    windows = (tmp_path / "pack/serve.cmd").read_bytes()
+    assert b"http.server" in windows and b"127.0.0.1" in windows
+    assert windows.startswith(b"@echo off\r\n"), "cmd.exe wants CRLF, and exactly one"
+    assert b"\r\r" not in windows, "the platform translated the line endings twice"
+    assert b"127.0.0.1" in (tmp_path / "pack/serve.sh").read_bytes()
+    page = PAGE.read_text(encoding="utf-8")
+    assert "storageWorks" in page, "and the page must still notice when it cannot save"
 
 
 def test_the_page_preselects_the_state_the_refusal_reason_implies() -> None:

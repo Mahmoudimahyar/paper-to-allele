@@ -432,7 +432,34 @@ def build_pack(
         encoding="utf-8",
     )
     shutil.copyfile(page, out / "index.html")
+    write_launcher(out)
     return {t: strata_counts.get(t, 0) for t, _, _ in STRATA}
+
+
+def write_launcher(out: Path) -> None:
+    """A double-clickable server for the pack.
+
+    Opened straight off the disk, a browser may refuse this page `localStorage`,
+    and the page would then forget the labels on reload. It says so when that
+    happens, but the better answer is not to depend on it: serving the folder
+    over localhost makes storage ordinary, and costs the reader one click.
+    """
+    windows = [
+        "@echo off",
+        'cd /d "%~dp0"',
+        'start "" http://localhost:8765/index.html',
+        "python -m http.server 8765 --bind 127.0.0.1",
+        "",
+    ]
+    posix = [
+        "#!/bin/sh",
+        'cd "$(dirname "$0")"',
+        "python -m http.server 8765 --bind 127.0.0.1",
+        "",
+    ]
+    # newline="" or the platform translates these again and cmd.exe gets \r\r\n.
+    (out / "serve.cmd").write_text("\r\n".join(windows), encoding="ascii", newline="")
+    (out / "serve.sh").write_text("\n".join(posix), encoding="ascii", newline="")
 
 
 def main() -> int:
@@ -459,7 +486,8 @@ def main() -> int:
     print(f"packed {sum(counts.values())} documents into {args.out}")
     for tag, count in counts.items():
         print(f"  {tag:<24}{count:>5}")
-    print("Open index.html in a browser; labels export as golden-labels/v1.")
+    print("Run serve.cmd in that directory, then label at http://localhost:8765 .")
+    print("Labels export as golden-labels/v1 and are scored by scripts/golden_score.py.")
     print("Nothing in this directory may be committed: it is the patients' reports.")
     return 0
 
