@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -296,6 +297,70 @@ def test_the_page_never_reaches_the_network_and_records_anchoring() -> None:
 def test_the_pack_directory_is_never_committable() -> None:
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "data/review/*" in ignore
+
+
+def test_an_export_from_the_page_scores_against_the_pack(tmp_path: Path) -> None:
+    """The whole point of the pack, end to end.
+
+    `HA-008` tells a person to label and hand the JSON to an agent, who scores
+    it with `golden_score.py`. Three files have to agree on one shape for that
+    to work — the page's export, the pack's `pipeline.json`, and the scorer —
+    and they live apart, so this pins them together: a corrected cell must come
+    back as a false acceptance, and the scorer must fail on it.
+    """
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=20)
+    pack_dir = tmp_path / "pack"
+    module.build_pack(db, export, pack_dir, 8, 1, PAGE)
+    pack = json.loads((pack_dir / "pack.json").read_text(encoding="utf-8"))
+
+    cells: dict[str, object] = {}
+    corrected: str | None = None
+    for document in pack["documents"]:
+        for cell in document["cells"]:
+            body = [p.split("*")[-1] for p in (cell["value"] or "").split() if p]
+            if cell["status"] != "RESOLVED":
+                state, alleles = "NOT_PRINTED", []
+            elif cell["kind"] == "DRBX":
+                state = "ABSENT" if cell["value"] == "ABSENT" else "PRESENT_ONLY"
+                alleles = []
+            elif corrected is None:
+                corrected, state, alleles = cell["cell_id"], "VALUE", ["11", "16"]
+            else:
+                state, alleles = "VALUE", body
+            cells[cell["cell_id"]] = {
+                "locus": cell["locus"],
+                "state": state,
+                "alleles": alleles,
+                "resolution": "FIRST_FIELD" if state == "VALUE" else None,
+                "unsure": False,
+            }
+    assert corrected, "the fixture must contain a resolved cell to disagree with"
+    labels = tmp_path / "labels_tester.json"
+    labels.write_text(
+        json.dumps(
+            {"schema": "golden-labels/v1", "annotator": "tester", "anchored": True, "cells": cells}
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(ROOT / "scripts/golden_score.py"),
+            "--labels",
+            str(labels),
+            str(labels),
+            "--hidden",
+            str(pack_dir / "pipeline.json"),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 1, "a false acceptance must fail the gate"
+    assert corrected in result.stdout
+    assert "FALSE ACCEPTANCE  : 1" in result.stdout
 
 
 def test_the_pack_can_serve_itself(tmp_path: Path) -> None:

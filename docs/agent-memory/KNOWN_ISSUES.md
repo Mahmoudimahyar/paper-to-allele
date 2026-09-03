@@ -201,5 +201,9 @@ On FORM#1 the class I value box is 57% the width of a class II box (`A*02` is
 four glyphs). Tesseract returns nothing on 19-32% of those crops and a star-less
 string on most of the rest. The star-less parse (2026-09-02) moved 2,356 cells
 to CONFIRMED and 162 out of CONTRADICTED over the stored readings; 18,019 cells
-still have no second opinion. A second independent recognizer is the remaining
-route: see `docs/ingestion/OCR_MODEL_SURVEY_2026-09-02.md`.
+still have no second opinion. **Measured route (2026-09-03):** PP-OCRv5
+en-mobile-rec agrees with the trusted set 97.0% and with the hard cells 91.0%,
+against Tesseract's 90.0% and 51.5%, at 13 ms/crop on the CPU. Adopting it needs
+an OSS-register and lockfile decision; `scripts/suggest_pass.py --dump-crops`
+runs it from outside the repository meanwhile.
+See `docs/ingestion/OCR_MODEL_SURVEY_2026-09-03.md`.

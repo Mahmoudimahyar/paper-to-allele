@@ -1,7 +1,7 @@
 # Open issues after P0–P7: diagnosis and solutions (2026-09-02)
 
 Companion to `EXTRACTION_REVIEW_2026-09-02.md` (what was fixed) and
-`OCR_MODEL_SURVEY_2026-09-02.md` (which other engines were tried). This document
+`OCR_MODEL_SURVEY_2026-09-03.md` (which other engines were tried). This document
 takes the six issues from the status report one at a time: what is actually
 wrong, what was measured today, what is now built, and what remains and for
 whom. Every number here is a yield or an aggregate over the local corpus; none
@@ -271,12 +271,16 @@ crop that narrow returns nothing (a fifth to a third of the time) or a string
 without the star (only 7–14% of the unconfirmed readings contain one), and
 `confirm._read` then refuses to parse it.
 
-**Fix (small, testable):** let the confirmer compare digits when its reading
-is a locus letter followed by digits with the star missing, exactly as
-`digits_preserved` now does for the decode. Expected to move a large share of
-class I UNCONFIRMED to CONFIRMED or CONTRADICTED, either of which is
-information; UNCONFIRMED is not. A second, independent confirmer from the OCR
-survey is the other route (see that document).
+**Fixed the same day**, and it moved 4,113 verdicts: the confirmer now reads a
+star-less `A02` or `Cw07` the way `digits_preserved` does. Confirmed went
+20,613 → 22,969 and unconfirmed 20,213 → 18,019 over the stored readings, with
+no OCR re-run (`scripts/confirm_pass.py --rescore`).
+
+**The remaining 18,019 need a different engine, and one was measured.**
+PP-OCRv5 en-mobile-rec agrees with the trusted set 97.0% and the hard cells
+91.0%, against Tesseract's 90.0% and 51.5%, at 13 ms per crop on the CPU. See
+`OCR_MODEL_SURVEY_2026-09-03.md` §8, including the dependency decision that
+adopting it requires.
 
 ### 6b. The decode's DIGITS_LOST verdict fires on the locus digit
 

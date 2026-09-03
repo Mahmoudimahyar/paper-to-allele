@@ -43,8 +43,17 @@ inventory/dedup and the low-resolution benchmark gates exist.
   only 9% carry a locus label, against 99% of the documents that did produce
   facts. Just 170 are genuinely recoverable. The corpus is not hiding thousands
   of readable forms, so the work that pays is validating what is extracted.
-- **OCR engine survey (2026-09-02):** `docs/ingestion/OCR_MODEL_SURVEY_2026-09-02.md`.
-  Cloud models were never shown real data (PHI) and had no keys (HA-010).
+- **OCR engine survey (2026-09-03).** 22 configurations on 600 real crops:
+  PP-OCRv5 en-mobile-rec leads the practical field (0.970 trusted / 0.910 hard
+  agreement, 13 ms/crop, CPU) against Tesseract's 0.900 / 0.515. The pipeline's
+  own recognizer loses 56 points when the crop is padded by a few pixels, so it
+  depends on the detector's box being exact. Cloud models were never shown real
+  data (PHI) and no keys exist (HA-010).
+  `docs/ingestion/OCR_MODEL_SURVEY_2026-09-03.md`.
+- **The workstation powers off unexpectedly, and it is not this workload.** 35
+  unclean shutdowns on record since 2026-06-11, most before this project, with
+  no bug-check, dump or hardware-error entry. The GPU model runs were stopped
+  anyway. `docs/operations/WORKSTATION_STABILITY.md`.
 - Forwarded messages are 37% of the corpus and joined (senderless) messages 7%:
   "current poster ≠ forwarded author" is a mainstream path.
 - Raw historical inputs are immutable/local-only and never committed.
@@ -85,9 +94,9 @@ export path; tests use synthetic fixtures.
    clean-control rate decides whether anything can be published.
 2. **HIST-001 test-first**, then HIST-002; the caption role extractor is their
    first consumer (solutions doc, issue 3).
-3. Agent work that needs no human: re-run `scripts/decode_pass.py` after any
-   gate change; ENTITY-001 spec and tables (issue 2); template discovery over
-   the no-anchor population (KI-018); a second confirmer if the survey found one.
+3. Agent work that needs no human: ENTITY-001 spec and tables (issue 2);
+   re-run `scripts/decode_pass.py` after any gate change. A second confirmer
+   (PP-OCRv5) is measured and recommended but needs the dependency decision.
 4. Human "yes" items: HA-009 (queue policy), HA-006, HA-003, HA-005.
 
 Acceptance state: `python scripts/acceptance.py status`. All criteria across
