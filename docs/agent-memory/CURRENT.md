@@ -35,9 +35,9 @@ inventory/dedup and the low-resolution benchmark gates exist.
 - **Independent confirmation (P4) and the constrained decode (P5) ran over the
   corpus.** Tesseract re-judged 2026-09-02 with star-less parsing: 22,969
   confirmed / 6,633 contradicted / 18,019 no opinion over 47,621 cells. The
-  decode: 79.8% UNANIMOUS over 53,789 cells; its DIGITS_LOST gate was firing on
-  the locus digit (240 of 349 boxes) and was corrected; SPLIT verdicts are real.
-  ADR 0009 section 6 has the numbers.
+  decode, after correcting a DIGITS_LOST gate that fired on the locus digit:
+  44,504 UNANIMOUS / 2,255 SPLIT / 459 DIGITS_LOST resolved facts; SPLIT
+  verdicts are real digit disagreements. ADR 0009 section 6 has the numbers.
 - **The zero-fact documents are a layout problem, not noise (KI-018).** 4,944
   documents carry bare `A`/`B`/`C`/`DQ`/`DR` labels the resolver cannot anchor;
   2,572 anchor labels and refuse every cell. P6 (template work) is larger than

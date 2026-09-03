@@ -178,8 +178,10 @@ C is the unstable locus (30% SPLIT on FORM#1 against 3-4% for A and B).
 the model never read, which is the loss the gate exists for. `digits_preserved`
 now strips the leading letters of a star-less reading and forgives exactly one
 locus digit; the value digits must still survive in full, in both directions
-(tests pin `DQB1103` against `DQB1*03` as lost). The DIGITS_LOST cells were
-re-decoded under the corrected gate; see the handoff for the count restored.
+(tests pin `DQB1103` against `DQB1*03` as lost). The 5,695 DIGITS_LOST cells
+were re-decoded under the corrected gate: on resolved facts DIGITS_LOST went
+1,670 → 459, UNANIMOUS 43,326 → 44,504, and 33 cells that the digit gate had
+masked surfaced as SPLIT. No value changed; 1,178 facts regained their standing.
 
 ### The confirmer confirms star-less digits too
 

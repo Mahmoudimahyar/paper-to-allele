@@ -256,9 +256,9 @@ dropped the star**, so the `1` of `DRB1` was compared as a value digit; 108 were
 the decode adding a digit the model did not read, which is a real loss and must
 stay flagged; 1 other. Fixed today in `kidneymatch.ocr.ctc.digits_preserved`
 (letters stripped, one locus digit forgiven, value digits must survive in
-full), with tests pinning both directions. Re-running `scripts/decode_pass.py`
-after the pass in flight completes will restore roughly two thirds of the 1,191
-demoted facts to UNANIMOUS without changing a single value.
+full), with tests pinning both directions. The 5,695 DIGITS_LOST cells were
+re-decoded the same day: on resolved facts DIGITS_LOST 1,670 → 459, UNANIMOUS
+43,326 → 44,504, and 33 masked SPLIT cells surfaced. No value changed.
 
 `SPLIT` was checked the same way and is sound: 93–100% of SPLIT cells per locus
 are real digit disagreements between offsets, not prefix rendering. C is the
