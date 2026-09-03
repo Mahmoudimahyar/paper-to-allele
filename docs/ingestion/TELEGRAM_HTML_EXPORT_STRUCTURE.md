@@ -62,19 +62,41 @@ cover both, because the archive predates the change.
 
 ## Forwarded
 
+**Corrected 2026-09-03 against the real archive (66,991 forwarded messages).**
+The forwarded block is nested **inside** the message's own `body`, which carries
+the current poster's `from_name` and the posting date:
+
 ```html
-<div class="pull_left forwarded userpic_wrap">…</div>
-<div class="forwarded body">
+<div class="pull_left userpic_wrap">…</div>
+<div class="body">
+ <div class="pull_right date details" title="14.01.2026 00:25:11 UTC+02:00">00:25</div>
  <div class="from_name">
-Original Sender <span class="date details" title="14.01.2026 00:22:03 UTC+02:00"> 14.01.2026 00:22:03</span>
+Current Poster
  </div>
- <div class="text">…</div>
+ <div class="pull_left forwarded userpic_wrap">…</div>
+ <div class="forwarded body">
+  <div class="from_name">
+Original Sender <span class="date details" title="14.01.2026 00:22:03 UTC+02:00"> 14.01.2026 00:22:03</span>
+  </div>
+  <div class="text">…</div>
+ </div>
 </div>
 ```
 
-The forwarded block carries the *original* author and date. The enclosing
-message still carries the *current* poster. Per the product constitution these
-are different identities and must stay separate fields.
+An earlier revision of this file showed only the inner two elements, and a
+parser written from it replaced the message body with the forwarded block. That
+loses the current poster on **every** forwarded message — 37% of this archive —
+and silently attributes each one to whoever posted previously. The nesting is
+the part that matters.
+
+The forwarded block carries the *original* author and date; its `text` and
+`media_wrap` are the message's content. The enclosing `body` carries the
+*current* poster and the time it was posted here. Per the product constitution
+these are different identities and must stay separate fields.
+
+`class="forwarded"` also matches the avatar column
+`pull_left forwarded userpic_wrap`, so selecting the forwarded body requires
+**both** `forwarded` and `body`.
 
 ## Reply
 

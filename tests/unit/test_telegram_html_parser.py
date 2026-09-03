@@ -142,10 +142,27 @@ def test_a_date_divider_is_not_a_message(page) -> None:
 
 @pytest.mark.invariant("HIST-001", "current and forwarded actor remain distinct")
 def test_a_forwarded_message_names_two_different_people(page) -> None:
+    """And the current poster is READ, not inherited.
+
+    Measured over the real archive: `forwarded body` is nested inside the
+    message's own `body`, which carries the current poster's `from_name`. A
+    parser that treats the forwarded block as the whole body loses that name on
+    every forwarded message and silently attributes the post to whoever spoke
+    last — 37% of this archive, attributed to the wrong person.
+    """
     forwarded = by_id(page)[106]
     assert forwarded.forwarded_from_display_name == "Synthetic Original Author"
+    assert forwarded.sender_display_name == "Synthetic Poster Three"
+    assert forwarded.sender_is_inherited is False
     assert forwarded.sender_display_name != forwarded.forwarded_from_display_name
     assert forwarded.forwarded_original_at == datetime(2019, 12, 15, 8, 30, 0, tzinfo=TEHRAN)
+    assert forwarded.sent_at == datetime(2020, 1, 1, 10, 25, 0, tzinfo=TEHRAN)
+
+
+def test_a_forwarded_message_keeps_its_own_text_and_media(page) -> None:
+    """The content lives in the forwarded block; only the author does not."""
+    forwarded = by_id(page)[106]
+    assert forwarded.raw_text.startswith("Forwarded content.")
 
 
 def test_a_message_that_is_not_forwarded_claims_no_original_author(page) -> None:

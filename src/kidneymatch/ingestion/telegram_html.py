@@ -379,18 +379,18 @@ def _read_message(
     classes = _classes(node)
     is_joined = "joined" in classes
 
-    # `class_="forwarded"` also matches `pull_left forwarded userpic_wrap`, the
-    # avatar column. The block that carries the original author is the one
-    # holding BOTH classes.
-    forwarded_body = next(
-        (
-            candidate
-            for candidate in node.find_all("div")
-            if {"forwarded", "body"} <= set(_classes(candidate))
-        ),
-        None,
-    )
-    body = forwarded_body if forwarded_body is not None else node.find("div", class_="body")
+    # Measured over the real archive: `forwarded body` is nested INSIDE the
+    # message's own `body`, which carries the current poster's `from_name` and
+    # the posting date. Replacing the body with the forwarded block — as an
+    # abbreviated reading of the DOM reference suggests — loses the current
+    # poster on every forwarded message, and 37% of this archive is forwarded.
+    # `class_="forwarded"` also matches the avatar column
+    # `pull_left forwarded userpic_wrap`, so both classes are required.
+    bodies = [candidate for candidate in node.find_all("div") if "body" in _classes(candidate)]
+    forwarded_body = next((b for b in bodies if "forwarded" in _classes(b)), None)
+    body = next((b for b in bodies if "forwarded" not in _classes(b)), None)
+    if body is None:
+        body = forwarded_body
 
     sent_raw: str | None = None
     sender: str | None = None
@@ -404,6 +404,10 @@ def _read_message(
     forwarded_name, forwarded_at, forwarded_raw = (None, None, None)
     if forwarded_body is not None:
         forwarded_name, forwarded_at, forwarded_raw = _read_forwarded(forwarded_body)
+        if forwarded_body is body:
+            # The abbreviated shape: no enclosing body, so the forwarded block
+            # is the whole message and there is no current poster to read.
+            forwarded_body = None
 
     # The date lives on the enclosing message even when the body is forwarded.
     date_block = node.find("div", class_="date")
@@ -413,9 +417,27 @@ def _read_message(
     if body is not None:
         for child in body.find_all("div", recursive=False):
             child_classes = _classes(child)
-            if "from_name" in child_classes:
-                if forwarded_body is None:
-                    sender = _text_of(child) or None
+            if "forwarded" in child_classes and "body" in child_classes:
+                # The forwarded block's own text and media are this message's
+                # content; its `from_name` was read above as the ORIGINAL
+                # author and must never be mistaken for the current poster.
+                for inner in child.find_all("div", recursive=False):
+                    inner_classes = _classes(inner)
+                    if "text" in inner_classes:
+                        text_parts.append(_text_of(inner))
+                        contacts.extend(_contact_evidence(inner))
+                    elif "media_wrap" in inner_classes:
+                        media.extend(_read_media(inner))
+                        contacts.extend(_contact_evidence(inner))
+                    elif "from_name" in inner_classes or _IGNORED_CLASSES & set(inner_classes):
+                        continue
+                    else:
+                        unparsed.append(
+                            f"{source_file}#{dom_id}: unrecognised block inside forwarded body "
+                            f"{' '.join(inner_classes) or '(no class)'}: {_text_of(inner)[:200]}"
+                        )
+            elif "from_name" in child_classes:
+                sender = _text_of(child) or None
             elif "text" in child_classes:
                 text_parts.append(_text_of(child))
                 contacts.extend(_contact_evidence(child))
@@ -433,11 +455,8 @@ def _read_message(
                 )
 
     sender_is_inherited = False
-    if sender is None and forwarded_body is None:
+    if sender is None:
         # A joined message omits from_name entirely; carry the sender forward.
-        sender = carried_sender
-        sender_is_inherited = sender is not None
-    if forwarded_body is not None and sender is None:
         sender = carried_sender
         sender_is_inherited = sender is not None
 
