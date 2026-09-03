@@ -90,37 +90,66 @@ would match a person against themselves and count them many times.
 
 **Solution: `ENTITY-001`, evidence-tiered clustering, HLA never merges alone.**
 
-Signals available today, cheapest first: the document hash (exact duplicate),
-the sender hash and posting time (HIST-002 bundles), the printed role and ABO,
-the HLA fingerprint, and (pending HA-005) a salted hash of the printed name.
+**Measured 2026-09-02, and it corrected the first draft of this rule.** 10,032
+documents resolve three or more of A/B/C/DRB1/DQB1, in 4,246 distinct
+fingerprints. Two questions had to be separated: are the repeats real, and is a
+fingerprint discriminating enough to merge on?
+
+*The repeats are real.* Within each locus set, identical pairs run 177 to 1,982
+times above what independent chance predicts, and the largest groups are
+internally consistent: the 67-document group is 58 RECIPIENT and 9 unread, the
+62-document group 35 DONOR and 27 unread, the 45-document group carries one
+blood group on all 45. People repost.
+
+*The fingerprint is still not discriminating enough to merge on alone.* Per
+locus, the chance two unrelated documents carry the same genotype:
+
+| locus | documents | distinct genotypes | two random documents match |
+|---|---:|---:|---|
+| DQB1 | 9,675 | 30 | 1 in 10 |
+| C | 3,114 | 97 | 1 in 40 |
+| DRB1 | 11,112 | 113 | 1 in 44 |
+| A | 11,628 | 149 | 1 in 55 |
+| B | 10,911 | 344 | 1 in 90 |
+
+These are first-field genotypes from Iranian donors and recipients, not alleles:
+DQB1 with thirty observed genotypes carries almost no identifying power. 10,032
+documents make 50.3 million pairs, so **any per-pair match probability above
+2 × 10⁻⁸ yields an expected false merge**, and the draft rule "identical on ≥3
+loci" reaches only 1 in 22,000 to 1 in 218,000 for the triples that actually
+occur — on the order of 200 to 2,300 coincidental pairs corpus-wide. Merging on
+that would fabricate people.
 
 Rules, to be written into the spec and tested first:
 
 1. Identical file hash, or identical perceptual hash above the DEDUPE-001
-   threshold: same *document*, one record, many postings.
-2. Same sender hash, identical fingerprint on ≥3 resolved loci, ABO equal or
-   unknown, roles not contradictory: `TIER_1` cluster, auto-linked, marked
-   "pending human confirmation", usable for matching as one person.
-3. Different senders, identical fingerprint on ≥4 loci: `TIER_2` candidate,
-   review only. A fingerprint on <4 loci never proposes a link.
-4. Any conflict (two ABO groups, two roles that are not a comparison sheet,
-   DRB1/DRBX inconsistency between members) blocks the cluster and lands it
+   threshold: same *document*, one record, many postings. No HLA needed.
+2. **A fingerprint link is scored, not counted.** Compute the match probability
+   as the product of the per-locus figures above over the loci both documents
+   resolve. `P ≤ 10⁻⁷` (A+B+C+DRB1 is 1 in 8.8 million; A+B+DRB1+DQB1 is 1 in
+   2.1 million) proposes a `TIER_2` review candidate. `10⁻⁷ < P ≤ 10⁻⁵` proposes
+   one only with corroboration. Above 10⁻⁵ it proposes nothing.
+3. **Nothing auto-links on HLA at any probability.** A cluster is auto-linked
+   only when a non-HLA identifier agrees as well: the same sender hash, or the
+   name hash once HA-005 is decided. HLA then confirms; it never proposes alone.
+   This is the doctrine's rule, and the arithmetic above is why it is right.
+4. Any conflict (two blood groups, two roles that are not a comparison sheet,
+   a DRB1/DRBX inconsistency between members) blocks the cluster and lands it
    in the queue.
-5. Name hash, once HA-005 is decided, is an *additional* signal for tier 1 and
-   never a sufficient one: two people can share a name, and the name field is
-   the most misread field on the form.
+5. The per-locus frequency table is derived from this corpus and must be
+   regenerated, versioned and committed whenever extraction changes, because
+   every threshold above is stated in terms of it.
 
 Storage: a `person_cluster` table (cluster id, tier, evidence list with
-provenance to each document) and a `merge_decision` table (human decisions,
-append-only, reversible). Matching (`MATCH-001`) reads clusters, never
-documents, and treats a cluster with an open conflict as UNKNOWN.
+provenance to each document and the computed probability) and a
+`merge_decision` table (human decisions, append-only, reversible). Matching
+(`MATCH-001`) reads clusters, never documents, and treats a cluster with an
+open conflict as UNKNOWN.
 
-**One check before designing further:** the 67-document fingerprint. If it is
-one person, reposting dominates and tier 1 will collapse most of the
-duplication. If it is many people, the fingerprint is an OCR or template
-artefact (a value printed on the form itself), and rule 2 is unsafe as written.
-The pack will show this if any of those documents were drawn; otherwise a
-targeted look is a ten-minute task for the labeller.
+**Consequence for the product.** Sender identity, which lives in the Telegram
+export and not in the report, is the load-bearing signal for deduplication. That
+makes `HIST-001`/`HIST-002` a prerequisite for entity resolution as well as for
+role (issue 3), and it is already the active task.
 
 **Who:** human decides HA-005; agent writes the spec, tests, tables.
 

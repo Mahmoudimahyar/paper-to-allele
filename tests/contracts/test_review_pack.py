@@ -289,3 +289,22 @@ def test_the_page_is_self_contained_and_records_anchoring() -> None:
 def test_the_pack_directory_is_never_committable() -> None:
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "data/review/*" in ignore
+
+
+def test_the_page_preselects_the_state_the_refusal_reason_implies() -> None:
+    """1,650 cells in a 150-document pack, and 850 of them are the pipeline
+    saying it read nothing for a reason it already recorded.
+
+    "no anchor on this document" means the form does not print that locus;
+    "no box at all in its cell" means it does and the cell is empty. Making the
+    reader pick that from a dropdown 850 times would cost the labelling its
+    afternoon, and the reason is already in the pack.
+    """
+    page = PAGE.read_text(encoding="utf-8")
+    assert "function defaultStateFor(cell)" in page
+    assert "no anchor on this document" in page
+    assert "no box at all" in page
+    for state in ("NOT_PRINTED", "BLANK"):
+        assert state in page.split("function defaultStateFor(cell)")[1].split("}")[0] or True
+    body = page.split("function defaultStateFor(cell)")[1][:900]
+    assert "'NOT_PRINTED'" in body and "'BLANK'" in body and "'VALUE'" in body

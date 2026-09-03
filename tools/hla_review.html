@@ -122,6 +122,20 @@
     }
     return pipeState === null ? 'APPROVED' : 'EDITED'; // human says no value; pipeline agreed (abstained) or not
   }
+  function defaultStateFor(cell) {
+    // The pipeline already says WHY it read nothing, and the reason maps onto
+    // the label states. Pre-selecting it turns ~850 of the 1,650 cells in a
+    // 150-document pack into a single Enter instead of a dropdown each.
+    if (cell.status === 'RESOLVED') {
+      if (cell.kind !== 'DRBX') return 'VALUE';
+      return cell.value === 'ABSENT' ? 'ABSENT' : 'PRESENT_ONLY';
+    }
+    const why = (cell.suggestions && cell.suggestions.pipeline && cell.suggestions.pipeline.reason) || '';
+    if (/no anchor on this document|no grouped DRB3\/4\/5 header/.test(why)) return 'NOT_PRINTED';
+    if (/no box at all/.test(why)) return 'BLANK';       // label printed, cell empty
+    return 'VALUE';                                       // boxes are there: read them
+  }
+
   function fmtVotes(votes) {
     // {"0:11": 7, "0:17": 2, "1:15": 9} -> "pos0: 11×7 17×2 | pos1: 15×9"
     const by = {};
@@ -219,7 +233,7 @@
     for (const cell of doc.cells) {
       const lab = labels.cells[cell.cell_id];
       const states = cell.kind === 'DRBX' ? STATES_DRBX : STATES_HLA;
-      const defaultState = cell.status === 'RESOLVED' ? (cell.kind === 'DRBX' ? (cell.value === 'ABSENT' ? 'ABSENT' : 'PRESENT_ONLY') : 'VALUE') : 'VALUE';
+      const defaultState = defaultStateFor(cell);
       const state = lab ? lab.state : defaultState;
       const text = lab ? lab.alleles.join(' ') : (cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
       html += `<tr class="cell ${lab ? lab.decision : ''}" data-cell="${cell.cell_id}">
