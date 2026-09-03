@@ -33,18 +33,18 @@
       "criteria": [
         {
           "criterion": "multi-image joined submission bundles once",
-          "passes": false,
-          "evidence": null
+          "passes": true,
+          "evidence": ".artifacts/HIST-002/acceptance-1.log"
         },
         {
           "criterion": "reply context links without overwriting primary sender",
-          "passes": false,
-          "evidence": null
+          "passes": true,
+          "evidence": ".artifacts/HIST-002/acceptance-1.log"
         },
         {
           "criterion": "ambiguous adjacency yields review suggestion not automatic merge",
-          "passes": false,
-          "evidence": null
+          "passes": true,
+          "evidence": ".artifacts/HIST-002/acceptance-1.log"
         }
       ]
     },

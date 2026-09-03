@@ -59,7 +59,7 @@
     },
     {
       "id": "HIST-002",
-      "status": "READY",
+      "status": "COMPLETE",
       "title": "MessageBundle reconstruction",
       "phase": "MVP-HIST",
       "spec": "specs/features/HIST-002-message-bundles.json",
