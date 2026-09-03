@@ -17,59 +17,6 @@ Never put secret values in this file.
 - **Secret?** No.
 - **Blocking now?** Blocks V1-MATCH spec freeze. Does not block MVP-HIST.
 
-### HA-005 — Should patient names be stored in plaintext?
-- **Needed by:** entity resolution (ENTITY-001); affects what identifiable data we hold.
-- **Why:** The Persian pass extracted name-field cues from 8,875 reports. That
-  field is the highest-PII item in the archive, is useful for linking one
-  person's repeated posts, and is **irrelevant to HLA matching**. Comparing the
-  two passes, Persian added only +5 laboratory markers and +360 dates — names
-  were essentially its entire yield.
-- **Decision required:** store the name as a **salted hash** for matching only
-  (recommended — keeps the dedup value at a fraction of the exposure), or keep
-  plaintext because a reviewer workflow needs to read it. `PRODUCT_CONSTITUTION`
-  section 4 keeps direct identifiers hidden until mutual approval, so plaintext
-  storage should be a deliberate choice.
-- **Secret?** No, but the underlying data is PHI.
-- **Blocking now?** Blocks ENTITY-001 design. Not blocking MVP-HIST parsing.
-
-### HA-003 — Low-resolution threshold for mandatory human review
-- **Needed by:** MEDIA-001, and every downstream OCR acceptance decision.
-- **Why now:** The real archive contains **zero** thumbnail-only assets, but 77%
-  of originals have a longest edge of ~520 px. The quality signal is currently
-  keyed on the filename (`_thumb`) and on a missing original, so against this
-  archive it never fires: low-resolution images would be classified
-  `HIGH_RES_AVAILABLE` and would skip the human review the constitution requires
-  before a low-resolution critical HLA value reaches Gold. Measurements in
-  `docs/ingestion/ARCHIVE_CHARACTERIZATION_2026-08-31.md`.
-- **Decision required:** the pixel threshold(s) separating quality bands, and
-  which band forces mandatory review. A defensible starting point is: longest
-  edge < 900 px => review required; 900-1280 px => review required for critical
-  HLA fields; the ~0.1% above 1280 px => normal acceptance policy. **These
-  numbers are a placeholder for a clinical judgement, not a recommendation the
-  agent is qualified to make.**
-- **Secret?** No.
-- **Blocking now?** Blocks MEDIA-001 completion. Does NOT block HIST-001, which
-  performs no quality classification.
-- **STATUS 2026-09-02: premise corrected.** The "77% at ~520 px" figure counted
-  9,581 thumbnail *copies* (`_thumb (n).jpg`) as originals (KI-009). True
-  distribution of the 23,566 unique originals: 90.0% >900 px, 9.7% 561–900 px,
-  0.4% ≤560 px. The decision is still needed — for the 561–900 px band and for
-  the `_thumb.jpg` the export carries for every photo — but it is no longer the
-  dominant accuracy risk. See `docs/ingestion/ACCURACY_REVIEW_AND_PLAN_2026-09-02.md`.
-
-### HA-006 — py-ard / IMGT version conflict
-- **Needed by:** HLA validation gate (P2 of the accuracy review), OCR-001.
-- **Why now:** `HLA_VALIDATION_SPEC.md` pins IMGT/HLA 3.65, but the locked
-  `py-ard` is 1.5.5 (`>=1,<2`) and `init(imgt_version="3650")` fails with
-  `IndexError` (3640 too, per the research pass); `3620` loads. Verified on this
-  machine 2026-09-02 (KI-011).
-- **Decision required:** (a) pin IMGT 3620 with the locked library and amend the
-  spec, or (b) raise the `py-ard` constraint to a 2.x release, update the OSS
-  register and lockfile, and re-test 3650. The agent must not change a spec pin
-  or a major dependency version silently.
-- **Secret?** No.
-- **Blocking now?** Blocks P2 (nomenclature validation) only; P0/P1 proceed.
-
 ### HA-001 — Local archive path (only when running real MVP-HIST ingestion)
 - **Needed by:** HIST-001 real-data smoke test
 - **Action:** Set `KM_TELEGRAM_EXPORT_DIR` in local `.env` to the extracted Telegram export directory.
@@ -105,18 +52,6 @@ Never put secret values in this file.
 - **Secret?** No. The pack is PHI and stays under gitignored `data/review/`.
 - **Blocking now?** Blocks any accuracy number and the review-queue design.
 
-### HA-009 — Approve the empty-cell policy (turns ~20,000 review items into one rule)
-- **Needed by:** REVIEW-001 (the queue), OCR-001.
-- **Why:** 24,142 REVIEW_REQUIRED cells are "label printed, cell empty" on loci
-  these laboratories do not type (KI-013: DQA1 10,766, C 9,906, and so on).
-  Reviewing them one by one is wasted human time.
-- **Decision required:** may an anchored label with no box in its cell resolve
-  to `NOT_TESTED` for a layout family where the cell is measured empty on ≥95%
-  of that family's documents, with the rate recorded as provenance? This changes
-  what UNKNOWN means for those cells, so it is a spec line, not an agent call.
-- **Secret?** No.
-- **Blocking now?** Blocks the queue's size; nothing else.
-
 ### HA-010 — Cloud model API keys, only if a synthetic-only comparison is wanted
 - **Needed by:** the OCR model survey's cloud rows (Claude, GPT, Gemini).
 - **Why:** no real lab-report crop may reach a cloud API (PHI). A synthetic,
@@ -131,6 +66,36 @@ Never put secret values in this file.
 - **Blocking now?** No.
 
 ## Closed
+
+### HA-009 — Empty-cell policy — **DECIDED 2026-09-03, implemented**
+Delegated by the operator. The 95%-emptiness rule I proposed fires on nothing
+(no family and locus reaches it). The right statistic is how often an anchored
+cell ever RESOLVES: DPA1 0.0-0.4% and DPB1 0.0-0.5% against DQA1 3.9-11.9% and
+C 11.7-28.3%. Those two loci are now `NOT_TESTED`, removing 24,663 cells from
+the review queue. `config/locus_testing_rates.json`,
+`kidneymatch.hla.testing_policy`.
+
+### HA-006 — IMGT version — **DECIDED 2026-09-03, implemented**
+Pin IPD-IMGT/HLA 3.62 (`3620`), the release the locked `py-ard` 1.5.5 can load;
+3650 and 3640 raise `IndexError` (KI-011). A spec pinning a release the build
+refuses is not a pin. Raising `py-ard` to 2.x and retesting 3650 is its own
+task, with the OSS register and the lockfile.
+`docs/clinical/HLA_VALIDATION_SPEC.md`.
+
+### HA-005 — Patient names — **DECIDED 2026-09-03, implemented**
+Store a **salted hash**, never plaintext. It keeps the linking value and removes
+the exposure; a reviewer who needs the name has the photograph.
+`kidneymatch.domain.entity_resolution.salted_hash` refuses to run without a
+salt, because an unsalted hash over a short name distribution is reversible.
+The salt belongs in the secret store, never in this repository.
+
+### HA-003 — Resolution bands — **DECIDED 2026-09-03 (MID provisional)**
+LOW (≤560 px, 85 documents) always requires human review. MID (561-900 px,
+2,276) requires it for critical HLA fields **provisionally**, because that is
+the one band where the cost is real and the evidence to set it does not exist
+yet; the review pack's `mid_res` stratum measures it (HA-008).
+`docs/ingestion/LOW_RES_MEDIA_POLICY.md`.
+
 <!-- Move completed items here without inserting credentials. -->
 
 ### HA-007 — Label the golden corpus (the one thing blocking every accuracy claim)

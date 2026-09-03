@@ -62,7 +62,7 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ("review_refused", 15, "boxes sat on the row but the resolver refused the cell"),
     ("unread_second", 10, "a second allele the pipeline could not read"),
     ("decode_split", 20, "the reading changes under one-pixel jitter"),
-    ("confirmer_contradicted", 20, "Tesseract read different digits"),
+    ("confirmer_contradicted", 20, "an independent reader read different digits"),
     ("repaired_glyph", 15, "the accepted value went through glyph repair"),
     ("comparison_sheet", 5, "donor and recipient on one sheet"),
     ("mid_res", 10, "quality band MID"),
@@ -94,7 +94,7 @@ class Cell:
     stability: str | None
     anchor_box: list[float] | None
     value_boxes: list[list[float]]
-    tesseract: dict[str, str | None] | None = None
+    confirmations: dict[str, dict[str, str | None]] = field(default_factory=dict)
     decode: dict[str, object] | None = None
 
 
@@ -177,12 +177,16 @@ def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
             doc.abo = {"status": status, "value": value, "source": src, "reason": reason}
         elif fld == "RH":
             doc.rh = {"status": status, "value": value}
-    for sha, fld, verdict, reading in con.execute(
-        "SELECT sha256, field, verdict, reading FROM confirmation"
+    # One row PER CONFIRMER. Keying them all onto one field would show the
+    # reader whichever engine the database happened to return last, and there
+    # are two of them now.
+    for sha, fld, confirmer, verdict, reading in con.execute(
+        "SELECT sha256, field, confirmer_version, verdict, reading FROM confirmation"
     ):
         cell = docs[sha].cells.get(fld) if sha in docs else None
         if cell is not None:
-            cell.tesseract = {"verdict": verdict, "reading": reading}
+            name = str(confirmer).split("/")[0]
+            cell.confirmations[name] = {"verdict": verdict, "reading": reading}
     for sha, fld, verdict, reading, jitter in con.execute(
         "SELECT sha256, field, verdict, reading, jitter_readings FROM decode "
         "WHERE decoder_version LIKE 'ctc-viterbi%'"
@@ -199,7 +203,19 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     hla = [c for c in doc.cells.values() if c.locus in HLA_LOCI]
     resolved = [c for c in hla if c.status == "RESOLVED"]
     verdicts = {c.locus: (c.decode or {}).get("verdict") for c in hla}
-    tess = {c.locus: (c.tesseract or {}).get("verdict") for c in hla}
+    # A cell is "contradicted" when ANY independent reader disputes it; a
+    # stratum keyed on one engine would go quiet the moment that engine did.
+    disputed = {
+        c.locus
+        for c in hla
+        if any(v.get("verdict") == "CONTRADICTED" for v in c.confirmations.values())
+    }
+    confirmed = {
+        c.locus
+        for c in hla
+        if c.confirmations
+        and all(v.get("verdict") == "CONFIRMED" for v in c.confirmations.values())
+    }
     tags: set[str] = set()
     if doc.consistency in FLAGGED_CONSISTENCY:
         tags.add("consistency_flag")
@@ -217,7 +233,7 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("review_refused")
     if any(c.second_allele == "UNREAD" for c in resolved):
         tags.add("unread_second")
-    if any(v == "CONTRADICTED" for v in tess.values()):
+    if disputed:
         tags.add("confirmer_contradicted")
     if any(c.repaired for c in resolved):
         tags.add("repaired_glyph")
@@ -232,8 +248,8 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         not tags
         and len(resolved) >= 3
         and all(c.stability == "UNANIMOUS" for c in resolved)
-        and all(tess.get(c.locus) in (None, "CONFIRMED") for c in resolved)
-        and any(tess.get(c.locus) == "CONFIRMED" for c in resolved)
+        and not disputed
+        and any(c.locus in confirmed for c in resolved)
     ):
         tags.add("clean_control")
     return [t for t, _, _ in STRATA if t in tags]
@@ -335,8 +351,8 @@ def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object],
                 "stability": cell.stability,
             },
         }
-        if cell.tesseract:
-            suggestions["tesseract"] = cell.tesseract
+        for name, confirmation in sorted(cell.confirmations.items()):
+            suggestions[name] = confirmation
         if cell.decode:
             suggestions["decode"] = cell.decode
         cells.append(

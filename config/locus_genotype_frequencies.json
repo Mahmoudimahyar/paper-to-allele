@@ -31,7 +31,7 @@
    "one_in": 44
   }
  },
- "measured_utc": "2026-09-03T17:31:15+00:00",
+ "measured_utc": "2026-09-03T17:42:35+00:00",
  "min_documents": 500,
  "schema": "locus-genotype-frequencies/v1"
 }

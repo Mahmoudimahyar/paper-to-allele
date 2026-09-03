@@ -110,10 +110,12 @@ def synthetic_corpus(tmp_path: Path, n_docs: int = 40) -> tuple[Path, Path]:
                 ),
             )
             if row < 8:
-                con.execute(
-                    "INSERT INTO confirmation VALUES (?,?,?,?,?,?,?)",
-                    (sha, locus, "facts/v1", "tess", "CONFIRMED", "11", "t"),
-                )
+                # Two independent readers, as the corpus now has.
+                for confirmer in ("tesseract5/psm7-alnum", "ppocrv5/en-mobile-rec"):
+                    con.execute(
+                        "INSERT INTO confirmation VALUES (?,?,?,?,?,?,?)",
+                        (sha, locus, "facts/v1", confirmer, "CONFIRMED", "11", "t"),
+                    )
                 verdict = "UNANIMOUS"
                 if signal == 7 and locus == "A":
                     verdict = "PROPOSAL"
@@ -240,7 +242,10 @@ def test_every_engine_reading_travels_with_the_cell(tmp_path: Path) -> None:
     module.build_pack(db, export, tmp_path / "pack", 8, 1, PAGE, suggestions)
     pack = json.loads((tmp_path / "pack/pack.json").read_text(encoding="utf-8"))
     cell = next(c for d in pack["documents"] for c in d["cells"] if c["locus"] == "B")
-    assert set(cell["suggestions"]) == {"pipeline", "tesseract", "decode"}
+    assert set(cell["suggestions"]) == {"pipeline", "tesseract5", "ppocrv5", "decode"}, (
+        "every confirmer gets its own row; keying them together would show the "
+        "reader whichever engine the database returned last"
+    )
     assert cell["suggestions"]["decode"]["votes"] == {"0:11": 9}
     assert pack["engines"] == ["newengine"]
     assert (

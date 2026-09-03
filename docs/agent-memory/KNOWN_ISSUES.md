@@ -201,9 +201,35 @@ On FORM#1 the class I value box is 57% the width of a class II box (`A*02` is
 four glyphs). Tesseract returns nothing on 19-32% of those crops and a star-less
 string on most of the rest. The star-less parse (2026-09-02) moved 2,356 cells
 to CONFIRMED and 162 out of CONTRADICTED over the stored readings; 18,019 cells
-still have no second opinion. **Measured route (2026-09-03):** PP-OCRv5
-en-mobile-rec agrees with the trusted set 97.0% and with the hard cells 91.0%,
-against Tesseract's 90.0% and 51.5%, at 13 ms/crop on the CPU. Adopting it needs
-an OSS-register and lockfile decision; `scripts/suggest_pass.py --dump-crops`
-runs it from outside the repository meanwhile.
+still had no second opinion. **CLOSED 2026-09-03.** PP-OCRv5 en-mobile-rec was
+adopted as a second confirmer (`--extra confirm`) and run over all 47,221
+resolved cells: 43,124 confirmed / 3,063 contradicted / 1,034 no opinion, and it
+answers on **17,206 of the cells Tesseract could not read**.
+
+The adoption nearly went wrong, and the reason is worth keeping. The survey
+measured single-allele crops; the confirmer's crop spanned both alleles of a
+heterozygous cell, and on that crop PP-OCRv5 contradicted the pipeline on 50.7%
+of the cells the decode called unanimous AND Tesseract confirmed. A coin flip is
+what a mismatched crop looks like. Reading one crop per value box moved that to
+97.3% agreement. **A benchmark's crop geometry must match production's**, or its
+numbers describe a different task.
 See `docs/ingestion/OCR_MODEL_SURVEY_2026-09-03.md`.
+
+## KI-020 — The DOM reference's forwarded snippet cost 37% of the archive its author
+`TELEGRAM_HTML_EXPORT_STRUCTURE.md` showed a forwarded message as the avatar
+column plus `div.forwarded.body`, and a parser written from it replaced the
+message body with the forwarded block. In the real export that block is nested
+INSIDE the message's own `body`, which carries the current poster's `from_name`
+and the posting time — so the current poster was never read and the sender was
+inherited from whichever message came before. That is wrong attribution on
+65,127 messages.
+
+Caught by running against the real archive and asking why 97.2% of forwarded
+messages had an inherited sender when only 7.4% were joined. After the fix,
+inherited senders equal the joined count exactly (13,429), which is the only
+case the exporter's own rule allows. FIXED 2026-09-03; the reference and the
+synthetic fixture now match what the export emits.
+
+**The general lesson:** a synthetic fixture built from a doc inherits the doc's
+errors, and only real input finds them. Every structural claim about the export
+should be re-checked against the archive once, cheaply, before it is trusted.

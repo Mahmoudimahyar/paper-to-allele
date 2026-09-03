@@ -24,14 +24,14 @@
    },
    "DPA1": {
     "anchored": 2387,
-    "empty": 2091,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.00377,
     "resolved": 9
    },
    "DPB1": {
     "anchored": 2367,
-    "empty": 2143,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.00549,
     "resolved": 13
@@ -82,14 +82,14 @@
    },
    "DPA1": {
     "anchored": 1473,
-    "empty": 1336,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.0,
     "resolved": 0
    },
    "DPB1": {
     "anchored": 1438,
-    "empty": 1346,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.0,
     "resolved": 0
@@ -140,14 +140,14 @@
    },
    "DPA1": {
     "anchored": 9237,
-    "empty": 8365,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.00162,
     "resolved": 15
    },
    "DPB1": {
     "anchored": 9102,
-    "empty": 8529,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.00209,
     "resolved": 19
@@ -198,14 +198,14 @@
    },
    "DPA1": {
     "anchored": 478,
-    "empty": 412,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.0,
     "resolved": 0
    },
    "DPB1": {
     "anchored": 480,
-    "empty": 441,
+    "empty": 0,
     "not_tested": true,
     "resolve_rate": 0.0,
     "resolved": 0
@@ -234,7 +234,7 @@
   }
  },
  "max_resolve_rate": 0.01,
- "measured_utc": "2026-09-03T17:26:44+00:00",
+ "measured_utc": "2026-09-03T17:42:34+00:00",
  "min_anchored": 200,
  "schema": "locus-testing-rates/v1"
 }
