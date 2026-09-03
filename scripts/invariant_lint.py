@@ -38,17 +38,37 @@ QUEUE = ROOT / "docs/work/WORK_QUEUE.json"
 LIVE = {"READY", "ACTIVE"}
 
 
-def live_spec_invariants() -> dict[str, list[str]]:
-    """Invariants of every spec referenced by a live task."""
-    queue = json.loads(QUEUE.read_text(encoding="utf-8"))
-    wanted = {
-        task["spec"] for task in queue["tasks"] if task.get("status") in LIVE and task.get("spec")
-    }
+def _invariants_of(relatives: set[str]) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
-    for relative in sorted(wanted):
+    for relative in sorted(relatives):
         spec = json.loads((ROOT / relative).read_text(encoding="utf-8"))
         out[spec["id"]] = list(spec.get("invariants", []))
     return out
+
+
+def live_spec_invariants() -> dict[str, list[str]]:
+    """Invariants of every spec referenced by a live task.
+
+    These are what COVERAGE is reported against: a task still to be finished is
+    the one whose invariants may legitimately lack a test.
+    """
+    queue = json.loads(QUEUE.read_text(encoding="utf-8"))
+    return _invariants_of(
+        {task["spec"] for task in queue["tasks"] if task.get("status") in LIVE and task.get("spec")}
+    )
+
+
+def known_spec_invariants() -> dict[str, list[str]]:
+    """Invariants of every spec any task references, whatever its status.
+
+    A marker is checked against THIS set, not the live one. Finishing a task
+    does not make the tests that prove its invariants wrong — it makes them the
+    reason it could be finished at all — and validating markers against the
+    live set alone would force deleting the traceability the moment it was
+    earned.
+    """
+    queue = json.loads(QUEUE.read_text(encoding="utf-8"))
+    return _invariants_of({task["spec"] for task in queue["tasks"] if task.get("spec")})
 
 
 def _literal_args(call: ast.Call) -> list[str] | None:
@@ -112,16 +132,18 @@ def main() -> int:
     args = parser.parse_args()
 
     specs = live_spec_invariants()
+    known = known_spec_invariants()
     claims, errors = collect_claims()
 
-    # A marker must point at a real invariant of a real spec.
+    # A marker must point at a real invariant of a real spec — of ANY task,
+    # since a completed task's invariants stay proven.
     for (spec_id, text), locations in sorted(claims.items()):
-        if spec_id not in specs:
+        if spec_id not in known:
             errors.append(
-                f"{locations[0]}: invariant marker names unknown or non-live spec "
-                f"{spec_id!r}. Live specs: {sorted(specs)}"
+                f"{locations[0]}: invariant marker names unknown spec "
+                f"{spec_id!r}. Known specs: {sorted(known)}"
             )
-        elif text not in specs[spec_id]:
+        elif text not in known[spec_id]:
             errors.append(
                 f"{locations[0]}: text is not a verbatim invariant of {spec_id}: {text!r}"
             )

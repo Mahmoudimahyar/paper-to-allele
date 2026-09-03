@@ -14,4 +14,5 @@ Deliberate cases:
 - `message106`: forwarded - current poster and original author differ
 - `message107`: document that was not exported (div, not anchor)
 - `message108`: pre-2022 timestamp with no UTC offset
+- `message109`: username and telephone links - unverified contact evidence
 - `messages2.html`: cross-file reply, no onclick

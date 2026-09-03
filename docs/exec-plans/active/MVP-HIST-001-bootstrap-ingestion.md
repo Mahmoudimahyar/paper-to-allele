@@ -27,10 +27,17 @@ Build an idempotent parser that converts Telegram Desktop HTML exports into sour
       `tests/fixtures/synthetic/telegram_export/`, structure documented in
       `docs/ingestion/TELEGRAM_HTML_EXPORT_STRUCTURE.md`, guarded by
       `tests/integration/test_synthetic_export_fixture.py`.
-- [ ] Parse stable fields with no third-party dependency requirement in the test core or with a pinned HTML parser after spike.
-- [ ] Preserve unknown/unparsed fragments for forensic review.
-- [ ] Add idempotency contract and parser-version field.
-- [ ] Produce concise inventory output.
+- [x] Parse stable fields with a pinned HTML parser (bs4 + lxml, already in the
+      `hist` extra). `src/kidneymatch/ingestion/telegram_html.py`,
+      `tests/unit/test_telegram_html_parser.py`.
+- [x] Preserve unknown/unparsed fragments for forensic review. Every block the
+      parser does not recognise is recorded with its class and text on the
+      message, and stored; nothing is dropped silently.
+- [x] Add idempotency contract and parser-version field.
+      `src/kidneymatch/ingestion/source_store.py`: identity is
+      (export id, file, message id), the export id follows the bytes rather
+      than the path, and `content_hash` decides whether a row changed.
+- [x] Produce concise inventory output. `scripts/ingest_export.py`.
 
 ## Acceptance commands
 ```bash
@@ -43,6 +50,13 @@ HIST-001 owns five spec invariants, none of which has a covering test yet.
 (`python scripts/invariant_lint.py` lists them).
 
 ## Progress log
+- 2026-09-03: **COMPLETE.** Parser, store and inventory script landed test-first;
+  all three acceptance criteria marked with evidence from `acceptance.py run`,
+  and all five spec invariants have covering tests (`invariant_lint.py`).
+  Three format traps are pinned by tests: a joined message carries no sender,
+  a date divider's negative id is not a message id, and a forwarded message
+  names two different people. The HTML export carries no stable user id
+  (KI-002), so the parser reports display names only.
 - 2026-09-01: starter repository and contract created; implementation intentionally minimal.
 - 2026-09-01: P0/P1/P2 harness work complete. Synthetic fixture corpus and the
   Telegram DOM reference are in place, so implementation can start test-first

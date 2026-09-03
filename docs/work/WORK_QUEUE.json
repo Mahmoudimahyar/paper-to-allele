@@ -22,7 +22,7 @@
     },
     {
       "id": "HIST-001",
-      "status": "ACTIVE",
+      "status": "COMPLETE",
       "title": "Telegram HTML source parser",
       "phase": "MVP-HIST",
       "spec": "specs/features/HIST-001-telegram-html-ingestion.json",

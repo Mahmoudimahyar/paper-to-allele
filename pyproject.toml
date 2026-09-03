@@ -64,7 +64,7 @@ packages = ["kidneymatch"]
 # everything we write: only the import is untyped, and every value crossing this
 # boundary is annotated at the call site in `hla/drbx_consistency.py`.
 [[tool.mypy.overrides]]
-module = ["pyard.*"]
+module = ["pyard.*", "bs4.*"]
 ignore_missing_imports = true
 
 [dependency-groups]
