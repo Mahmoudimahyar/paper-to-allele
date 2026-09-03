@@ -56,6 +56,10 @@ from kidneymatch.documents.role import (  # noqa: E402
     read_form_role,
 )
 from kidneymatch.hla.drbx_consistency import ConsistencyOutcome, check_drb1_drbx  # noqa: E402
+from kidneymatch.hla.testing_policy import (  # noqa: E402
+    LocusTestingPolicy,
+    load_testing_policy,
+)
 from kidneymatch.hla.vocabulary import load_vocabulary  # noqa: E402
 from kidneymatch.ocr.anchors import (  # noqa: E402
     Box,
@@ -205,6 +209,7 @@ def extract(
     prototypes: list[LayoutPrototype] | None = None,
     prefixed_families: set[str] | None = None,
     caption_role: Role = Role.UNKNOWN,
+    testing_policy: LocusTestingPolicy | None = None,
 ) -> tuple[list[tuple], dict]:
     """Every fact this document yields. Pure: no I/O, so it is testable."""
     latin = document.boxes
@@ -250,6 +255,19 @@ def extract(
     for locus, result in loci.items():
         status = result.status
         reason = result.reason
+        if (
+            testing_policy is not None
+            and status is ResolutionStatus.REVIEW_REQUIRED
+            and (result.reason or "").startswith("anchor found but no box")
+            and testing_policy.is_not_tested(family, locus)
+        ):
+            # HA-009: the form prints this row, the cell is empty, and this
+            # laboratory measurably never fills it. That is a finding, and
+            # sending it to a reviewer wastes the one resource this project is
+            # short of. Only an EMPTY cell is reclassified; a resolved one keeps
+            # its value.
+            status = ResolutionStatus.NOT_TESTED
+            reason = testing_policy.reason(family, locus)
         if comparison and status is ResolutionStatus.RESOLVED:
             # Two subjects on one page: the row rule cannot say whose column a
             # value is in.
@@ -385,6 +403,14 @@ def run(
     source_db: Path | None = None,
 ) -> int:
     vocabulary = load_vocabulary()
+    testing_policy = load_testing_policy()
+    print(
+        "loci this laboratory does not test: "
+        + ", ".join(
+            f"{fam or '(no family)'}/{loc}" for fam, loc in testing_policy.not_tested_pairs()
+        ),
+        flush=True,
+    )
     caption_roles = load_caption_roles(source_db)
     if caption_roles:
         print(f"caption role claims available: {len(caption_roles):,}", flush=True)
@@ -425,6 +451,7 @@ def run(
             prototypes,
             prefixed,
             caption_roles.get(document.sha256, Role.UNKNOWN),
+            testing_policy,
         )
         facts.extend(rows)
         documents.append(

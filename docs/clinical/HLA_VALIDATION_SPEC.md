@@ -1,7 +1,22 @@
 # HLA Validation and Nomenclature Specification
 
 ## 1. Reference authority
-Pin **IPD-IMGT/HLA release 3.65 (2026-07)** for the initial implementation. Store the release number with every normalization/extraction run.
+Pin **IPD-IMGT/HLA release 3.62 (`imgt_version="3620"`)** for the initial
+implementation. Store the release number with every normalization/extraction run.
+
+**Amended 2026-09-03 (HA-006, decided by the human operator).** The original pin
+was 3.65 (2026-07). The locked `py-ard` is 1.5.5, and
+`init(imgt_version="3650")` raises `IndexError` on it; 3640 fails the same way
+and 3620 loads (verified on this machine, KI-011). A spec pinning a release the
+build cannot load is not a pin, so the spec follows the lockfile rather than the
+other way round.
+
+This is safe for what the pin is *for*. The gate it feeds is first-field
+admissibility — whether `DRB1*93` is a family that exists — and no first field
+of any locus these laboratories print was added or withdrawn between 3.62 and
+3.65. Raising `py-ard` to a 2.x release and re-testing 3650 is its own task,
+with the OSS register and the lockfile, and it must not be done silently as a
+side effect of an extraction change.
 
 Use `py-ard` to validate/normalize historical HLA nomenclature against the pinned database. The application MUST NOT maintain a handwritten static list of all possible alleles.
 

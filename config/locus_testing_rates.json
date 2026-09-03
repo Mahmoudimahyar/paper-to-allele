@@ -1,0 +1,240 @@
+{
+ "families": {
+  "": {
+   "A": {
+    "anchored": 3511,
+    "empty": 894,
+    "not_tested": false,
+    "resolve_rate": 0.39903,
+    "resolved": 1401
+   },
+   "B": {
+    "anchored": 3805,
+    "empty": 937,
+    "not_tested": false,
+    "resolve_rate": 0.29671,
+    "resolved": 1129
+   },
+   "C": {
+    "anchored": 3960,
+    "empty": 2220,
+    "not_tested": false,
+    "resolve_rate": 0.11667,
+    "resolved": 462
+   },
+   "DPA1": {
+    "anchored": 2387,
+    "empty": 2091,
+    "not_tested": true,
+    "resolve_rate": 0.00377,
+    "resolved": 9
+   },
+   "DPB1": {
+    "anchored": 2367,
+    "empty": 2143,
+    "not_tested": true,
+    "resolve_rate": 0.00549,
+    "resolved": 13
+   },
+   "DQA1": {
+    "anchored": 2357,
+    "empty": 1828,
+    "not_tested": false,
+    "resolve_rate": 0.1188,
+    "resolved": 280
+   },
+   "DQB1": {
+    "anchored": 4064,
+    "empty": 523,
+    "not_tested": false,
+    "resolve_rate": 0.51526,
+    "resolved": 2094
+   },
+   "DRB1": {
+    "anchored": 4932,
+    "empty": 981,
+    "not_tested": false,
+    "resolve_rate": 0.45154,
+    "resolved": 2227
+   }
+  },
+  "FORM#0": {
+   "A": {
+    "anchored": 1518,
+    "empty": 12,
+    "not_tested": false,
+    "resolve_rate": 0.79776,
+    "resolved": 1211
+   },
+   "B": {
+    "anchored": 1482,
+    "empty": 12,
+    "not_tested": false,
+    "resolve_rate": 0.76316,
+    "resolved": 1131
+   },
+   "C": {
+    "anchored": 1531,
+    "empty": 848,
+    "not_tested": false,
+    "resolve_rate": 0.28347,
+    "resolved": 434
+   },
+   "DPA1": {
+    "anchored": 1473,
+    "empty": 1336,
+    "not_tested": true,
+    "resolve_rate": 0.0,
+    "resolved": 0
+   },
+   "DPB1": {
+    "anchored": 1438,
+    "empty": 1346,
+    "not_tested": true,
+    "resolve_rate": 0.0,
+    "resolved": 0
+   },
+   "DQA1": {
+    "anchored": 1324,
+    "empty": 1110,
+    "not_tested": false,
+    "resolve_rate": 0.0423,
+    "resolved": 56
+   },
+   "DQB1": {
+    "anchored": 1071,
+    "empty": 2,
+    "not_tested": false,
+    "resolve_rate": 0.72176,
+    "resolved": 773
+   },
+   "DRB1": {
+    "anchored": 1430,
+    "empty": 0,
+    "not_tested": false,
+    "resolve_rate": 0.76993,
+    "resolved": 1101
+   }
+  },
+  "FORM#1": {
+   "A": {
+    "anchored": 9662,
+    "empty": 36,
+    "not_tested": false,
+    "resolve_rate": 0.90406,
+    "resolved": 8735
+   },
+   "B": {
+    "anchored": 9567,
+    "empty": 34,
+    "not_tested": false,
+    "resolve_rate": 0.87572,
+    "resolved": 8378
+   },
+   "C": {
+    "anchored": 9623,
+    "empty": 6649,
+    "not_tested": false,
+    "resolve_rate": 0.22238,
+    "resolved": 2140
+   },
+   "DPA1": {
+    "anchored": 9237,
+    "empty": 8365,
+    "not_tested": true,
+    "resolve_rate": 0.00162,
+    "resolved": 15
+   },
+   "DPB1": {
+    "anchored": 9102,
+    "empty": 8529,
+    "not_tested": true,
+    "resolve_rate": 0.00209,
+    "resolved": 19
+   },
+   "DQA1": {
+    "anchored": 8938,
+    "empty": 7564,
+    "not_tested": false,
+    "resolve_rate": 0.03949,
+    "resolved": 353
+   },
+   "DQB1": {
+    "anchored": 8568,
+    "empty": 14,
+    "not_tested": false,
+    "resolve_rate": 0.78023,
+    "resolved": 6685
+   },
+   "DRB1": {
+    "anchored": 9186,
+    "empty": 21,
+    "not_tested": false,
+    "resolve_rate": 0.82865,
+    "resolved": 7612
+   }
+  },
+  "FORM#3": {
+   "A": {
+    "anchored": 499,
+    "empty": 2,
+    "not_tested": false,
+    "resolve_rate": 0.56313,
+    "resolved": 281
+   },
+   "B": {
+    "anchored": 499,
+    "empty": 2,
+    "not_tested": false,
+    "resolve_rate": 0.54709,
+    "resolved": 273
+   },
+   "C": {
+    "anchored": 505,
+    "empty": 189,
+    "not_tested": false,
+    "resolve_rate": 0.15446,
+    "resolved": 78
+   },
+   "DPA1": {
+    "anchored": 478,
+    "empty": 412,
+    "not_tested": true,
+    "resolve_rate": 0.0,
+    "resolved": 0
+   },
+   "DPB1": {
+    "anchored": 480,
+    "empty": 441,
+    "not_tested": true,
+    "resolve_rate": 0.0,
+    "resolved": 0
+   },
+   "DQA1": {
+    "anchored": 445,
+    "empty": 264,
+    "not_tested": false,
+    "resolve_rate": 0.0809,
+    "resolved": 36
+   },
+   "DQB1": {
+    "anchored": 370,
+    "empty": 0,
+    "not_tested": false,
+    "resolve_rate": 0.33243,
+    "resolved": 123
+   },
+   "DRB1": {
+    "anchored": 464,
+    "empty": 0,
+    "not_tested": false,
+    "resolve_rate": 0.37069,
+    "resolved": 172
+   }
+  }
+ },
+ "max_resolve_rate": 0.01,
+ "measured_utc": "2026-09-03T17:26:44+00:00",
+ "min_anchored": 200,
+ "schema": "locus-testing-rates/v1"
+}

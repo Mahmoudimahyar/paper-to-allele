@@ -25,3 +25,33 @@ The OCR golden corpus must deliberately represent the archive we actually have: 
 
 ## Error priority
 Optimize for **near-zero wrong-locus false acceptance**, not generic character accuracy. Correct abstention is a success condition.
+
+## Resolution bands and mandatory review (HA-003, decided 2026-09-03)
+
+Decided by the human operator, on the corrected measurement (KI-009): the
+archive holds 23,566 unique originals, 90.0% above 900 px, 9.7% at 561–900 px
+and 0.4% at or below 560 px. The earlier "77% at ~520 px" counted thumbnail
+copies and is withdrawn.
+
+| band | longest edge | documents | policy |
+|---|---|---:|---|
+| `LOW` | ≤ 560 px | 85 | **Mandatory human review** before any HLA value from it reaches Gold. No exception, no confirmer substitute. |
+| `MID` | 561–900 px | 2,276 | **Provisional: mandatory review for critical HLA fields.** |
+| `HIGH` | > 900 px | 21,205 | Normal acceptance policy. |
+
+The MID rule is marked provisional because it is the one band where the cost is
+real — 2,276 documents is a fortnight of somebody's reading — and where the
+evidence to set it does not exist yet. The review pack (HA-008) draws a
+`mid_res` stratum precisely to measure it: if MID documents are edited at the
+same rate as HIGH ones, the band should be relaxed to normal acceptance; if they
+are edited materially more often, the provisional rule stands and is no longer
+provisional.
+
+Until those labels exist, the conservative reading holds. A band decision that
+is wrong in the permissive direction publishes bad values; wrong in the strict
+direction it only costs reading time.
+
+**This is a clinical judgement recorded by an agent, not made by one.** The
+thresholds above were proposed from pixel measurements and accepted by the
+operator; nothing here is derived from Iranian transplant practice, which
+remains HA-004.

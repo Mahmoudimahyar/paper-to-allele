@@ -239,7 +239,24 @@
       "depends_on": [
         "REVIEW-001"
       ],
-      "source_doc": "docs/architecture/DATA_MODEL.md"
+      "source_doc": "docs/architecture/DATA_MODEL.md",
+      "spec": "specs/features/ENTITY-001-entity-resolution.json",
+      "acceptance": [
+        "uv run --frozen pytest --task ENTITY-001 -q"
+      ],
+      "spec_criteria": [
+        "two documents matching on five loci are proposed for review and never auto-linked",
+        "the same sender posting the same genotype twice auto-links",
+        "a blood-group conflict blocks a link that every other signal supports",
+        "the frequency table is regenerated whenever extraction changes, and linking refuses to run without it"
+      ],
+      "spec_invariants": [
+        "HLA similarity alone never merges people",
+        "a conflicting blood group or role blocks a link rather than weakening it",
+        "a merge decision is recorded, reversible, and attributed",
+        "a cluster with an open conflict is UNKNOWN to matching",
+        "the printed name is stored only as a salted hash"
+      ]
     },
     {
       "id": "TS-HIST-001",

@@ -1,0 +1,37 @@
+{
+ "loci": {
+  "A": {
+   "distinct_genotypes": 149,
+   "documents": 11628,
+   "match_probability": 0.018125,
+   "one_in": 55
+  },
+  "B": {
+   "distinct_genotypes": 344,
+   "documents": 10911,
+   "match_probability": 0.011138,
+   "one_in": 90
+  },
+  "C": {
+   "distinct_genotypes": 97,
+   "documents": 3114,
+   "match_probability": 0.024818,
+   "one_in": 40
+  },
+  "DQB1": {
+   "distinct_genotypes": 30,
+   "documents": 9675,
+   "match_probability": 0.101468,
+   "one_in": 10
+  },
+  "DRB1": {
+   "distinct_genotypes": 113,
+   "documents": 11112,
+   "match_probability": 0.022741,
+   "one_in": 44
+  }
+ },
+ "measured_utc": "2026-09-03T17:31:15+00:00",
+ "min_documents": 500,
+ "schema": "locus-genotype-frequencies/v1"
+}

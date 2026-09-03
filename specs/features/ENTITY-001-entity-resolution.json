@@ -1,0 +1,38 @@
+{
+  "id": "ENTITY-001",
+  "version": "1.0.0",
+  "status": "READY",
+  "risk": "HIGH",
+  "goal": "Group documents that describe one person, using non-HLA identity evidence, and propose everything else for human review.",
+  "non_goals": [
+    "compatibility scoring",
+    "contact verification",
+    "identity verification against any official record"
+  ],
+  "actors": [
+    "historical_importer",
+    "reviewer"
+  ],
+  "preconditions": [
+    "HIST-002 bundles",
+    "OCR-001 resolved HLA facts",
+    "config/locus_genotype_frequencies.json measured from the current extraction"
+  ],
+  "invariants": [
+    "HLA similarity alone never merges people",
+    "a conflicting blood group or role blocks a link rather than weakening it",
+    "a merge decision is recorded, reversible, and attributed",
+    "a cluster with an open conflict is UNKNOWN to matching",
+    "the printed name is stored only as a salted hash"
+  ],
+  "acceptance": [
+    "two documents matching on five loci are proposed for review and never auto-linked",
+    "the same sender posting the same genotype twice auto-links",
+    "a blood-group conflict blocks a link that every other signal supports",
+    "the frequency table is regenerated whenever extraction changes, and linking refuses to run without it"
+  ],
+  "context": [
+    "docs/architecture/DATA_MODEL.md",
+    "docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md"
+  ]
+}

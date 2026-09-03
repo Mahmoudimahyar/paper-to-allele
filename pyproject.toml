@@ -38,6 +38,14 @@ ocr = [
     "pillow>=11,<13",
     "scikit-learn>=1.5,<2",
 ]
+# The independent second reader for HLA cells. Its own extra, deliberately not
+# part of `ocr`: PaddlePaddle is a heavy tree, and nothing in the default
+# install, the repo gate or CI needs it — the confirmer is a batch pass over a
+# local corpus. Evidence: docs/ingestion/OCR_MODEL_SURVEY_2026-09-03.md.
+confirm = [
+    "paddleocr>=3.7,<4",
+    "paddlepaddle>=3.3,<4",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kidneymatch"]

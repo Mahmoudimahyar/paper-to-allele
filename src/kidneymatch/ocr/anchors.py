@@ -70,12 +70,20 @@ class ResolutionStatus(StrEnum):
 
     `UNKNOWN` and `REVIEW_REQUIRED` are different states and must not be merged:
     UNKNOWN means the form does not report this locus at all, while
-    REVIEW_REQUIRED means it does and we could not read it safely.
+    REVIEW_REQUIRED means it does and we could not read it safely. `NOT_TESTED`
+    is a third thing again: the form reports it, the cell is empty, and this
+    laboratory never fills it.
     """
 
     RESOLVED = "RESOLVED"
     UNKNOWN = "UNKNOWN"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    # The form reports this locus, the cell is empty, and the laboratory
+    # measurably never fills it (HA-009). A finding, not a failure: it is not a
+    # mismatch and not a zero, and matching must read it as UNKNOWN with a
+    # reason. It exists so that ~24,000 cells nobody can act on stay out of the
+    # review queue without pretending they were never printed.
+    NOT_TESTED = "NOT_TESTED"
 
 
 class SecondAllele(StrEnum):
