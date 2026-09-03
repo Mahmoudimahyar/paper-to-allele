@@ -188,3 +188,29 @@ def test_thumbnails_never_reach_the_facts_table() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     assert "read_corpus" in source
     assert "FROM ocr_result" not in source
+
+
+def test_extraction_survives_a_column_a_later_pass_added() -> None:
+    """`decode_pass.py` adds `stability` to the fact table.
+
+    A positional INSERT breaks the moment it has, which is exactly when
+    re-extraction matters most — after the corpus has been decoded and someone
+    fixes the resolver. Measured: it failed with "table fact has 18 columns but
+    17 values were supplied", so the insert names its columns.
+    """
+    body = SCRIPT.read_text(encoding="utf-8")
+    assert "FACT_COLUMNS" in body
+    assert "INSERT OR REPLACE INTO fact VALUES" not in body, "positional insert"
+    assert "stability" not in body.split("FACT_COLUMNS = (")[1].split(")")[0], (
+        "a re-extracted fact has not been checked for stability, and must fall back "
+        "to the NOT_CHECKED default rather than claiming a verdict"
+    )
+
+
+def test_a_caption_reaches_the_role_decision_but_cannot_resolve_alone() -> None:
+    """The poster is often a broker. `decide_document_role` lets a caption
+    corroborate a weak printed field or veto any reading, and the extractor
+    must hand it over rather than deciding for itself."""
+    body = SCRIPT.read_text(encoding="utf-8")
+    assert "caption_role=caption_role" in body
+    assert "tier = 'STATEMENT'" in body, "a refused caption must say nothing"

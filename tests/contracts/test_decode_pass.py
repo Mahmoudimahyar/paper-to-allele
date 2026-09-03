@@ -94,8 +94,16 @@ def test_the_decode_is_never_consulted_before_geometry() -> None:
     """
     resolver = (ROOT / "src/kidneymatch/ocr/anchors.py").read_text(encoding="utf-8")
     assert "ctc" not in resolver, "the resolver must not import the decoder"
+
+    # What matters is that the extractor cannot CALL the decoder. Naming it in
+    # a comment is how the coupling gets explained, so the check is on code:
+    # no import of it, and no use of anything it defines.
     extractor = (ROOT / "scripts/extract_facts.py").read_text(encoding="utf-8")
-    assert "decode_pass" not in extractor and "ctc" not in extractor
+    for line in extractor.splitlines():
+        code = line.split("#", 1)[0]
+        assert "decode_pass" not in code, line
+        assert "ctc" not in code, line
+        assert "digits_preserved" not in code, line
 
 
 def test_the_pass_records_which_decoder_produced_a_verdict() -> None:

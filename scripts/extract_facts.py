@@ -50,6 +50,7 @@ from kidneymatch.documents.abo import (  # noqa: E402
     reconcile_abo,
 )
 from kidneymatch.documents.role import (  # noqa: E402
+    Role,
     decide_document_role,
     is_comparison_sheet,
     read_form_role,
@@ -89,6 +90,15 @@ FAMILY_RULE = ValueRule(
     max_values=2,
     centre_band=1.9,
     require_prefix=True,
+)
+
+# The columns `extract` produces, in order. Named explicitly so that a column
+# added by a later pass (`decode_pass.py` adds `stability`) cannot silently
+# break re-extraction.
+FACT_COLUMNS = (
+    "sha256, field, extraction_version, status, value, raw, repaired, second_allele, "
+    "reason, rule_id, anchor_box, value_boxes, source, engine_version, preproc_version, "
+    "imgt_version, created_utc"
 )
 
 SCHEMA = """
@@ -194,6 +204,7 @@ def extract(
     now: str,
     prototypes: list[LayoutPrototype] | None = None,
     prefixed_families: set[str] | None = None,
+    caption_role: Role = Role.UNKNOWN,
 ) -> tuple[list[tuple], dict]:
     """Every fact this document yields. Pure: no I/O, so it is testable."""
     latin = document.boxes
@@ -274,7 +285,10 @@ def extract(
         )
 
     reading = read_form_role(persian, latin)
-    decision = decide_document_role(reading)
+    # The caption is what the POSTER said, and the poster is often a broker.
+    # `decide_document_role` lets it corroborate a weak printed field or veto
+    # any reading, and never lets it rename the subject.
+    decision = decide_document_role(reading, caption_role=caption_role)
     add(
         "ROLE",
         (
@@ -340,10 +354,40 @@ def extract(
     return rows, summary
 
 
+def load_caption_roles(source_db: Path | None) -> dict[str, Role]:
+    """Per-document caption claims, written by `scripts/link_documents.py`.
+
+    Only a STATEMENT is carried through. A REFUSED claim — a caption that reads
+    as a request for a role rather than an assertion of one — deliberately says
+    nothing, because a request inverts the subject.
+    """
+    if source_db is None or not source_db.exists():
+        return {}
+    con = sqlite3.connect(source_db)
+    try:
+        rows = con.execute(
+            "SELECT sha256, role FROM document_caption_claim WHERE tier = 'STATEMENT'"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        con.close()
+    return {sha256: Role(role) for sha256, role in rows if role in set(Role)}
+
+
 def run(
-    src: Path, persian_db: Path, families_db: Path, out: Path, limit: int | None, batch: int
+    src: Path,
+    persian_db: Path,
+    families_db: Path,
+    out: Path,
+    limit: int | None,
+    batch: int,
+    source_db: Path | None = None,
 ) -> int:
     vocabulary = load_vocabulary()
+    caption_roles = load_caption_roles(source_db)
+    if caption_roles:
+        print(f"caption role claims available: {len(caption_roles):,}", flush=True)
     con = connect(out)
     done = {
         r[0]
@@ -374,7 +418,13 @@ def run(
     for index, document in enumerate(work, 1):
         now = datetime.now(UTC).isoformat(timespec="seconds")
         rows, summary = extract(
-            document, persian.get(document.sha256, []), vocabulary, now, prototypes, prefixed
+            document,
+            persian.get(document.sha256, []),
+            vocabulary,
+            now,
+            prototypes,
+            prefixed,
+            caption_roles.get(document.sha256, Role.UNKNOWN),
         )
         facts.extend(rows)
         documents.append(
@@ -397,8 +447,15 @@ def run(
         tally["family_rule" if summary["family"] else "default_rule"] += 1
 
         if len(documents) >= batch or index == len(work):
+            # Named columns, not positional: `decode_pass.py` adds `stability`
+            # to this table, and a positional insert breaks the moment it has.
+            # Leaving `stability` out is also the correct behaviour — a
+            # re-extracted fact has not been checked for stability, and its
+            # NOT_CHECKED default is what keeps it out of Gold until it is.
             con.executemany(
-                "INSERT OR REPLACE INTO fact VALUES (" + ",".join("?" * 17) + ")", facts
+                f"INSERT OR REPLACE INTO fact ({FACT_COLUMNS}) VALUES "
+                f"({','.join('?' * len(FACT_COLUMNS.split(',')))})",
+                facts,
             )
             con.executemany(
                 "INSERT OR REPLACE INTO document VALUES (?,?,?,?,?,?,?,?,?,?)", documents
@@ -457,13 +514,27 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument("--status", action="store_true")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=ROOT / "data/derived/source.sqlite",
+        help="the source store, for caption role evidence; skipped when absent",
+    )
     args = parser.parse_args()
     if args.status:
         return status(args.out)
     if not args.src.exists():
         print(f"missing {args.src}; run scripts/ocr_pass.py first")
         return 2
-    return run(args.src, args.persian, args.families, args.out, args.limit, args.batch_size)
+    return run(
+        args.src,
+        args.persian,
+        args.families,
+        args.out,
+        args.limit,
+        args.batch_size,
+        args.source,
+    )
 
 
 if __name__ == "__main__":
