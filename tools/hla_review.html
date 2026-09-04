@@ -79,7 +79,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
-@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important;
+  scroll-behavior: auto !important; } }
 
 /* ---- controls ---------------------------------------------------------- */
 button, select, input[type=text] {
@@ -133,7 +134,7 @@ header {
 
 /* ---- main -------------------------------------------------------------- */
 main { flex: 1 1 auto; min-height: 0; display: grid;
-       grid-template-columns: minmax(330px, 40%) 1fr; gap: var(--s-3); padding: var(--s-3); }
+       grid-template-columns: minmax(300px, 32%) 1fr; gap: var(--s-3); padding: var(--s-3); }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: minmax(180px,34%) 1fr; } }
 
 /* ---- viewer ------------------------------------------------------------ */
@@ -301,7 +302,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     Export
   </button>
   <button id="importBtn" class="ghost" title="Load labels from a file">Import</button>
-  <input id="import" type="file" accept="application/json" hidden>
+  <input id="import" type="file" accept="application/json" aria-label="labels file to import" hidden>
   <button id="helpBtn" class="ghost" title="Keyboard shortcuts" aria-label="keyboard shortcuts">
     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 113.4 2.3c-.6.3-1 .9-1 1.6v.4"/><path d="M12 17.2v.01"/></svg>
   </button>
@@ -369,6 +370,10 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   let autoZoom = true;      // selecting a row zooms in far enough to read it
   const TARGET_ROW_PX = 34; // how tall a value row should be on screen
   const MAX_ZOOM = 5;
+  // `prefers-reduced-motion` cannot reach a behaviour passed to scrollTo(), and
+  // this page scrolls on every one of 1,650 selections.
+  const SMOOTH = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto' : 'smooth';
   const key = () => 'hla_review:' + PACK.pack_id + ':' + (document.getElementById('annotator').value.trim() || 'anon');
 
   // Whether this browser will actually keep anything. Opened straight off the
@@ -395,6 +400,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     try { return JSON.parse(localStorage.getItem(key()) || '{}'); } catch (e) { return {}; }
   }
   function save() {
+    labels.at = docIndex;   // where to come back to; a 150-document job spans days
     if (storageWorks) {
       try { localStorage.setItem(key(), JSON.stringify(labels)); }
       catch (e) { storageWorks = false; warnAboutStorage(); }
@@ -547,9 +553,20 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     // Fit-width on a portrait report in a narrow pane renders the print at
     // about 45% — too small to check a digit against, which is the entire task.
     // Selecting a row zooms until the ROW is a readable height and centres it.
+    // The viewer's one unique job is showing that this value sits on the row
+    // with THIS locus label — geometry decides the locus, and the crop alone
+    // cannot show that. So the zoom is capped so the label and the value fit
+    // the pane together; zooming on the value height alone pushed the label
+    // off screen.
     const doc = PACK.documents[docIndex];
+    const span = cell.anchor_box
+      ? [Math.min(box[0], cell.anchor_box[0]), Math.max(box[2], cell.anchor_box[2])]
+      : [box[0], box[2]];
+    const spanFraction = Math.max(span[1] - span[0], 0.02);
     const rowFraction = Math.max(box[3] - box[1], 0.004);
-    const wanted = Math.min(MAX_ZOOM, (TARGET_ROW_PX / rowFraction) / doc.height);
+    const byHeight = (TARGET_ROW_PX / rowFraction) / doc.height;
+    const byWidth = (viewer.clientWidth - 40) / (spanFraction * doc.width);
+    const wanted = Math.min(MAX_ZOOM, byHeight, Math.max(byWidth, 0.05));
     if (autoZoom && wanted > (zoom || page.clientWidth / doc.width)) {
       zoom = wanted;
       layoutImage();
@@ -557,12 +574,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     hv.classList.remove('pulse');
     void hv.offsetWidth;
     hv.classList.add('pulse');
-    const cx = ((box[0] + box[2]) / 2) * page.clientWidth;
+    const cx = ((span[0] + span[1]) / 2) * page.clientWidth;
     const cy = ((box[1] + box[3]) / 2) * page.clientHeight;
     viewer.scrollTo({
       top: Math.max(0, cy - viewer.clientHeight / 2),
       left: Math.max(0, cx - viewer.clientWidth / 2),
-      behavior: 'smooth',
+      behavior: SMOOTH,
     });
   }
 
@@ -633,6 +650,22 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   }
 
   function renderDoc() {
+    // The golden protocol needs two INDEPENDENT labellers, and labels are keyed
+    // by annotator. Without a name they all land in one 'anon' bucket, so the
+    // second person to sit down sees the first person's answers already filled
+    // in. Ask for the name before any labelling is possible.
+    if (!document.getElementById('annotator').value.trim()) {
+      panel.innerHTML = '<div class="card"><div class="empty">'
+        + '<h2 style="margin:0 0 8px;font-size:16px">Type your name to begin</h2>'
+        + '<p style="margin:0 auto;max-width:34em">Labels are stored per annotator, and this '
+        + 'benchmark needs two people to read the same documents <b>independently</b>. '
+        + 'Without a name your work would share a drawer with everyone else&rsquo;s.</p>'
+        + '</div></div>';
+      page.removeAttribute('src');
+      renderProgress();
+      document.getElementById('annotator').focus();
+      return;
+    }
     const doc = PACK.documents[docIndex];
     if (!doc) {
       // An empty or exhausted pack is an operator mistake, not a stack trace.
@@ -681,13 +714,20 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       const lab = labels.cells[cell.cell_id];
       const states = cell.kind === 'DRBX' ? STATES_DRBX : STATES_HLA;
       const state = lab ? lab.state : defaultStateFor(cell);
-      const text = lab ? lab.alleles.join(' ') : (cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
+      // Blind means blind. Veiling 12.5px grey readings while leaving the
+      // pipeline's answer typed into a focused, selected input is not blind at
+      // all — it is the strongest anchor on the row.
+      const text = lab ? lab.alleles.join(' ')
+                       : (blind || cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
       html += '<li class="cell ' + (lab ? lab.decision : '') + '" data-cell="' + cell.cell_id + '" tabindex="-1">'
         + '<div class="locus">' + esc(cell.locus)
-        + '<span class="state">' + esc(String(cell.status || '').replace(/_/g, ' ')) + '</span></div>'
+        + '<span class="state">' + esc(String(cell.status || '').replace(/_/g, ' ')) + '</span>'
+        + (lab ? '<span class="verdict ' + lab.decision + '">' + lab.decision.toLowerCase() + '</span>' : '')
+        + '</div>'
         + '<div class="evid"><div class="crop">'
         + (cell.crop
-            ? '<img src="' + cell.crop + '" alt="the ' + esc(cell.locus) + ' cell as printed" loading="lazy">'
+            ? '<button type="button" class="cropbtn" aria-label="enlarge the ' + esc(cell.locus) + ' crop">'
+              + '<img src="' + cell.crop + '" alt="the ' + esc(cell.locus) + ' cell as printed" loading="lazy"></button>'
             : '<span class="nobox">no box on this row</span>')
         + '</div><div class="readings' + (blind && !lab ? ' veiled' : '') + '">' + readingsHtml(cell) + '</div></div>'
         + '<div class="answer">'
@@ -748,6 +788,11 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     };
     li.className = 'cell ' + dec + ' current flash';
     setTimeout(() => li.classList.remove('flash'), 560);
+    const locusCell = li.querySelector('.locus');
+    let verdict = locusCell.querySelector('.verdict');
+    if (!verdict) { verdict = document.createElement('span'); locusCell.appendChild(verdict); }
+    verdict.className = 'verdict ' + dec;
+    verdict.textContent = dec.toLowerCase();
     li.querySelector('[data-confirm]').textContent = '✓ done';
     li.querySelector('.readings').classList.remove('veiled');
     save();
@@ -761,7 +806,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       setCurrent(next);
       const i = next.querySelector('[data-alleles]');
       if (i && !i.disabled) { i.focus(); i.select(); } else next.querySelector('[data-confirm]').focus();
-      if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: SMOOTH });
     } else if (docIndex + 1 < PACK.documents.length) {
       docIndex++; renderDoc(); toast('Document complete — on to the next.');
     } else {
@@ -774,7 +819,8 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     const li = e.target.closest('.cell');
     if (li) setCurrent(li);
     if (e.target.closest('[data-confirm]') && li) { if (confirmRow(li)) focusNextRow(li); }
-    if (e.target.matches('.crop img')) e.target.classList.toggle('big');
+    const cropBtn = e.target.closest('.cropbtn');
+    if (cropBtn) { cropBtn.classList.toggle('big'); cropBtn.setAttribute('aria-expanded', String(cropBtn.classList.contains('big'))); }
   });
   panel.addEventListener('focusin', e => { const li = e.target.closest('.cell'); if (li) setCurrent(li); });
   panel.addEventListener('keydown', e => {
@@ -788,7 +834,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         e.preventDefault(); setCurrent(next);
         const i = next.querySelector('[data-alleles]');
         if (i && !i.disabled) { i.focus(); i.select(); } else next.focus();
-        if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: SMOOTH });
       }
     }
   });
@@ -803,6 +849,19 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       const d = labels.documents[doc.id] = labels.documents[doc.id] || {};
       d[e.target.dataset.doc] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
       if (e.target.dataset.doc === 'not_a_report' && e.target.checked) {
+        const already = doc.cells.filter(c => labels.cells[c.cell_id]).length;
+        if (already && !confirm('This overwrites ' + already + ' label'
+            + (already > 1 ? 's' : '') + ' you already recorded on this document. Continue?')) {
+          e.target.checked = false;
+          d.not_a_report = false;
+          save();
+          return;
+        }
+        // Snapshot, so unticking the box puts back what was there.
+        d.before_not_a_report = {};
+        for (const cell of doc.cells) {
+          if (labels.cells[cell.cell_id]) d.before_not_a_report[cell.cell_id] = labels.cells[cell.cell_id];
+        }
         for (const cell of doc.cells) {
           labels.cells[cell.cell_id] = {
             locus: cell.locus, state: 'NOT_A_REPORT', alleles: [], resolution: null, unsure: false,
@@ -812,6 +871,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
           };
         }
         save(); renderDoc(); toast('Every cell on this document marked "not a lab report".'); return;
+      }
+      if (e.target.dataset.doc === 'not_a_report' && !e.target.checked && d.before_not_a_report) {
+        for (const cell of doc.cells) delete labels.cells[cell.cell_id];
+        for (const id of Object.keys(d.before_not_a_report)) labels.cells[id] = d.before_not_a_report[id];
+        delete d.before_not_a_report;
+        save(); renderDoc(); toast('Restored the labels this document had before.'); return;
       }
       save();
     }
@@ -844,6 +909,11 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   document.getElementById('hideSugg').onchange = renderDoc;
 
   let annotatorWas = '';
+  document.getElementById('annotator').oninput = () => {
+    // Re-render on the FIRST character so the "type your name" card clears
+    // immediately; the bucket switch itself still happens on change/blur.
+    if (!panel.querySelector('.cell') && document.getElementById('annotator').value.trim()) renderDoc();
+  };
   document.getElementById('annotator').onchange = () => {
     // Labels are stored per annotator. Someone who labels a few rows before
     // typing their name would otherwise watch the work vanish into the `anon`
@@ -933,6 +1003,16 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     labels = load();
     labels.cells = labels.cells || {};
     labels.documents = labels.documents || {};
+    // Resume where the last session stopped, and if that document is finished,
+    // at the first one that is not. Landing on document 1 of 150 every reload
+    // means hunting through a 150-row dropdown to find your place.
+    if (Number.isInteger(labels.at) && labels.at >= 0 && labels.at < PACK.documents.length) {
+      docIndex = labels.at;
+    }
+    if (PACK.documents[docIndex] && documentIsDone(PACK.documents[docIndex])) {
+      const next = PACK.documents.findIndex(d => !documentIsDone(d));
+      if (next >= 0) docIndex = next;
+    }
     renderDoc();
     if (!storageWorks) warnAboutStorage();
   }

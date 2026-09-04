@@ -62,9 +62,9 @@ def synthetic_pack(tmp_path: Path) -> Path:
     return out
 
 
-def smoke(page: Path, pack_js: Path) -> dict:
+def smoke(page: Path, pack_js: Path, annotator: str = "smoke-tester") -> dict:
     result = subprocess.run(  # noqa: S603
-        [str(node), str(SMOKE), str(page), str(pack_js)],
+        [str(node), str(SMOKE), str(page), str(pack_js), annotator],
         capture_output=True,
         text=True,
         cwd=ROOT,
@@ -120,3 +120,24 @@ def test_a_pack_with_no_documents_does_not_crash_the_page(tmp_path: Path) -> Non
 
     report = smoke(out / "index.html", pack_js)
     assert report["error"] is None, f"an empty pack should not throw: {report['error']}"
+
+
+@needs_node
+def test_the_page_refuses_to_label_before_you_say_who_you_are(tmp_path: Path) -> None:
+    """Labels are keyed by annotator, and an empty name means the bucket is
+    literally `anon`.
+
+    The golden protocol needs two INDEPENDENT readings of the same documents.
+    Two people who each skip the name field would share one drawer, and the
+    second would find the first's answers already filled in — which destroys
+    the comparison silently and looks like agreement.
+    """
+    out = synthetic_pack(tmp_path)
+    unnamed = smoke(out / "index.html", out / "pack.js", annotator="")
+    assert unnamed["error"] is None
+    assert unnamed["askedForName"] is True, unnamed["panelText"][:200]
+    assert "cell" not in unnamed["panelText"].lower().replace("cells", "")
+
+    named = smoke(out / "index.html", out / "pack.js", annotator="Ann")
+    assert named["askedForName"] is False
+    assert named["renderedHtmlLength"] > 500

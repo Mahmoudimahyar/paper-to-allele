@@ -11,7 +11,7 @@
 
 import { readFileSync } from 'node:fs';
 
-const [htmlPath, packPath] = process.argv.slice(2);
+const [htmlPath, packPath, annotator] = process.argv.slice(2);
 const html = readFileSync(htmlPath, 'utf8');
 const packJs = readFileSync(packPath, 'utf8');
 
@@ -115,6 +115,11 @@ globalThis.getComputedStyle = () => ({ display: 'block' });
 eval(packJs.replace(/^window\./, 'globalThis.window.'));
 globalThis.window.PACK = globalThis.window.PACK || globalThis.PACK;
 
+// The page refuses to show any cell until an annotator is named, because
+// labels are stored per annotator and two people must stay independent. Give it
+// one unless the caller is deliberately testing the unnamed state.
+byId.annotator.value = annotator === undefined ? 'smoke-tester' : annotator;
+
 const script = html.split('<script>').pop().split('</script>')[0];
 
 const result = { started: false, error: null, renderedHtmlLength: 0, wroteProgress: '' };
@@ -128,6 +133,10 @@ try {
 }
 
 // The page came up if it rendered a document into the panel and said where it is.
-result.ok = result.started && result.renderedHtmlLength > 500 && /\d+ \/ \d+ cells/.test(result.wroteProgress);
+result.panelText = String(byId.panel.innerHTML).replace(/<[^>]*>/g, ' ');
+result.askedForName = /Type your name/.test(result.panelText);
+result.ok = result.started
+  && (result.askedForName || result.renderedHtmlLength > 500)
+  && /\d+ \/ \d+ cells/.test(result.wroteProgress);
 console.log(JSON.stringify(result));
 process.exit(result.ok ? 0 : 1);
