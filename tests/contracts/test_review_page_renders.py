@@ -141,3 +141,28 @@ def test_the_page_refuses_to_label_before_you_say_who_you_are(tmp_path: Path) ->
     named = smoke(out / "index.html", out / "pack.js", annotator="Ann")
     assert named["askedForName"] is False
     assert named["renderedHtmlLength"] > 500
+
+
+def test_the_evidence_crops_are_not_deferred() -> None:
+    """A crop that has not loaded is a question with no evidence behind it.
+
+    `loading="lazy"` defers an image until the browser decides it is near the
+    viewport, and it defers indefinitely while the page is not visible. Both of
+    those are decisions about *when* the reviewer sees the only thing they are
+    being asked to read, made by a heuristic that cannot know that.
+
+    This was found by measuring: eleven crops on a rendered document, every one
+    `complete === false, naturalWidth === 0`. It went unnoticed because the
+    browser check asked whether any image was *broken* — `complete &&
+    naturalWidth === 0` — which is false for an image that never started
+    loading. An absence-of-failure assertion passed against a page showing no
+    evidence at all.
+    """
+    source = PAGE.read_text(encoding="utf-8")
+    crop_markup = [line for line in source.splitlines() if "data-crop" in line]
+    assert crop_markup, "the crop <img> markup moved; update this test with it"
+    for line in crop_markup:
+        assert "lazy" not in line, (
+            "the evidence crop must not be lazily loaded: it is the whole "
+            f"content of the row.\n  {line.strip()}"
+        )

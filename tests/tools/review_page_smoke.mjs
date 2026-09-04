@@ -17,6 +17,25 @@ const packJs = readFileSync(packPath, 'utf8');
 
 // --- the smallest DOM this page's startup path actually touches ------------
 let idSeq = 0;
+// A real DOMTokenList, not a Set. A bare Set answers `add` and silently lacks
+// `remove`/`contains`/`toggle`, so page code that uses them threw inside the
+// harness instead of being exercised by it.
+function tokenList(initial = []) {
+  const s = new Set(initial);
+  return {
+    _s: s,
+    add: (...c) => c.forEach(x => s.add(x)),
+    remove: (...c) => c.forEach(x => s.delete(x)),
+    contains: (c) => s.has(c),
+    toggle: (c, force) => {
+      const on = force === undefined ? !s.has(c) : !!force;
+      on ? s.add(c) : s.delete(c);
+      return on;
+    },
+    get length() { return s.size; },
+    [Symbol.iterator]: () => s[Symbol.iterator](),
+  };
+}
 class El {
   constructor(tag = 'div') {
     this.tagName = tag.toUpperCase();
@@ -27,7 +46,7 @@ class El {
     this.dataset = {};
     this._text = '';
     this._html = '';
-    this.classList = new Set();
+    this.classList = tokenList();
     this.listeners = {};
     this.value = '';
     this.checked = false;
@@ -36,8 +55,8 @@ class El {
     this.files = [];
     this._id = ++idSeq;
   }
-  get className() { return [...this.classList].join(' '); }
-  set className(v) { this.classList = new Set(String(v).split(/\s+/).filter(Boolean)); }
+  get className() { return [...this.classList._s].join(' '); }
+  set className(v) { this.classList = tokenList(String(v).split(/\s+/).filter(Boolean)); }
   get textContent() { return this._text; }
   set textContent(v) { this._text = String(v); }
   get innerHTML() { return this._html; }

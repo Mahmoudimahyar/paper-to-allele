@@ -30,6 +30,9 @@
   --line:      #dfe3e9;
   --line-2:    #eceff3;
 
+  /* A type scale, because nine hand-picked sizes with four inside a 1.5px
+     band is drift, not hierarchy. Every rule below picks a step. */
+  --fs-1: 10px; --fs-2: 11px; --fs-3: 12px; --fs-4: 13px; --fs-5: 14px; --fs-6: 16px;
   --accent:      #2f6fed;
   --accent-ink:  #ffffff;
   --accent-soft: #e8f0fe;
@@ -43,9 +46,17 @@
   --edit:      #b46a00;
   --edit-on:   #8a5200;
   --edit-soft: #fff3e0;
-  --add:       #2f6fed;
-  --add-soft:  #e8f0fe;
+  /* ADDED had the same hex as the current row, so the rail's four states
+     painted three colours and 'this is where you are' read as a decision. */
+  --add:       #6b4fd8;
+  --add-soft:  #ece7fb;
+  --add-on:    #4a32a8;
   --bad:       #c62828;
+  /* Derived from --bad so the ring cannot drift from the border it surrounds;
+     the previous literals stayed light-red on the dark surface. */
+  --ring:        color-mix(in srgb, var(--accent) 22%, transparent);
+  --ring-strong: color-mix(in srgb, var(--accent) 34%, transparent);
+  --checker:     color-mix(in srgb, var(--ink) 4%, transparent);
   --bad-on:    #a31d1d;
   --bad-soft:  #fdecec;
 
@@ -64,7 +75,7 @@
     --accent:#5b8dff; --accent-ink:#0b1020; --accent-soft:#1a2540; --accent-on:#9dbaff;
     --ok:#43c07a; --ok-on:#7fdba6; --ok-soft:#14301f;
     --edit:#e0a34a; --edit-on:#f0c98a; --edit-soft:#302512;
-    --add:#5b8dff; --add-soft:#1a2540; --bad:#ff6b6b; --bad-on:#ff9b9b; --bad-soft:#331a1a;
+    --add:#a58bff; --add-soft:#241d3d; --add-on:#c3b0ff; --bad:#ff6b6b; --bad-on:#ff9b9b; --bad-soft:#331a1a;
     --shadow-1:0 1px 2px rgba(0,0,0,.5); --shadow-2:0 4px 12px rgba(0,0,0,.5);
     --shadow-3:0 12px 32px rgba(0,0,0,.6);
   }
@@ -141,7 +152,7 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .viewerwrap { position: relative; min-height: 0; border-radius: var(--r-lg); overflow: hidden;
               border: 1px solid var(--line); box-shadow: var(--shadow-1);
               background:
-                linear-gradient(45deg, rgba(0,0,0,.035) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.035) 75%) 0 0/22px 22px,
+                linear-gradient(45deg, var(--checker) 25%, transparent 25%, transparent 75%, var(--checker) 75%) 0 0/22px 22px,
                 linear-gradient(45deg, rgba(0,0,0,.035) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.035) 75%) 11px 11px/22px 22px,
                 var(--surface-2); }
 #viewer { position: absolute; inset: 0; overflow: auto; scroll-behavior: smooth; }
@@ -154,10 +165,14 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 
 .hl { position: absolute; border-radius: 3px; pointer-events: none; display: none;
       transition: left .22s var(--ease), top .22s var(--ease), width .22s var(--ease), height .22s var(--ease); }
-.hl.value { border: 2px solid var(--bad); box-shadow: 0 0 0 3px rgba(198,40,40,.18); }
+/* Solid is the value, dashed is the row anchor: one marker in two parts.
+   These used to be red, which spent the alarm colour on the ordinary case —
+   8 of 11 rows on a healthy document — leaving nothing louder for a reading
+   that actually disagrees. */
+.hl.value { border: 2px solid var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 .hl.anchor { border: 2px dashed var(--accent); }
 .hl.value.pulse { animation: pulse .5s var(--ease); }
-@keyframes pulse { 0% { box-shadow: 0 0 0 10px rgba(198,40,40,.30); } 100% { box-shadow: 0 0 0 3px rgba(198,40,40,.18); } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 10px var(--ring-strong); } 100% { box-shadow: 0 0 0 3px var(--ring); } }
 
 .vtools { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
           display: flex; align-items: center; gap: 2px; padding: 4px;
@@ -167,6 +182,11 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .vtools .zoomlabel { font-variant-numeric: tabular-nums; color: var(--ink-3); font-size: 11px;
                      min-width: 3.2rem; text-align: center; }
 .vtools .on { background: var(--accent-soft); color: var(--accent-on); }
+
+.empty h2 { margin: 0 0 var(--s-2); font-size: var(--fs-6); }
+.empty p { margin: 0 auto; max-width: 34em; }
+body.gated .viewerwrap { display: none; }
+body.gated main { grid-template-columns: 1fr; }
 
 /* ---- panel ------------------------------------------------------------- */
 #panel { min-height: 0; overflow: auto; scroll-behavior: smooth; }
@@ -186,7 +206,7 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 
 /* ---- the cell list ----------------------------------------------------- */
 .cells { list-style: none; margin: 0; padding: 0; }
-.cell { display: grid; grid-template-columns: 62px minmax(0,1fr) 196px; align-items: start;
+.cell { display: grid; grid-template-columns: 56px minmax(0,1fr) minmax(160px,196px); align-items: start;
         gap: var(--s-3); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line-2);
         border-left: 3px solid transparent; transition: background .14s var(--ease), border-color .14s var(--ease); }
 .cell:last-child { border-bottom: none; }
@@ -199,38 +219,71 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .cell.dirty .confirm { background: var(--edit-soft); color: var(--edit-on);
                        border-color: transparent; font-weight: 600; }
 .cell.flash { animation: flash .55s var(--ease); }
+
+
 @keyframes flash { 0% { background: var(--ok-soft); } 100% { background: transparent; } }
 
 .locus { font-weight: 700; font-size: 14px; letter-spacing: -.01em; padding-top: 5px; }
-.locus .state { display: block; font-size: 10px; font-weight: 600; color: var(--ink-3);
+.locus { font-size: var(--fs-5); }
+.locus .state { display: block; font-size: var(--fs-1); font-weight: 600; color: var(--ink-3);
                 text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+/* Unstyled, this inherited .locus's 14px/700 ink and became the loudest type in
+   the row — "approved" shouting over the locus name it belongs to. It is the
+   only readable statement of APPROVED vs EDITED vs ADDED, so it stays; at the
+   caption's scale, in the decision's own colour. */
+.locus .verdict { display: block; margin-top: 2px; font-size: var(--fs-1); font-weight: 700;
+                  letter-spacing: .05em; text-transform: uppercase; }
+.locus .verdict.APPROVED { color: var(--ok-on); }
+.locus .verdict.EDITED   { color: var(--edit-on); }
+.locus .verdict.ADDED    { color: var(--add-on); }
 
 .evid { min-width: 0; }
 .crop { margin-bottom: var(--s-2); }
-.crop img { display: block; max-width: 100%; max-height: 58px; width: auto; cursor: zoom-in;
+/* `all: unset` strips the button chrome this wrapper inherited — 10px of
+   padding a side plus a border, 22px taken off the widest evidence on screen.
+   :focus-visible survives it, which is the one thing the button bought. */
+.cropbtn { all: unset; display: block; max-width: 100%; cursor: zoom-in; border-radius: var(--r-sm); }
+.cropbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crop img { display: block; max-width: 100%; max-height: 58px; width: auto;
             background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm);
             padding: 3px; transition: max-height .2s var(--ease), box-shadow .14s var(--ease); }
-.crop img:hover { box-shadow: var(--shadow-2); }
-.crop img.big { max-height: 260px; cursor: zoom-out; box-shadow: var(--shadow-2); }
+.cropbtn:hover img { box-shadow: var(--shadow-2); }
+/* This was `.crop img.big`, and `big` is toggled on the BUTTON — so
+   click-to-enlarge has never once enlarged anything. Raising max-height alone
+   would not have fixed it either: the crop already paints at its native 44px,
+   and a cap cannot magnify. Zoom needs a height it must grow to, with the
+   overflow scrolled rather than squeezed — the point of enlarging a 390x44
+   strip is to read one smudged digit across it. */
+.cropbtn.big { cursor: zoom-out; overflow-x: auto; max-width: 100%; }
+.cropbtn.big img { max-height: none; max-width: none; height: 150px; width: auto;
+                   box-shadow: var(--shadow-2); }
 .crop .nobox { font-size: 12px; color: var(--ink-3); font-style: italic; }
 .crop .nobox.missing { color: var(--bad-on); font-style: normal; font-weight: 600; }
 
-.readings { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.readings { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-3); }
 .readings.veiled > * { visibility: hidden; }
-.rd { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.rd .who { flex: none; width: 5.4rem; font-size: 10px; font-weight: 600; letter-spacing: .05em;
-           text-transform: uppercase; color: var(--ink-3); }
+.rd { display: flex; align-items: first baseline; gap: 8px; min-width: 0; }
+/* Not uppercase: capitals are what made a 5.4rem gutter too narrow for the
+   pack's own engine names, wrapping every label onto two lines. */
+.rd .who { flex: none; width: 6rem; font-size: var(--fs-1); font-weight: 600; letter-spacing: .04em;
+           color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd .val { font-family: var(--mono); font-weight: 600; color: var(--ink);
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rd-pipe .val { font-size: 14px; }
-.rd-agree .val { font-family: inherit; font-weight: 500; color: var(--ok-on); }
-.rd-differ .val { color: var(--bad-on); }
+.rd-pipe .val { font-size: var(--fs-5); }
+/* The normal case gets a count, not a roster. Four agreeing readers used to
+   occupy 2.5x the pixels of the one reader that disagreed — the file's stated
+   hierarchy, inverted by its own CSS. The roster is in the row's title. */
+.rd-agree .val { font-family: inherit; font-size: var(--fs-2); font-weight: 600; color: var(--ink-3); }
+.rd-agree .tick { color: var(--ok-on); font-weight: 700; }
+.rd-differ { background: var(--bad-soft); border-radius: var(--r-sm);
+             padding: 2px var(--s-2); margin: 1px calc(var(--s-2) * -1); }
+.rd-differ .val { color: var(--bad-on); font-size: var(--fs-5); font-weight: 700; }
 .rd .dim { font-family: var(--mono); font-weight: 400; color: var(--ink-3); }
 .chip { font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; flex: none; }
 .chip.bad { background: var(--bad-soft); color: var(--bad-on); }
 .chip.warn { background: var(--edit-soft); color: var(--edit-on); }
-.rd .note { font-size: 11.5px; color: var(--ink-3); white-space: normal; }
-.rd .why  { font-size: 11.5px; color: var(--edit-on); white-space: normal; }
+.rd .note { font-size: var(--fs-2); color: var(--ink-3); white-space: normal; }
+.rd .why  { font-size: var(--fs-2); color: var(--edit-on); white-space: normal; }
 
 /* ---- the answer -------------------------------------------------------- */
 .answer { display: flex; flex-direction: column; gap: 6px; }
@@ -239,10 +292,20 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
                            letter-spacing: .02em; }
 .answer input[type=text].bad { border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
 .answer input[type=text]:disabled { background: var(--surface-2); color: var(--ink-3); }
+/* A monospace "11 15" at the value's own size and weight reads as data. Nothing
+   that is not a reading may look like one. */
+.answer input[type=text]::placeholder { font-family: system-ui, sans-serif; font-size: var(--fs-4);
+                                        font-weight: 400; font-style: italic; letter-spacing: 0; }
+.answer input[type=text]:disabled::placeholder { color: transparent; }
 .answer .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.answer .row label { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 5px; }
+.answer .row label { font-size: var(--fs-2); color: var(--ink-2); display: flex; align-items: center; gap: 5px; }
+/* One green button for all three decisions meant the rail said EDITED and the
+   button 641px away said the same thing an APPROVED row did. */
 .cell.APPROVED .confirm, .cell.EDITED .confirm, .cell.ADDED .confirm {
-  background: var(--ok-soft); border-color: transparent; color: var(--ok-on); font-weight: 600; }
+  border-color: transparent; font-weight: 600; }
+.cell.APPROVED .confirm { background: var(--ok-soft);   color: var(--ok-on); }
+.cell.EDITED   .confirm { background: var(--edit-soft); color: var(--edit-on); }
+.cell.ADDED    .confirm { background: var(--add-soft);  color: var(--add-on); }
 
 /* ---- banner, toast, help ---------------------------------------------- */
 .warnbar { flex: 0 0 auto; background: var(--bad-soft); color: var(--bad-on); border-bottom: 1px solid var(--bad);
@@ -265,6 +328,21 @@ dialog#help p { font-size: 12.5px; color: var(--ink-2); margin: 0 0 var(--s-4); 
 kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px solid var(--line);
       border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--ink); }
 .empty { padding: var(--s-6); text-align: center; color: var(--ink-2); }
+/* Below this the evidence column was the only thing that gave ground: the crop
+   fell to 69% of the resolution the pack had already extracted, and readings
+   started truncating. The answer control drops under the evidence instead,
+   which also puts the row in reading order — look, then answer. */
+@media (max-width: 1150px) {
+  .cell { grid-template-columns: 56px minmax(0,1fr); }
+  /* Once the answer has the full width it does not need three stacked lines;
+     leaving it stacked traded a downscaled crop for half the rows on screen. */
+  .answer { grid-column: 2; margin-top: var(--s-2);
+            flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .answer select { width: auto; flex: 0 1 11rem; }
+  .answer input[type=text] { width: auto; flex: 1 1 8rem; min-width: 6rem; }
+  .answer .row { flex: 0 0 auto; gap: var(--s-4); }
+}
+
 </style>
 </head>
 <body>
@@ -656,9 +734,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       (same ? agree : differ).push(r);
     }
     if (agree.length) {
-      rows.push('<div class="rd rd-agree"><span class="who">agree</span>'
-        + '<span class="val">✓ ' + agree.length + ' reader' + (agree.length > 1 ? 's' : '')
-        + ' · ' + esc(agree.map(r => r.name).join(', ')) + '</span></div>');
+      // The names go in the title. Spelling out four agreeing engines on every
+      // row is the noise that hides the fifth engine that disagrees.
+      rows.push('<div class="rd rd-agree" title="' + esc(agree.map(r => r.name).join(', ')) + '">'
+        + '<span class="who">agree</span>'
+        + '<span class="val"><span class="tick">✓</span> ' + agree.length + ' reader'
+        + (agree.length > 1 ? 's' : '') + ' agree</span></div>');
     }
     for (const r of differ) {
       const label = r.verdict || 'reads';
@@ -677,16 +758,22 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     // in. Ask for the name before any labelling is possible.
     if (!document.getElementById('annotator').value.trim()) {
       panel.innerHTML = '<div class="card"><div class="empty">'
-        + '<h2 style="margin:0 0 8px;font-size:16px">Type your name to begin</h2>'
-        + '<p style="margin:0 auto;max-width:34em">Labels are stored per annotator, and this '
+        + '<h2>Type your name to begin</h2>'
+        + '<p>Labels are stored per annotator, and this '
         + 'benchmark needs two people to read the same documents <b>independently</b>. '
         + 'Without a name your work would share a drawer with everyone else&rsquo;s.</p>'
         + '</div></div>';
+      // Blanking the src leaves a broken-image glyph the size of the left pane
+      // as the very first thing an annotator sees. Hide the viewer instead and
+      // give the gate the full width.
       page.removeAttribute('src');
+      page.removeAttribute('alt');
+      document.body.classList.add('gated');
       renderProgress();
       document.getElementById('annotator').focus();
       return;
     }
+    document.body.classList.remove('gated');
     const doc = PACK.documents[docIndex];
     if (!doc) {
       // An empty or exhausted pack is an operator mistake, not a stack trace.
@@ -745,11 +832,16 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + '<span class="state">' + esc(String(cell.status || '').replace(/_/g, ' ')) + '</span>'
         + (lab ? '<span class="verdict ' + lab.decision + '">' + lab.decision.toLowerCase() + '</span>' : '')
         + '</div>'
+        // Not `loading="lazy"`. These are eleven small crops and they ARE the
+        // row: a lazy crop that has not loaded leaves a fully answerable
+        // question with no evidence behind it. Deferred loading is also
+        // suppressed whenever the page is not visible, which is precisely when
+        // it cannot be checked.
         + '<div class="evid"><div class="crop">'
         + (cell.crop
             ? '<button type="button" class="cropbtn" aria-label="enlarge the ' + esc(cell.locus) + ' crop">'
               + '<img src="' + esc(cell.crop) + '" alt="the ' + esc(cell.locus)
-              + ' cell as printed" loading="lazy" data-crop></button>'
+              + ' cell as printed" decoding="async" data-crop></button>'
             : '<span class="nobox">no box on this row</span>')
         + '</div><div class="readings' + (blind && !lab ? ' veiled' : '') + '">' + readingsHtml(cell) + '</div></div>'
         + '<div class="answer">'
@@ -757,7 +849,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + states.map(s => '<option value="' + s + '"' + (s === state ? ' selected' : '') + '>'
             + s.replace(/_/g, ' ').toLowerCase() + '</option>').join('')
         + '</select>'
-        + '<input type="text" data-alleles value="' + esc(text) + '" placeholder="11 15" '
+        + '<input type="text" data-alleles value="' + esc(text) + '" placeholder="two alleles" '
         + 'aria-label="alleles for ' + esc(cell.locus) + '"' + (state === 'VALUE' ? '' : ' disabled') + '>'
         + '<div class="row"><label><input type="checkbox" data-unsure' + (lab && lab.unsure ? ' checked' : '') + '> unsure</label>'
         + '<button class="confirm" data-confirm title="' + (lab ? 'Change your answer and confirm again' : 'Record this reading') + '">'
@@ -776,6 +868,10 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
     currentCell = null;
     renderProgress();
+    // `save()` otherwise only runs on confirm, so browsing to a document and
+    // closing the tab without labelling it lost the place — on a 150-document
+    // job that spans days, that is the reviewer's bookmark.
+    if (labels.at !== docIndex) save();
 
     // The last Enter of a document advances to the next one, which then starts
     // a cold fetch and decode of a full-page scan. Warming it while the
