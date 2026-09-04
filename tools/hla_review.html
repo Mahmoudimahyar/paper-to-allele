@@ -195,6 +195,9 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .cell.APPROVED { border-left-color: var(--ok); }
 .cell.EDITED   { border-left-color: var(--edit); }
 .cell.ADDED    { border-left-color: var(--add); }
+.cell.dirty { border-left-color: var(--edit); }
+.cell.dirty .confirm { background: var(--edit-soft); color: var(--edit-on);
+                       border-color: transparent; font-weight: 600; }
 .cell.flash { animation: flash .55s var(--ease); }
 @keyframes flash { 0% { background: var(--ok-soft); } 100% { background: transparent; } }
 
@@ -210,6 +213,7 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .crop img:hover { box-shadow: var(--shadow-2); }
 .crop img.big { max-height: 260px; cursor: zoom-out; box-shadow: var(--shadow-2); }
 .crop .nobox { font-size: 12px; color: var(--ink-3); font-style: italic; }
+.crop .nobox.missing { color: var(--bad-on); font-style: normal; font-weight: 600; }
 
 .readings { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
 .readings.veiled > * { visibility: hidden; }
@@ -374,6 +378,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   // this page scrolls on every one of 1,650 selections.
   const SMOOTH = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     ? 'auto' : 'smooth';
+  let annotatorWas = '';
   const key = () => 'hla_review:' + PACK.pack_id + ':' + (document.getElementById('annotator').value.trim() || 'anon');
 
   // Whether this browser will actually keep anything. Opened straight off the
@@ -397,13 +402,25 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
 
   function load() {
     if (!storageWorks) return {};
-    try { return JSON.parse(localStorage.getItem(key()) || '{}'); } catch (e) { return {}; }
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key()) || '{}');
+      // A scalar or an array parses fine and then breaks every later access.
+      // Anything that is not a plain object is not our data.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      return parsed;
+    } catch (e) { return {}; }
   }
   function save() {
     labels.at = docIndex;   // where to come back to; a 150-document job spans days
     if (storageWorks) {
       try { localStorage.setItem(key(), JSON.stringify(labels)); }
-      catch (e) { storageWorks = false; warnAboutStorage(); }
+      catch (e) {
+        // Quota, or a private window. The counts keep rising from memory, so
+        // this has to be said plainly rather than left to the banner alone.
+        storageWorks = false;
+        warnAboutStorage();
+        toast('Your work is NOT being saved. Export before you close this tab.');
+      }
     }
     renderProgress();
   }
@@ -727,7 +744,8 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + '<div class="evid"><div class="crop">'
         + (cell.crop
             ? '<button type="button" class="cropbtn" aria-label="enlarge the ' + esc(cell.locus) + ' crop">'
-              + '<img src="' + cell.crop + '" alt="the ' + esc(cell.locus) + ' cell as printed" loading="lazy"></button>'
+              + '<img src="' + esc(cell.crop) + '" alt="the ' + esc(cell.locus)
+              + ' cell as printed" loading="lazy" data-crop></button>'
             : '<span class="nobox">no box on this row</span>')
         + '</div><div class="readings' + (blind && !lab ? ' veiled' : '') + '">' + readingsHtml(cell) + '</div></div>'
         + '<div class="answer">'
@@ -744,6 +762,15 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
     html += '</ul></div>';
     panel.innerHTML = html;
+    // A crop that 404s would otherwise leave a fully answerable row with no
+    // evidence behind it, which is the one thing this page must never do.
+    for (const img of panel.querySelectorAll('img[data-crop]')) {
+      img.addEventListener('error', () => {
+        const holder = img.closest('.crop');
+        if (holder) holder.innerHTML = '<span class="nobox missing">this crop is missing from the pack</span>';
+      });
+    }
+    currentCell = null;
     renderProgress();
 
     const first = panel.querySelector('.cell:not(.APPROVED):not(.EDITED):not(.ADDED)') || panel.querySelector('.cell');
@@ -754,7 +781,13 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
   }
 
+  let currentCell = null;
   function setCurrent(li) {
+    // Clicking a row fires click and focusin, and a keypress can add a third
+    // call; without this the full highlight — three layout reads and a scroll —
+    // ran two to four times per row change.
+    if (li === currentCell && li.classList.contains('current')) return;
+    currentCell = li;
     const all = panel.querySelectorAll('.cell');
     for (const r of all) r.classList.toggle('current', r === li);
     const doc = PACK.documents[docIndex];
@@ -807,6 +840,17 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       const i = next.querySelector('[data-alleles]');
       if (i && !i.disabled) { i.focus(); i.select(); } else next.querySelector('[data-confirm]').focus();
       if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: SMOOTH });
+      return;
+    }
+    // Walking forward can run off the end with rows still unlabelled ABOVE the
+    // starting point, so completeness is checked rather than assumed.
+    const left = [...panel.querySelectorAll('.cell')].filter(c => !/APPROVED|EDITED|ADDED/.test(c.className));
+    if (left.length) {
+      setCurrent(left[0]);
+      const i = left[0].querySelector('[data-alleles]');
+      if (i && !i.disabled) { i.focus(); i.select(); } else left[0].querySelector('[data-confirm]').focus();
+      if (left[0].scrollIntoView) left[0].scrollIntoView({ block: 'nearest', behavior: SMOOTH });
+      toast(left.length + ' cell' + (left.length > 1 ? 's' : '') + ' above still need you.');
     } else if (docIndex + 1 < PACK.documents.length) {
       docIndex++; renderDoc(); toast('Document complete — on to the next.');
     } else {
@@ -826,7 +870,15 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   panel.addEventListener('keydown', e => {
     const li = e.target.closest('.cell');
     if (!li) return;
-    if (e.key === 'Enter') { e.preventDefault(); if (confirmRow(li)) focusNextRow(li); return; }
+    // `e.repeat` guard: Enter is the primary control, and OS key repeat fires
+    // about 30 times a second on a held key. Without this, leaning on Enter
+    // approves cells across document boundaries faster than anyone can read.
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.repeat) return;
+      if (confirmRow(li)) focusNextRow(li);
+      return;
+    }
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.altKey && e.target.tagName !== 'SELECT') {
       const all = Array.prototype.slice.call(panel.querySelectorAll('.cell'));
       const next = all[all.indexOf(li) + (e.key === 'ArrowDown' ? 1 : -1)];
@@ -838,8 +890,25 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       }
     }
   });
+  function markUnconfirmed(li) {
+    // `confirmRow` is the only writer. Touching a confirmed row changes the
+    // screen and nothing else, so the row must stop claiming to be recorded
+    // until it is confirmed again — otherwise the stored label silently
+    // disagrees with what the reviewer is looking at.
+    if (!/APPROVED|EDITED|ADDED/.test(li.className)) return;
+    li.className = 'cell current dirty';
+    const verdict = li.querySelector('.locus .verdict');
+    if (verdict) verdict.remove();
+    const button = li.querySelector('[data-confirm]');
+    button.textContent = 'confirm';
+    button.title = 'This row has changed since you recorded it';
+  }
+
   panel.addEventListener('change', e => {
     const doc = PACK.documents[docIndex];
+    if (e.target.matches('[data-state]') || e.target.matches('[data-unsure]')) {
+      markUnconfirmed(e.target.closest('.cell'));
+    }
     if (e.target.matches('[data-state]')) {
       const li = e.target.closest('.cell'); const input = li.querySelector('[data-alleles]');
       input.disabled = e.target.value !== 'VALUE';
@@ -884,7 +953,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   panel.addEventListener('input', e => {
     if (e.target.matches('[data-alleles]')) {
       e.target.classList.remove('bad');
-      e.target.closest('.cell').querySelector('.readings').classList.remove('veiled');
+      const li = e.target.closest('.cell');
+      li.querySelector('.readings').classList.remove('veiled');
+      markUnconfirmed(li);
     }
   });
 
@@ -908,7 +979,6 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   document.getElementById('nextTodo').onclick = goToNextUnlabelled;
   document.getElementById('hideSugg').onchange = renderDoc;
 
-  let annotatorWas = '';
   document.getElementById('annotator').oninput = () => {
     // Re-render on the FIRST character so the "type your name" card clears
     // immediately; the bucket switch itself still happens on change/blur.
@@ -949,7 +1019,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     btn.classList.toggle('on', autoZoom);
     btn.setAttribute('aria-pressed', String(autoZoom));
   };
-  window.addEventListener('resize', layoutImage);
+    let resizePending = false;
+  window.addEventListener('resize', () => {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(() => { resizePending = false; layoutImage(); });
+  });
 
   const help = document.getElementById('help');
   document.getElementById('helpBtn').onclick = () => { if (help.showModal) help.showModal(); };
@@ -1006,6 +1081,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     // Resume where the last session stopped, and if that document is finished,
     // at the first one that is not. Landing on document 1 of 150 every reload
     // means hunting through a 150-row dropdown to find your place.
+    annotatorWas = document.getElementById('annotator').value.trim();
     if (Number.isInteger(labels.at) && labels.at >= 0 && labels.at < PACK.documents.length) {
       docIndex = labels.at;
     }
