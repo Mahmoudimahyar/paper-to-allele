@@ -425,6 +425,8 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       <dt><kbd>Alt</kbd> + <kbd>Down</kbd></dt><dd>Next document</dd>
       <dt><kbd>Alt</kbd> + <kbd>Up</kbd></dt><dd>Previous document</dd>
       <dt><kbd>Down</kbd> <kbd>Up</kbd></dt><dd>Move between cells</dd>
+      <dt><kbd>Alt</kbd> + <kbd>1</kbd>&hellip;<kbd>9</kbd></dt><dd>Set this cell&rsquo;s state to the
+        1st&hellip;9th entry of its own list, without reaching for the mouse</dd>
       <dt><kbd>Alt</kbd> + <kbd>N</kbd></dt><dd>Jump to the next document that still has unlabelled cells</dd>
       <dt><kbd>?</kbd></dt><dd>This panel</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close</dd>
@@ -993,6 +995,23 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       e.preventDefault();
       if (e.repeat) return;
       if (confirmRow(li)) focusNextRow(li);
+      return;
+    }
+    // Alt+digit picks the state without leaving the keyboard. Over 1,650 cells
+    // the reach for the select is the largest remaining cost after reading the
+    // crop. Alt is the one modifier a browser does not claim for digits, and
+    // the digit maps to the option's position in the list the row is showing —
+    // the DRBX rows have a different list, so the mapping is per row, not a
+    // fixed table of state names.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
+      const sel = li.querySelector('[data-state]');
+      const wanted = sel && sel.options[Number(e.key) - 1];
+      if (wanted) {
+        e.preventDefault();
+        sel.value = wanted.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        toast(wanted.textContent.trim());
+      }
       return;
     }
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.altKey && e.target.tagName !== 'SELECT') {
