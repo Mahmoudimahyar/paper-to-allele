@@ -110,6 +110,8 @@ globalThis.Blob = class { constructor(p) { this.parts = p; } };
 globalThis.KeyboardEvent = class {};
 globalThis.Event = class {};
 globalThis.getComputedStyle = () => ({ display: 'block' });
+globalThis.Image = class { set src(v) { this._src = v; } get src() { return this._src; } };
+globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
 
 // pack.js assigns window.PACK
 eval(packJs.replace(/^window\./, 'globalThis.window.'));

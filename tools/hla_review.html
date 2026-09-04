@@ -502,11 +502,15 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   const stage = document.getElementById('stage');
   const viewer = document.getElementById('viewer');
 
+  // The pack is immutable, so this is computed once. Rebuilding a 1,650-entry
+  // Set inside renderProgress — which runs on every save — made the cost of a
+  // session quadratic in the number of labels.
+  const KNOWN_CELLS = new Set();
+  for (const d of PACK.documents) for (const c of d.cells) KNOWN_CELLS.add(c.cell_id);
+
   function renderProgress() {
     const total = PACK.n_cells || 0;
-    const known = new Set();
-    for (const d of PACK.documents) for (const c of d.cells) known.add(c.cell_id);
-    const done = Object.keys(labels.cells).filter(id => known.has(id)).length;
+    const done = Object.keys(labels.cells).filter(id => KNOWN_CELLS.has(id)).length;
     const docsDone = PACK.documents.filter(d => d.cells.length && d.cells.every(c => labels.cells[c.cell_id])).length;
 
     document.getElementById('progress').innerHTML = PACK.documents.length
@@ -772,6 +776,14 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
     currentCell = null;
     renderProgress();
+
+    // The last Enter of a document advances to the next one, which then starts
+    // a cold fetch and decode of a full-page scan. Warming it while the
+    // reviewer is still working here makes that transition instant.
+    const upcoming = PACK.documents[docIndex + 1];
+    if (upcoming && upcoming.image && typeof Image !== 'undefined') {
+      const warm = new Image(); warm.src = upcoming.image;
+    }
 
     const first = panel.querySelector('.cell:not(.APPROVED):not(.EDITED):not(.ADDED)') || panel.querySelector('.cell');
     if (first) {
