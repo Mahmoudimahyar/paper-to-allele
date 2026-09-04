@@ -90,6 +90,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+/* WCAG 2.2 SC 2.5.8: every pointer target at least 24x24. The two nav arrows
+   measured 31x23, one pixel short. */
+button, select, input[type="checkbox"] { min-height: 24px; }
+input[type="checkbox"] { width: 16px; height: 16px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important;
   scroll-behavior: auto !important; } }
 
@@ -116,7 +120,8 @@ header {
   border-bottom: 1px solid var(--line); box-shadow: var(--shadow-1); z-index: 20;
   flex-wrap: wrap;
 }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em;
+         margin: 0; font-size: var(--fs-6); }
 .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
 .brand small { font-weight: 500; color: var(--ink-3); font-size: 12px; }
 .spacer { flex: 1 1 auto; }
@@ -347,7 +352,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
 </head>
 <body>
 <header>
-  <span class="brand"><span class="dot"></span>HLA review <small id="packid"></small></span>
+  <h1 class="brand"><span class="dot"></span>HLA review <small id="packid"></small></h1>
 
   <label class="field"><span class="lbl">Annotator</span>
     <input id="annotator" type="text" placeholder="your name" aria-label="annotator name"
@@ -774,6 +779,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       return;
     }
     document.body.classList.remove('gated');
+    // The gate strips this so nothing paints behind it; without restoring it the
+    // scan stays unnamed to a screen reader for the rest of the session.
+    page.setAttribute('alt', 'the laboratory report being reviewed');
     const doc = PACK.documents[docIndex];
     if (!doc) {
       // An empty or exhausted pack is an operator mistake, not a stack trace.
