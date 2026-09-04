@@ -70,22 +70,21 @@ class El {
   get scrollHeight() { return 600; }
 }
 
-const byId = {};
-for (const id of ['annotator', 'progress', 'prev', 'next', 'jump', 'hideSugg', 'export',
-                  'import', 'zoomOut', 'zoomFit', 'zoomIn', 'autoZoom', 'panel', 'page',
-                  'stage', 'viewer', 'hlValue', 'hlAnchor', 'bar']) {
-  byId[id] = new El(id === 'page' ? 'img' : 'div');
-}
-byId.bar.querySelector = () => new El('i');
+// Any id the page asks for gets an element. Naming them individually meant a
+// renamed control returned null and the page crashed inside the harness rather
+// than in the browser, which tells you nothing useful.
+const byId = new Proxy({}, {
+  get(target, id) {
+    if (typeof id !== 'string') return undefined;
+    if (!(id in target)) target[id] = new El(id === 'page' ? 'img' : 'div');
+    return target[id];
+  },
+});
 
 const store = new Map();
 const documentStub = {
-  getElementById: (id) => byId[id] || null,
-  querySelector: (sel) => {
-    if (sel === 'main' || sel === 'header') return new El(sel);
-    if (sel === '#bar > i') return new El('i');
-    return null;
-  },
+  getElementById: (id) => byId[id],
+  querySelector: (sel) => new El('div'),
   querySelectorAll: () => [],
   createElement: (t) => new El(t),
   addEventListener: () => {},
@@ -123,12 +122,12 @@ try {
   eval(script);
   result.started = true;
   result.renderedHtmlLength = byId.panel.innerHTML.length;
-  result.wroteProgress = byId.progress.textContent;
+  result.wroteProgress = byId.progress.innerHTML || byId.progress.textContent;
 } catch (e) {
   result.error = `${e.name}: ${e.message}`;
 }
 
 // The page came up if it rendered a document into the panel and said where it is.
-result.ok = result.started && result.renderedHtmlLength > 500 && /doc \d+\/\d+/.test(result.wroteProgress);
+result.ok = result.started && result.renderedHtmlLength > 500 && /\d+ \/ \d+ cells/.test(result.wroteProgress);
 console.log(JSON.stringify(result));
 process.exit(result.ok ? 0 : 1);

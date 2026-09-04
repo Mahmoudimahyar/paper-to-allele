@@ -5,134 +5,352 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HLA review</title>
 <style>
-  :root { --ok:#d7f5dc; --edit:#ffe9b8; --add:#dbe9ff; --pend:#f3f3f3; --bad:#ffd6d6; --line:#ccc; --ink:#222; }
-  * { box-sizing:border-box; }
-  /* A flex column, NOT `calc(100vh - <guessed header height>)`. The header
-     wraps to two or three lines depending on window width, so any hard-coded
-     height overflows the viewport and cuts the bottom off the panel — which is
-     exactly what it did. */
-  html, body { height:100%; }
-  body { margin:0; display:flex; flex-direction:column; overflow:hidden;
-         font:14px/1.35 system-ui, Segoe UI, Arial, sans-serif; color:var(--ink); background:#fafafa; }
-  header { flex:0 0 auto; display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center; padding:.5rem .8rem; background:#fff; border-bottom:1px solid var(--line); }
-  header input[type=text] { width:11rem; padding:.25rem .4rem; }
-  header .progress { font-variant-numeric:tabular-nums; font-weight:600; }
-  header .sep { width:1px; align-self:stretch; background:var(--line); }
-  button { cursor:pointer; padding:.25rem .6rem; border:1px solid #b9b9b9; background:#fff;
-           border-radius:4px; font:inherit; }
-  button:hover { background:#f2f2f2; }
-  #bar { flex:0 0 auto; height:3px; background:#e6e6e6; }
-  #bar > i { display:block; height:100%; background:#2f7d3c; width:0; transition:width .15s; }
-  main { flex:1 1 auto; min-height:0; display:grid; grid-template-columns: minmax(340px, 42%) 1fr;
-         gap:.6rem; padding:.6rem; }
-  /* min-height:0 on both, or a grid child refuses to shrink below its content
-     and pushes the page taller than the window. */
-  #viewer { position:relative; min-height:0; overflow:auto; border:1px solid var(--line); background:#2b2b2b; border-radius:4px; }
-  #panel { min-height:0; }
-  @media (max-width: 980px) {
-    main { grid-template-columns:1fr; grid-template-rows:minmax(160px, 38%) 1fr; }
+/* ===========================================================================
+   A design system, inline and offline.
+
+   No CDN, no web font, no icon font: this page displays patients' laboratory
+   reports, so it must never make a network request. Everything below is hand
+   rolled for that reason — tokens, a spacing scale, a type scale, and inline
+   SVG icons.
+
+   The reviewer's job is one comparison repeated 1,650 times: does this crop
+   say what the pipeline claims? Every decision here serves that — the crop is
+   the largest thing on the row, agreement collapses to one quiet line so
+   disagreement is loud, and the answer control never moves.
+   =========================================================================== */
+:root {
+  color-scheme: light dark;
+
+  --bg:        #f6f7f9;
+  --surface:   #ffffff;
+  --surface-2: #f2f4f7;
+  --ink:       #12161c;
+  --ink-2:     #4a5361;
+  --ink-3:     #78828f;
+  --line:      #dfe3e9;
+  --line-2:    #eceff3;
+
+  --accent:      #2f6fed;
+  --accent-ink:  #ffffff;
+  --accent-soft: #e8f0fe;
+
+  --ok:        #1f9254;
+  --ok-soft:   #e7f6ed;
+  --edit:      #b46a00;
+  --edit-soft: #fff3e0;
+  --add:       #2f6fed;
+  --add-soft:  #e8f0fe;
+  --bad:       #c62828;
+  --bad-soft:  #fdecec;
+
+  --r-sm: 6px;  --r-md: 10px;  --r-lg: 14px;
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+  --shadow-1: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+  --shadow-2: 0 4px 12px rgba(16,24,40,.10), 0 2px 4px rgba(16,24,40,.06);
+  --shadow-3: 0 12px 32px rgba(16,24,40,.16);
+  --ease: cubic-bezier(.2,.8,.2,1);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0e1116; --surface:#161a21; --surface-2:#1d222b; --ink:#e7ebf0; --ink-2:#aab3c0;
+    --ink-3:#7c8694; --line:#2a313c; --line-2:#222932;
+    --accent:#5b8dff; --accent-ink:#0b1020; --accent-soft:#1a2540;
+    --ok:#43c07a; --ok-soft:#14301f; --edit:#e0a34a; --edit-soft:#302512;
+    --add:#5b8dff; --add-soft:#1a2540; --bad:#ff6b6b; --bad-soft:#331a1a;
+    --shadow-1:0 1px 2px rgba(0,0,0,.5); --shadow-2:0 4px 12px rgba(0,0,0,.5);
+    --shadow-3:0 12px 32px rgba(0,0,0,.6);
   }
-  #stage { position:relative; display:inline-block; }
-  #stage img { display:block; }
-  .hl { position:absolute; border:2px solid #ff3b3b; box-shadow:0 0 0 2px rgba(255,255,255,.7); pointer-events:none; display:none; }
-  .hl.anchor { border-color:#2d7cff; }
-  #panel { overflow:auto; min-height:0; }
-  .doc { background:#fff; border:1px solid var(--line); border-radius:4px; padding:.7rem .8rem; margin-bottom:.6rem; }
-  .tags span { display:inline-block; background:#eee; border-radius:3px; padding:0 .4rem; margin:.1rem .2rem .1rem 0; font-size:12px; }
-  .tags span.primary { background:#ffd27a; }
-  table { width:100%; border-collapse:collapse; }
-  th, td { border-bottom:1px solid #e8e8e8; padding:.45rem .5rem; vertical-align:middle; text-align:left; }
-  th { font-size:12px; color:#555; font-weight:600; }
-  tr.cell { background:var(--pend); }
-  tr.cell:hover { filter:brightness(.985); }
-  tr.cell.APPROVED { background:var(--ok); }
-  tr.cell.EDITED { background:var(--edit); }
-  tr.cell.ADDED { background:var(--add); }
-  tr.cell.NONE { background:#fff; }
-  tr.cell.current td:first-child { box-shadow: inset 4px 0 #2d7cff; }
-  td.locus { font-weight:700; width:4.2rem; font-size:15px; letter-spacing:.2px; }
-  /* The crop IS the evidence. It gets the room. */
-  td.ev { min-width:0; }
-  td.ev .crop { margin-bottom:.3rem; }
-  td.ev .sugg { min-width:0; }
-  /* Tall enough to read, capped so a wide two-allele crop cannot push the
-     answer control off the panel — which is exactly what `max-width:none` did. */
-  td.ev .crop img { display:block; max-height:56px; max-width:100%; width:auto; cursor:zoom-in;
-                background:#fff; border:1px solid #d8d8d8; border-radius:3px; padding:2px; }
-  td.ev .crop img.big { max-height:200px; max-width:620px; cursor:zoom-out; }
-  td.ev .crop .nobox { color:#999; font-size:12px; font-style:italic; }
-  .sugg { font-family:ui-monospace, Consolas, monospace; font-size:12.5px; line-height:1.5; }
-  .rd { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .rd .eng { color:#7a7a7a; display:inline-block; width:5.6rem; font-family:system-ui, sans-serif;
-             font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
-  .rd .v { color:#111; font-weight:600; }
-  .rd-pipe .v { font-size:14px; }
-  .rd-agree { color:#2f7d3c; }
-  .rd-agree .v { color:#2f7d3c; font-weight:500; font-family:system-ui, sans-serif; }
-  .rd-differ .v { color:#b00020; }
-  .rd-differ .verdict { color:#b00020; font-weight:700; margin-left:.5rem; font-size:11px; }
-  .rd-dim .v { color:#777; font-weight:400; }
-  .rd .flag { color:#8a6d00; background:#fff4d6; border-radius:3px; padding:0 .35rem; margin-left:.5rem;
-              font-family:system-ui, sans-serif; font-size:11px; }
-  .rd .why { color:#8a5300; font-family:system-ui, sans-serif; white-space:normal; }
-  .rd .votes { color:#777; margin-left:.4rem; }
-  .sugg.hidden > div { visibility:hidden; }
-  /* A fixed, narrow answer column, stacked. Laid out in a row it took 456px of
-     a 707px panel and pushed the confirm button out of sight. */
-  td.edit { width:196px; vertical-align:top; padding-top:.55rem; }
-  td.edit .answer { display:flex; flex-direction:column; gap:.32rem; }
-  td.edit .answer-row { display:flex; align-items:center; justify-content:space-between; gap:.4rem; }
-  td.edit input[type=text] { width:100%; font-family:ui-monospace, Consolas, monospace;
-                             font-size:15px; padding:.28rem .4rem; border:1px solid #b9b9b9; border-radius:3px; }
-  td.edit input[type=text]:focus { outline:2px solid #2d7cff; outline-offset:0; border-color:#2d7cff; }
-  td.edit select { width:100%; padding:.26rem; }
-  td.edit label { white-space:nowrap; font-size:12px; color:#555; }
-  td.edit button[data-confirm] { padding:.28rem .7rem; font-weight:600; }
-  tr.cell.APPROVED td.edit button[data-confirm],
-  tr.cell.EDITED td.edit button[data-confirm],
-  tr.cell.ADDED td.edit button[data-confirm] { background:#fff; border:1px solid #9c9c9c; }
-  .doclevel { display:flex; flex-wrap:wrap; gap:.6rem 1.2rem; margin:.4rem 0 .6rem; align-items:center; }
-  .doclevel .pipe { color:#666; font-size:12px; }
-  .help { font-size:12px; color:#555; }
-  kbd { background:#eee; border:1px solid #ccc; border-radius:3px; padding:0 .3rem; font-size:11px; }
-  #jump { max-width:14rem; }
-  .warn { color:#b00020; }
-  .warnbar { background:#ffd6d6; border-bottom:1px solid #b00020; color:#7a0016; padding:.5rem .8rem; font-weight:600; }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---- controls ---------------------------------------------------------- */
+button, select, input[type=text] {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px;
+  transition: background .12s var(--ease), border-color .12s var(--ease), box-shadow .12s var(--ease);
+}
+button { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+button:hover { background: var(--surface-2); border-color: var(--ink-3); }
+button:active { transform: translateY(1px); }
+button[disabled] { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button.primary:hover { filter: brightness(1.07); background: var(--accent); }
+button.ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
+button.ghost:hover { background: var(--surface-2); color: var(--ink); }
+.icon { width: 15px; height: 15px; flex: none; }
+
+/* ---- header ------------------------------------------------------------ */
+header {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--s-3);
+  padding: 10px var(--s-4); background: var(--surface);
+  border-bottom: 1px solid var(--line); box-shadow: var(--shadow-1); z-index: 20;
+  flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; }
+.brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+.brand small { font-weight: 500; color: var(--ink-3); font-size: 12px; }
+.spacer { flex: 1 1 auto; }
+.field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.field input[type=text] { width: 9.5rem; }
+.docnav { display: flex; align-items: center; gap: 4px; background: var(--surface-2);
+          border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }
+.docnav button { border: none; background: transparent; padding: 4px 8px; }
+.docnav select { border: none; background: transparent; max-width: 14rem; padding: 4px 6px; }
+
+.ring { position: relative; width: 38px; height: 38px; flex: none; }
+.ring svg { transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 4; }
+.ring .track { stroke: var(--line); }
+.ring .fill { stroke: var(--ok); stroke-linecap: round; transition: stroke-dashoffset .45s var(--ease); }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px;
+          font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.counts { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.counts b { display: block; color: var(--ink); font-size: 13px; }
+
+/* ---- main -------------------------------------------------------------- */
+main { flex: 1 1 auto; min-height: 0; display: grid;
+       grid-template-columns: minmax(330px, 40%) 1fr; gap: var(--s-3); padding: var(--s-3); }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: minmax(180px,34%) 1fr; } }
+
+/* ---- viewer ------------------------------------------------------------ */
+.viewerwrap { position: relative; min-height: 0; border-radius: var(--r-lg); overflow: hidden;
+              border: 1px solid var(--line); box-shadow: var(--shadow-1);
+              background:
+                linear-gradient(45deg, rgba(0,0,0,.035) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.035) 75%) 0 0/22px 22px,
+                linear-gradient(45deg, rgba(0,0,0,.035) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.035) 75%) 11px 11px/22px 22px,
+                var(--surface-2); }
+#viewer { position: absolute; inset: 0; overflow: auto; scroll-behavior: smooth; }
+#stage { position: relative; display: inline-block; margin: var(--s-3); box-shadow: var(--shadow-2); border-radius: 3px; }
+#stage img { display: block; border-radius: 3px; background: #fff; }
+#stage.loading::after { content: ""; position: absolute; inset: 0; border-radius: 3px;
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--line-2) 50%, var(--surface-2) 70%);
+  background-size: 300% 100%; animation: shimmer 1.1s linear infinite; }
+@keyframes shimmer { to { background-position: -150% 0; } }
+
+.hl { position: absolute; border-radius: 3px; pointer-events: none; display: none;
+      transition: left .22s var(--ease), top .22s var(--ease), width .22s var(--ease), height .22s var(--ease); }
+.hl.value { border: 2px solid var(--bad); box-shadow: 0 0 0 3px rgba(198,40,40,.18); }
+.hl.anchor { border: 2px dashed var(--accent); }
+.hl.value.pulse { animation: pulse .5s var(--ease); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 10px rgba(198,40,40,.30); } 100% { box-shadow: 0 0 0 3px rgba(198,40,40,.18); } }
+
+.vtools { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+          display: flex; align-items: center; gap: 2px; padding: 4px;
+          background: var(--surface); border: 1px solid var(--line);
+          border-radius: 999px; box-shadow: var(--shadow-2); z-index: 5; }
+.vtools button { border: none; background: transparent; border-radius: 999px; padding: 5px 10px; font-size: 12px; }
+.vtools .zoomlabel { font-variant-numeric: tabular-nums; color: var(--ink-3); font-size: 11px;
+                     min-width: 3.2rem; text-align: center; }
+.vtools .on { background: var(--accent-soft); color: var(--accent); }
+
+/* ---- panel ------------------------------------------------------------- */
+#panel { min-height: 0; overflow: auto; scroll-behavior: smooth; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+        box-shadow: var(--shadow-1); overflow: hidden; }
+
+.dochead { padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line-2); }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--s-3); }
+.tag { font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 3px 9px; border-radius: 999px;
+       background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.tag.primary { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.tag.danger  { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.doclevel { display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-4); align-items: center; }
+.doclevel label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.doclevel select { padding: 4px 8px; }
+.pipehint { font-size: 11px; color: var(--ink-3); }
+
+/* ---- the cell list ----------------------------------------------------- */
+.cells { list-style: none; margin: 0; padding: 0; }
+.cell { display: grid; grid-template-columns: 62px minmax(0,1fr) 196px; align-items: start;
+        gap: var(--s-3); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line-2);
+        border-left: 3px solid transparent; transition: background .14s var(--ease), border-color .14s var(--ease); }
+.cell:last-child { border-bottom: none; }
+.cell:hover { background: var(--surface-2); }
+.cell.current { background: var(--accent-soft); border-left-color: var(--accent); }
+.cell.APPROVED { border-left-color: var(--ok); }
+.cell.EDITED   { border-left-color: var(--edit); }
+.cell.ADDED    { border-left-color: var(--add); }
+.cell.flash { animation: flash .55s var(--ease); }
+@keyframes flash { 0% { background: var(--ok-soft); } 100% { background: transparent; } }
+
+.locus { font-weight: 700; font-size: 14px; letter-spacing: -.01em; padding-top: 5px; }
+.locus .state { display: block; font-size: 10px; font-weight: 600; color: var(--ink-3);
+                text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+
+.evid { min-width: 0; }
+.crop { margin-bottom: var(--s-2); }
+.crop img { display: block; max-width: 100%; max-height: 58px; width: auto; cursor: zoom-in;
+            background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm);
+            padding: 3px; transition: max-height .2s var(--ease), box-shadow .14s var(--ease); }
+.crop img:hover { box-shadow: var(--shadow-2); }
+.crop img.big { max-height: 260px; cursor: zoom-out; box-shadow: var(--shadow-2); }
+.crop .nobox { font-size: 12px; color: var(--ink-3); font-style: italic; }
+
+.readings { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.readings.veiled > * { visibility: hidden; }
+.rd { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rd .who { flex: none; width: 5.4rem; font-size: 10px; font-weight: 600; letter-spacing: .05em;
+           text-transform: uppercase; color: var(--ink-3); }
+.rd .val { font-family: var(--mono); font-weight: 600; color: var(--ink);
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-pipe .val { font-size: 14px; }
+.rd-agree .val { font-family: inherit; font-weight: 500; color: var(--ok); }
+.rd-differ .val { color: var(--bad); }
+.rd .dim { font-family: var(--mono); font-weight: 400; color: var(--ink-3); }
+.chip { font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; flex: none; }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.warn { background: var(--edit-soft); color: var(--edit); }
+.rd .note { font-size: 11.5px; color: var(--ink-3); white-space: normal; }
+.rd .why  { font-size: 11.5px; color: var(--edit); white-space: normal; }
+
+/* ---- the answer -------------------------------------------------------- */
+.answer { display: flex; flex-direction: column; gap: 6px; }
+.answer select { width: 100%; }
+.answer input[type=text] { width: 100%; font-family: var(--mono); font-size: 15px; font-weight: 600;
+                           letter-spacing: .02em; }
+.answer input[type=text].bad { border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+.answer input[type=text]:disabled { background: var(--surface-2); color: var(--ink-3); }
+.answer .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.answer .row label { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 5px; }
+.cell.APPROVED .confirm, .cell.EDITED .confirm, .cell.ADDED .confirm {
+  background: var(--ok-soft); border-color: transparent; color: var(--ok); font-weight: 600; }
+
+/* ---- banner, toast, help ---------------------------------------------- */
+.warnbar { flex: 0 0 auto; background: var(--bad-soft); color: var(--bad); border-bottom: 1px solid var(--bad);
+           padding: 10px var(--s-4); font-weight: 600; font-size: 13px; }
+#toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 18px);
+         background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px;
+         box-shadow: var(--shadow-3); font-size: 13px; font-weight: 600; opacity: 0;
+         pointer-events: none; transition: opacity .2s var(--ease), transform .2s var(--ease); z-index: 60; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+dialog#help { border: none; border-radius: var(--r-lg); padding: 0; box-shadow: var(--shadow-3);
+              background: var(--surface); color: var(--ink); max-width: 460px; width: calc(100% - 32px); }
+dialog#help::backdrop { background: rgba(8,12,20,.45); }
+dialog#help .body { padding: var(--s-5); }
+dialog#help h2 { margin: 0 0 var(--s-3); font-size: 16px; }
+dialog#help dl { display: grid; grid-template-columns: auto 1fr; gap: 8px var(--s-4); margin: 0 0 var(--s-4); font-size: 13px; }
+dialog#help dt { text-align: right; }
+dialog#help dd { margin: 0; color: var(--ink-2); }
+dialog#help p { font-size: 12.5px; color: var(--ink-2); margin: 0 0 var(--s-4); }
+kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px solid var(--line);
+      border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--ink); }
+.empty { padding: var(--s-6); text-align: center; color: var(--ink-2); }
 </style>
 </head>
 <body>
 <header>
-  <label>Annotator <input id="annotator" type="text" placeholder="your name"></label>
-  <span class="progress" id="progress"></span>
-  <button id="prev">◀ prev</button>
-  <button id="next">next ▶</button>
-  <select id="jump"></select>
-  <label><input type="checkbox" id="hideSugg"> hide suggestions until I type</label>
-  <button id="export">Export labels</button>
-  <label><button type="button" onclick="document.getElementById('import').click()">Import labels</button><input id="import" type="file" accept="application/json" hidden></label>
-  <span class="help"><kbd>Enter</kbd> approve/confirm &amp; next · <kbd>Alt+↓</kbd>/<kbd>Alt+↑</kbd> next/prev doc · click a row to highlight it on the image · zoom: <button id="zoomOut">−</button><button id="zoomFit">fit page</button><button id="zoomIn">+</button> <label><input type="checkbox" id="autoZoom" checked> zoom to the row</label></span>
+  <span class="brand"><span class="dot"></span>HLA review <small id="packid"></small></span>
+
+  <label class="field">Annotator
+    <input id="annotator" type="text" placeholder="your name" autocomplete="off" spellcheck="false">
+  </label>
+
+  <div class="docnav">
+    <button id="prev" class="ghost" title="Previous document (Alt+Up)" aria-label="previous document">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <select id="jump" aria-label="jump to a document"></select>
+    <button id="next" class="ghost" title="Next document (Alt+Down)" aria-label="next document">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+  <span class="spacer"></span>
+
+  <div class="ring" title="cells labelled">
+    <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true">
+      <circle class="track" cx="19" cy="19" r="16"></circle>
+      <circle class="fill" id="ringFill" cx="19" cy="19" r="16" stroke-dasharray="100.5" stroke-dashoffset="100.5"></circle>
+    </svg>
+    <b id="ringPct">0%</b>
+  </div>
+  <div class="counts" id="progress" aria-live="polite"></div>
+
+  <label class="field" title="Hide the readings until you type, so you are not anchored by them"><input type="checkbox" id="hideSugg"> blind</label>
+  <button id="export" class="primary" title="Download your labels">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+    Export
+  </button>
+  <button id="importBtn" class="ghost" title="Load labels from a file">Import</button>
+  <input id="import" type="file" accept="application/json" hidden>
+  <button id="helpBtn" class="ghost" title="Keyboard shortcuts" aria-label="keyboard shortcuts">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 113.4 2.3c-.6.3-1 .9-1 1.6v.4"/><path d="M12 17.2v.01"/></svg>
+  </button>
 </header>
-<div id="bar"><i></i></div>
+
 <main>
-  <div id="viewer"><div id="stage"><img id="page" alt="report"><div class="hl" id="hlValue"></div><div class="hl anchor" id="hlAnchor"></div></div></div>
+  <div class="viewerwrap">
+    <div id="viewer">
+      <div id="stage">
+        <img id="page" alt="the laboratory report being reviewed">
+        <div class="hl value" id="hlValue"></div>
+        <div class="hl anchor" id="hlAnchor"></div>
+      </div>
+    </div>
+    <div class="vtools">
+      <button id="zoomOut" title="Zoom out" aria-label="zoom out">&minus;</button>
+      <span class="zoomlabel" id="zoomLabel">fit</span>
+      <button id="zoomIn" title="Zoom in" aria-label="zoom in">+</button>
+      <button id="zoomFit" title="Fit the whole page">fit</button>
+      <button id="autoZoom" class="on" title="Zoom to the selected row automatically" aria-pressed="true">auto</button>
+    </div>
+  </div>
   <div id="panel"></div>
 </main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="help">
+  <div class="body">
+    <h2>Keyboard</h2>
+    <dl>
+      <dt><kbd>Enter</kbd></dt><dd>Confirm this cell and move to the next unlabelled one</dd>
+      <dt><kbd>Alt</kbd> + <kbd>Down</kbd></dt><dd>Next document</dd>
+      <dt><kbd>Alt</kbd> + <kbd>Up</kbd></dt><dd>Previous document</dd>
+      <dt><kbd>Down</kbd> <kbd>Up</kbd></dt><dd>Move between cells</dd>
+      <dt><kbd>?</kbd></dt><dd>This panel</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close</dd>
+    </dl>
+    <p>Click a row to highlight it on the report; click a crop to enlarge it.
+       Your work saves as you go, and <b>Export</b> writes the file to hand back.</p>
+    <button id="helpClose" class="primary">Got it</button>
+  </div>
+</dialog>
+
 <script src="pack.js"></script>
 <script>
 (function () {
   'use strict';
   const PACK = window.PACK;
-  if (!PACK) { document.getElementById('panel').innerHTML = '<p class="warn">pack.js not found next to this page. Run scripts/review_pack.py and open the index.html it writes.</p>'; return; }
+  const panel = document.getElementById('panel');
+  if (!PACK) {
+    panel.innerHTML = '<div class="card"><p class="empty">pack.js was not found next to this page. '
+      + 'Run <code>scripts/review_pack.py</code> and open the index.html it writes.</p></div>';
+    return;
+  }
 
   // ---- state -------------------------------------------------------------
   const ALLELE = /^(?:[A-Z]{1,4}[0-9]?\*)?\*?(\d{2,4}(?::\d{2,4})?)([NLSQCA])?$/i;
   const STATES_HLA = ['VALUE', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
   const STATES_DRBX = ['PRESENT_ONLY', 'ABSENT', 'VALUE', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
+  const READER_ORDER = ['tesseract5', 'ppocrv5', 'decode'];
   let docIndex = 0;
   let zoom = null;          // null = fit the pane's width
   let autoZoom = true;      // selecting a row zooms in far enough to read it
   const TARGET_ROW_PX = 34; // how tall a value row should be on screen
-  const MAX_ZOOM = 4;
+  const MAX_ZOOM = 5;
   const key = () => 'hla_review:' + PACK.pack_id + ':' + (document.getElementById('annotator').value.trim() || 'anon');
 
   // Whether this browser will actually keep anything. Opened straight off the
@@ -140,11 +358,10 @@
   // labelling tool that silently forgets two hours of work is worse than one
   // that refuses to start, so this is probed once and said out loud.
   //
-  // This MUST be initialised before the first `load()`. `function load()` is
-  // hoisted but `let storageWorks` is not, so calling load() above this line
-  // throws a temporal-dead-zone ReferenceError that kills the whole script and
-  // renders an empty page. That shipped once; `test_review_page_renders` now
-  // opens the page in a real browser so it cannot ship again.
+  // Nothing in this scope RUNS until start() at the very bottom. `function` is
+  // hoisted and `let` is not, so a call placed above these declarations throws
+  // a temporal-dead-zone ReferenceError that kills the script and renders a
+  // blank page. That shipped once.
   let storageWorks = (function () {
     try {
       localStorage.setItem('hla_review:probe', '1');
@@ -153,11 +370,6 @@
     } catch (e) { return false; }
   })();
 
-  // Deliberately NOT `let labels = load()` here. `load()` is hoisted but the
-  // `let`s it reads are not, so calling anything at the top of this scope
-  // risks a temporal-dead-zone ReferenceError that kills the script and
-  // renders a blank page. That shipped once. Nothing in this scope now runs
-  // until `start()` at the very bottom, after every declaration exists.
   let labels = { cells: {}, documents: {} };
 
   function load() {
@@ -176,10 +388,19 @@
     const bar = document.createElement('div');
     bar.id = 'storageWarning';
     bar.className = 'warnbar';
-    bar.textContent = 'This browser will not save your progress here, so nothing is being kept between reloads. '
-      + 'Serve the folder instead — run  python -m http.server 8765  inside it and open http://localhost:8765 — '
-      + 'or export your labels before you close the tab.';
+    bar.textContent = 'This browser will not save your progress here, so nothing is being kept '
+      + 'between reloads. Serve the folder instead — run  python -m http.server 8765  inside it '
+      + 'and open http://localhost:8765 — or export your labels before you close the tab.';
     document.body.insertBefore(bar, document.querySelector('main'));
+  }
+
+  function toast(message) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 2600);
   }
 
   // ---- helpers -----------------------------------------------------------
@@ -198,8 +419,7 @@
     return out;
   }
   function sameSet(a, b) {
-    const x = [...a].sort().join(' '), y = [...b].sort().join(' ');
-    return x === y;
+    return [...a].sort().join(' ') === [...b].sort().join(' ');
   }
   function decision(cell, state, alleles) {
     const pipe = bodies(cell.value);
@@ -228,50 +448,68 @@
     if (/no box at all/.test(why)) return 'BLANK';       // label printed, cell empty
     return 'VALUE';                                       // boxes are there: read them
   }
-
   function fmtVotes(votes) {
-    // {"0:11": 7, "0:17": 2, "1:15": 9} -> "pos0: 11×7 17×2 | pos1: 15×9"
+    // {"0:11": 7, "0:17": 2, "1:15": 9} -> "11x7 17x2 | 15x9"
     const by = {};
-    for (const k in votes) { const [pos, txt] = k.split(/:(.*)/); (by[pos] = by[pos] || []).push((txt || '∅') + '×' + votes[k]); }
+    for (const k in votes) { const parts = k.split(/:(.*)/); (by[parts[0]] = by[parts[0]] || []).push((parts[1] || '-') + '×' + votes[k]); }
     return Object.keys(by).sort().map(p => by[p].join(' ')).join(' | ');
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
   // ---- rendering ---------------------------------------------------------
-  const panel = document.getElementById('panel');
   const page = document.getElementById('page');
   const stage = document.getElementById('stage');
   const viewer = document.getElementById('viewer');
 
   function renderProgress() {
-    const total = PACK.n_cells;
+    const total = PACK.n_cells || 0;
     const known = new Set();
     for (const d of PACK.documents) for (const c of d.cells) known.add(c.cell_id);
     const done = Object.keys(labels.cells).filter(id => known.has(id)).length;
     const docsDone = PACK.documents.filter(d => d.cells.length && d.cells.every(c => labels.cells[c.cell_id])).length;
-    document.getElementById('progress').textContent = PACK.documents.length
-      ? `doc ${docIndex + 1}/${PACK.n_documents} · ${docsDone} done · ${done}/${total} cells`
+
+    document.getElementById('progress').innerHTML = PACK.documents.length
+      ? '<b>' + done.toLocaleString() + ' / ' + total.toLocaleString() + ' cells</b>'
+        + docsDone + ' of ' + PACK.n_documents + ' documents done'
       : 'this pack contains no documents';
-    const bar = document.querySelector('#bar > i');
-    if (bar) bar.style.width = (100 * done / Math.max(total, 1)).toFixed(1) + '%';
+
+    const pct = total ? done / total : 0;
+    const circumference = 2 * Math.PI * 16;
+    const fill = document.getElementById('ringFill');
+    if (fill) {
+      fill.setAttribute('stroke-dasharray', circumference.toFixed(1));
+      fill.setAttribute('stroke-dashoffset', (circumference * (1 - pct)).toFixed(1));
+    }
+    const pctEl = document.getElementById('ringPct');
+    if (pctEl) pctEl.textContent = Math.round(pct * 100) + '%';
+
     const jump = document.getElementById('jump');
     if (jump.options.length !== PACK.documents.length) {
-      jump.innerHTML = PACK.documents.map((d, i) => `<option value="${i}">${i + 1}. ${esc(d.primary_tag)} ${esc(d.family || '')}</option>`).join('');
+      jump.innerHTML = PACK.documents.map((d, i) => '<option value="' + i + '"></option>').join('');
     }
-    jump.value = String(docIndex);
     for (const [i, d] of PACK.documents.entries()) {
       const complete = d.cells.length && d.cells.every(c => labels.cells[c.cell_id]);
-      jump.options[i].textContent = `${complete ? '✓' : '·'} ${i + 1}. ${d.primary_tag} ${d.family || ''}`;
+      if (jump.options[i]) {
+        jump.options[i].textContent = (complete ? '✓ ' : '· ') + (i + 1) + '. '
+          + (d.primary_tag || '') + ' ' + (d.family || '');
+      }
     }
+    jump.value = String(docIndex);
+    document.getElementById('prev').disabled = docIndex === 0;
+    document.getElementById('next').disabled = docIndex + 1 >= PACK.documents.length;
   }
 
   function layoutImage() {
     const doc = PACK.documents[docIndex];
-    const w = zoom ? doc.width * zoom : viewer.clientWidth - 2;
+    if (!doc) return;
+    const w = zoom ? doc.width * zoom : Math.max(80, viewer.clientWidth - 26);
     stage.style.width = w + 'px';
     page.style.width = w + 'px';
     page.style.height = (w * doc.height / doc.width) + 'px';
+    const label = document.getElementById('zoomLabel');
+    if (label) label.textContent = zoom ? Math.round(zoom * 100) + '%' : 'fit';
   }
+
   function highlight(cell) {
     const hv = document.getElementById('hlValue'), ha = document.getElementById('hlAnchor');
     const place = (el, box) => {
@@ -291,7 +529,6 @@
     // Fit-width on a portrait report in a narrow pane renders the print at
     // about 45% — too small to check a digit against, which is the entire task.
     // Selecting a row zooms until the ROW is a readable height and centres it.
-    // The reader keeps the overview via the `fit` button.
     const doc = PACK.documents[docIndex];
     const rowFraction = Math.max(box[3] - box[1], 0.004);
     const wanted = Math.min(MAX_ZOOM, (TARGET_ROW_PX / rowFraction) / doc.height);
@@ -299,6 +536,9 @@
       zoom = wanted;
       layoutImage();
     }
+    hv.classList.remove('pulse');
+    void hv.offsetWidth;
+    hv.classList.add('pulse');
     const cx = ((box[0] + box[2]) / 2) * page.clientWidth;
     const cy = ((box[1] + box[3]) / 2) * page.clientHeight;
     viewer.scrollTo({
@@ -308,21 +548,19 @@
     });
   }
 
-  const READER_ORDER = ['tesseract5', 'ppocrv5', 'decode'];
-
   function readersFor(cell) {
     const s = cell.suggestions || {};
     const out = [];
     for (const name of READER_ORDER) {
-      if (s[name]) out.push({ name, reading: s[name].reading, verdict: s[name].verdict, votes: s[name].votes });
+      if (s[name]) out.push({ name: name, reading: s[name].reading, verdict: s[name].verdict, votes: s[name].votes });
     }
     // Any confirmer the pack carries that this list does not name, plus the
     // separate per-engine suggestion files. Iterating the object rather than a
     // hard-coded list is what keeps a renamed engine from silently vanishing —
     // `tesseract` became `tesseract5` once and took both confirmers with it.
     for (const name of Object.keys(s)) {
-      if (name === 'pipeline' || READER_ORDER.includes(name)) continue;
-      out.push({ name, reading: s[name].reading, verdict: s[name].verdict, votes: s[name].votes });
+      if (name === 'pipeline' || READER_ORDER.indexOf(name) !== -1) continue;
+      out.push({ name: name, reading: s[name].reading, verdict: s[name].verdict, votes: s[name].votes });
     }
     for (const eng of PACK.engines || []) {
       const txt = (PACK.suggestions[eng] || {})[cell.cell_id];
@@ -331,50 +569,47 @@
     return out;
   }
 
-  function suggestionHtml(cell) {
+  function readingsHtml(cell) {
     const p = (cell.suggestions || {}).pipeline || {};
     const readers = readersFor(cell);
     const pipeKey = bodies(cell.value).sort().join(' ');
     const rows = [];
 
-    // The pipeline's own line always shows: it is the value being judged.
     const flags = [];
     if (p.repaired) flags.push('glyph repaired');
-    if (p.second_allele === 'UNREAD') flags.push('2nd allele UNREAD');
+    if (p.second_allele === 'UNREAD') flags.push('2nd allele unread');
     if (p.stability && p.stability !== 'NOT_CHECKED' && p.stability !== 'UNANIMOUS') flags.push(p.stability);
-    rows.push(
-      `<div class="rd rd-pipe"><span class="eng">pipeline</span>` +
-      `<span class="v">${esc(p.value || '—')}</span>` +
-      (flags.length ? `<span class="flag">${esc(flags.join(' · '))}</span>` : '') +
-      `</div>`);
+    rows.push('<div class="rd rd-pipe"><span class="who">pipeline</span>'
+      + '<span class="val">' + esc(p.value || '—') + '</span>'
+      + flags.map(f => '<span class="chip warn">' + esc(f) + '</span>').join('')
+      + '</div>');
     if (p.raw && p.raw !== p.value) {
-      rows.push(`<div class="rd rd-dim"><span class="eng">raw OCR</span><span class="v">${esc(p.raw)}</span></div>`);
+      rows.push('<div class="rd"><span class="who">raw ocr</span><span class="val dim">' + esc(p.raw) + '</span></div>');
     }
     if (p.status !== 'RESOLVED' && p.reason) {
-      rows.push(`<div class="rd rd-why"><span class="eng">refused</span><span class="why">${esc(p.reason)}</span></div>`);
+      rows.push('<div class="rd"><span class="who">refused</span><span class="why">' + esc(p.reason) + '</span></div>');
     }
 
-    // Readers that agree with the pipeline are collapsed into one line: five
-    // identical rows per cell is noise, and noise is what hides the sixth row
-    // that does not match.
+    // Readers that agree collapse to one quiet line: five identical rows per
+    // cell is noise, and noise is what hides the sixth row that differs.
     const agree = [], differ = [];
     for (const r of readers) {
       const said = bodies(r.reading).sort().join(' ');
-      const same = r.verdict ? r.verdict === 'CONFIRMED' || r.verdict === 'UNANIMOUS'
+      const same = r.verdict ? (r.verdict === 'CONFIRMED' || r.verdict === 'UNANIMOUS')
                              : (said && said === pipeKey);
       (same ? agree : differ).push(r);
     }
     if (agree.length) {
-      rows.push(`<div class="rd rd-agree" title="${esc(agree.map(r => r.name).join(', '))}">` +
-        `<span class="eng">agree</span><span class="v">${agree.length} reader${agree.length > 1 ? 's' : ''}: ` +
-        `${esc(agree.map(r => r.name).join(', '))}</span></div>`);
+      rows.push('<div class="rd rd-agree"><span class="who">agree</span>'
+        + '<span class="val">✓ ' + agree.length + ' reader' + (agree.length > 1 ? 's' : '')
+        + ' · ' + esc(agree.map(r => r.name).join(', ')) + '</span></div>');
     }
     for (const r of differ) {
       const label = r.verdict || 'reads';
-      const votes = r.verdict === 'SPLIT' && r.votes ? ` <span class="votes">${esc(fmtVotes(r.votes))}</span>` : '';
-      rows.push(`<div class="rd rd-differ"><span class="eng">${esc(r.name)}</span>` +
-        `<span class="v">${esc(r.reading || '—')}</span>` +
-        `<span class="verdict ${esc(label)}">${esc(label)}</span>${votes}</div>`);
+      const votes = (r.verdict === 'SPLIT' && r.votes) ? '<span class="note">' + esc(fmtVotes(r.votes)) + '</span>' : '';
+      rows.push('<div class="rd rd-differ"><span class="who">' + esc(r.name) + '</span>'
+        + '<span class="val">' + esc(r.reading || '—') + '</span>'
+        + '<span class="chip bad">' + esc(label) + '</span>' + votes + '</div>');
     }
     return rows.join('');
   }
@@ -383,119 +618,165 @@
     const doc = PACK.documents[docIndex];
     if (!doc) {
       // An empty or exhausted pack is an operator mistake, not a stack trace.
-      panel.innerHTML = '<div class="doc"><p class="warn">This pack contains no documents. '
+      panel.innerHTML = '<div class="card"><p class="empty">This pack contains no documents. '
         + 'Rebuild it with <code>scripts/review_pack.py</code>.</p></div>';
       page.removeAttribute('src');
       renderProgress();
       return;
     }
+    const packId = document.getElementById('packid');
+    if (packId) packId.textContent = PACK.pack_id || '';
+
+    stage.classList.add('loading');
+    page.onload = function () { stage.classList.remove('loading'); };
+    page.onerror = function () { stage.classList.remove('loading'); toast('That report image is missing from the pack.'); };
     page.src = doc.image;
     zoom = null; layoutImage(); highlight(null);
+
     const dl = labels.documents[doc.id] || {};
-    const hide = document.getElementById('hideSugg').checked;
-    const roleOpts = ['', 'DONOR', 'RECIPIENT', 'BOTH', 'UNKNOWN'];
-    const aboOpts = ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'];
-    const rhOpts = ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'];
-    const sel = (id, opts, val) => `<select data-doc="${id}">${opts.map(o => `<option value="${o}" ${o === (val || '') ? 'selected' : ''}>${o || '—'}</option>`).join('')}</select>`;
-    let html = `<div class="doc">
-      <div class="tags">${doc.tags.map(t => `<span class="${t === doc.primary_tag ? 'primary' : ''}">${esc(t)}</span>`).join('')}
-        <span>${esc(doc.quality_band || '?')}</span><span>${esc(doc.family || 'no family')}</span>${doc.comparison_sheet ? '<span>comparison sheet</span>' : ''}${doc.consistency && doc.consistency !== 'CONSISTENT' && doc.consistency !== 'NOT_CHECKABLE' ? `<span class="warn">${esc(doc.consistency)}</span>` : ''}</div>
-      <div class="doclevel">
-        <label>Role ${sel('role', roleOpts, dl.role)} <span class="pipe">pipeline: ${esc(doc.role.value || doc.role.status || '—')}${doc.role.source && doc.role.source !== 'NONE' ? ' (' + esc(doc.role.source) + ')' : ''}</span></label>
-        <label>ABO ${sel('abo', aboOpts, dl.abo)} <span class="pipe">pipeline: ${esc(doc.abo.value || doc.abo.status || '—')}</span></label>
-        <label>Rh ${sel('rh', rhOpts, dl.rh)} <span class="pipe">pipeline: ${esc(doc.rh.value || '—')}</span></label>
-        <label><input type="checkbox" data-doc="not_a_report" ${dl.not_a_report ? 'checked' : ''}> not a lab report</label>
-        <label><input type="checkbox" data-doc="unsure" ${dl.unsure ? 'checked' : ''}> unsure about this document</label>
-      </div>
-      <table><thead><tr><th>locus</th><th>what the page shows, and what each reader made of it</th><th>your reading</th></tr></thead><tbody>`;
+    const blind = document.getElementById('hideSugg').checked;
+    const sel = (id, opts, val) => '<select data-doc="' + id + '" aria-label="' + id + '">'
+      + opts.map(o => '<option value="' + o + '"' + (o === (val || '') ? ' selected' : '') + '>' + (o || '—') + '</option>').join('')
+      + '</select>';
+
+    const tagHtml = doc.tags.map(t => '<span class="tag' + (t === doc.primary_tag ? ' primary' : '') + '">' + esc(t) + '</span>').join('')
+      + '<span class="tag">' + esc(doc.quality_band || '?') + '</span>'
+      + '<span class="tag">' + esc(doc.family || 'no family') + '</span>'
+      + (doc.comparison_sheet ? '<span class="tag danger">comparison sheet</span>' : '')
+      + ((doc.consistency && doc.consistency !== 'CONSISTENT' && doc.consistency !== 'NOT_CHECKABLE')
+          ? '<span class="tag danger">' + esc(doc.consistency) + '</span>' : '');
+
+    let html = '<div class="card"><div class="dochead"><div class="tags">' + tagHtml + '</div>'
+      + '<div class="doclevel">'
+      + '<label>Role ' + sel('role', ['', 'DONOR', 'RECIPIENT', 'BOTH', 'UNKNOWN'], dl.role)
+      + '<span class="pipehint">pipeline: ' + esc(doc.role.value || doc.role.status || '—')
+      + (doc.role.source && doc.role.source !== 'NONE' ? ' (' + esc(doc.role.source) + ')' : '') + '</span></label>'
+      + '<label>ABO ' + sel('abo', ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'], dl.abo)
+      + '<span class="pipehint">pipeline: ' + esc(doc.abo.value || doc.abo.status || '—') + '</span></label>'
+      + '<label>Rh ' + sel('rh', ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'], dl.rh)
+      + '<span class="pipehint">pipeline: ' + esc(doc.rh.value || '—') + '</span></label>'
+      + '<label><input type="checkbox" data-doc="not_a_report"' + (dl.not_a_report ? ' checked' : '') + '> not a lab report</label>'
+      + '<label><input type="checkbox" data-doc="unsure"' + (dl.unsure ? ' checked' : '') + '> unsure</label>'
+      + '</div></div><ul class="cells">';
+
     for (const cell of doc.cells) {
       const lab = labels.cells[cell.cell_id];
       const states = cell.kind === 'DRBX' ? STATES_DRBX : STATES_HLA;
-      const defaultState = defaultStateFor(cell);
-      const state = lab ? lab.state : defaultState;
+      const state = lab ? lab.state : defaultStateFor(cell);
       const text = lab ? lab.alleles.join(' ') : (cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
-      // Evidence (crop above the readings) in ONE column, the answer in the
-      // next. Four side-by-side columns needed 1,210px in a 707px panel, which
-      // put the input the reviewer is meant to use off the right-hand edge.
-      html += `<tr class="cell ${lab ? lab.decision : ''}" data-cell="${cell.cell_id}">
-        <td class="locus">${esc(cell.locus)}</td>
-        <td class="ev">
-          <div class="crop">${cell.crop ? `<img src="${cell.crop}" alt="crop of the ${esc(cell.locus)} cell">` : '<span class="nobox">no box on this row</span>'}</div>
-          <div class="sugg ${hide && !lab ? 'hidden' : ''}">${suggestionHtml(cell)}</div>
-        </td>
-        <td class="edit"><div class="answer">
-          <select data-state aria-label="reading state for ${esc(cell.locus)}">${states.map(s => `<option value="${s}" ${s === state ? 'selected' : ''}>${s}</option>`).join('')}</select>
-          <input type="text" data-alleles value="${esc(text)}" placeholder="11 15" aria-label="alleles for ${esc(cell.locus)}" ${state === 'VALUE' ? '' : 'disabled'}>
-          <div class="answer-row">
-            <label><input type="checkbox" data-unsure ${lab && lab.unsure ? 'checked' : ''}> unsure</label>
-            <button data-confirm>${lab ? '✓ done' : 'confirm'}</button>
-          </div>
-        </div></td></tr>`;
+      html += '<li class="cell ' + (lab ? lab.decision : '') + '" data-cell="' + cell.cell_id + '" tabindex="-1">'
+        + '<div class="locus">' + esc(cell.locus)
+        + '<span class="state">' + esc(String(cell.status || '').replace(/_/g, ' ')) + '</span></div>'
+        + '<div class="evid"><div class="crop">'
+        + (cell.crop
+            ? '<img src="' + cell.crop + '" alt="the ' + esc(cell.locus) + ' cell as printed" loading="lazy">'
+            : '<span class="nobox">no box on this row</span>')
+        + '</div><div class="readings' + (blind && !lab ? ' veiled' : '') + '">' + readingsHtml(cell) + '</div></div>'
+        + '<div class="answer">'
+        + '<select data-state aria-label="reading state for ' + esc(cell.locus) + '">'
+        + states.map(s => '<option value="' + s + '"' + (s === state ? ' selected' : '') + '>'
+            + s.replace(/_/g, ' ').toLowerCase() + '</option>').join('')
+        + '</select>'
+        + '<input type="text" data-alleles value="' + esc(text) + '" placeholder="11 15" '
+        + 'aria-label="alleles for ' + esc(cell.locus) + '"' + (state === 'VALUE' ? '' : ' disabled') + '>'
+        + '<div class="row"><label><input type="checkbox" data-unsure' + (lab && lab.unsure ? ' checked' : '') + '> unsure</label>'
+        + '<button class="confirm" data-confirm>' + (lab ? '✓ done' : 'confirm') + '</button></div>'
+        + '</div></li>';
     }
-    html += '</tbody></table></div>';
+    html += '</ul></div>';
     panel.innerHTML = html;
     renderProgress();
-    const first = panel.querySelector('tr.cell:not(.APPROVED):not(.EDITED):not(.ADDED) input[data-alleles]') || panel.querySelector('input[data-alleles]');
-    if (first) { setCurrent(first.closest('tr')); first.focus(); first.select(); }
+
+    const first = panel.querySelector('.cell:not(.APPROVED):not(.EDITED):not(.ADDED)') || panel.querySelector('.cell');
+    if (first) {
+      setCurrent(first);
+      const i = first.querySelector('[data-alleles]');
+      if (i && !i.disabled) { i.focus(); i.select(); }
+    }
   }
 
-  function setCurrent(tr) {
-    for (const r of panel.querySelectorAll('tr.cell')) r.classList.toggle('current', r === tr);
+  function setCurrent(li) {
+    const all = panel.querySelectorAll('.cell');
+    for (const r of all) r.classList.toggle('current', r === li);
     const doc = PACK.documents[docIndex];
-    highlight(doc.cells.find(c => c.cell_id === tr.dataset.cell));
+    if (doc) highlight(doc.cells.find(c => c.cell_id === li.dataset.cell));
   }
 
-  function confirmRow(tr) {
+  function confirmRow(li) {
     const doc = PACK.documents[docIndex];
-    const cell = doc.cells.find(c => c.cell_id === tr.dataset.cell);
-    const state = tr.querySelector('[data-state]').value;
-    const input = tr.querySelector('[data-alleles]');
+    const cell = doc.cells.find(c => c.cell_id === li.dataset.cell);
+    const state = li.querySelector('[data-state]').value;
+    const input = li.querySelector('[data-alleles]');
     let alleles = [];
     if (state === 'VALUE') {
       alleles = normaliseInput(input.value);
       if (alleles === null || alleles.length === 0 || alleles.length > 2) {
-        input.style.outline = '2px solid #b00020'; input.focus();
+        input.classList.add('bad'); input.focus();
+        toast(alleles && alleles.length > 2
+          ? 'A locus carries at most two alleles.'
+          : 'That is not an allele. Try 11 15, or 11:01.');
         return false;
       }
     }
-    input.style.outline = '';
+    input.classList.remove('bad');
     const dec = decision(cell, state, alleles);
     labels.cells[cell.cell_id] = {
-      locus: cell.locus, state, alleles,
-      resolution: state === 'VALUE' ? (alleles.some(a => a.includes(':')) ? 'TWO_FIELD' : 'FIRST_FIELD') : null,
-      unsure: tr.querySelector('[data-unsure]').checked,
+      locus: cell.locus, state: state, alleles: alleles,
+      resolution: state === 'VALUE' ? (alleles.some(a => a.indexOf(':') !== -1) ? 'TWO_FIELD' : 'FIRST_FIELD') : null,
+      unsure: li.querySelector('[data-unsure]').checked,
       decision: dec, pipeline_value: cell.value, pipeline_status: cell.status,
       labelled_utc: new Date().toISOString(),
     };
-    tr.className = 'cell ' + dec + ' current';
-    tr.querySelector('[data-confirm]').textContent = '✓ done';
-    tr.querySelector('.sugg').classList.remove('hidden');
+    li.className = 'cell ' + dec + ' current flash';
+    setTimeout(() => li.classList.remove('flash'), 560);
+    li.querySelector('[data-confirm]').textContent = '✓ done';
+    li.querySelector('.readings').classList.remove('veiled');
     save();
     return true;
   }
 
-  function focusNextRow(tr) {
-    let next = tr.nextElementSibling;
-    while (next && (next.classList.contains('APPROVED') || next.classList.contains('EDITED') || next.classList.contains('ADDED'))) next = next.nextElementSibling;
-    if (next) { setCurrent(next); const i = next.querySelector('[data-alleles]'); if (i && !i.disabled) { i.focus(); i.select(); } else next.querySelector('[data-state]').focus(); }
-    else if (docIndex + 1 < PACK.documents.length) { docIndex++; renderDoc(); }
+  function focusNextRow(li) {
+    let next = li.nextElementSibling;
+    while (next && /APPROVED|EDITED|ADDED/.test(next.className)) next = next.nextElementSibling;
+    if (next) {
+      setCurrent(next);
+      const i = next.querySelector('[data-alleles]');
+      if (i && !i.disabled) { i.focus(); i.select(); } else next.querySelector('[data-confirm]').focus();
+      if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } else if (docIndex + 1 < PACK.documents.length) {
+      docIndex++; renderDoc(); toast('Document complete — on to the next.');
+    } else {
+      toast('That was the last document in the pack.');
+    }
   }
 
   // ---- events ------------------------------------------------------------
   panel.addEventListener('click', e => {
-    const tr = e.target.closest('tr.cell');
-    if (tr) setCurrent(tr);
-    if (e.target.matches('[data-confirm]')) { if (confirmRow(tr)) focusNextRow(tr); }
+    const li = e.target.closest('.cell');
+    if (li) setCurrent(li);
+    if (e.target.closest('[data-confirm]') && li) { if (confirmRow(li)) focusNextRow(li); }
     if (e.target.matches('.crop img')) e.target.classList.toggle('big');
   });
-  panel.addEventListener('focusin', e => { const tr = e.target.closest('tr.cell'); if (tr) setCurrent(tr); });
+  panel.addEventListener('focusin', e => { const li = e.target.closest('.cell'); if (li) setCurrent(li); });
   panel.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.closest('tr.cell')) { e.preventDefault(); const tr = e.target.closest('tr.cell'); if (confirmRow(tr)) focusNextRow(tr); }
+    const li = e.target.closest('.cell');
+    if (!li) return;
+    if (e.key === 'Enter') { e.preventDefault(); if (confirmRow(li)) focusNextRow(li); return; }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.altKey && e.target.tagName !== 'SELECT') {
+      const all = Array.prototype.slice.call(panel.querySelectorAll('.cell'));
+      const next = all[all.indexOf(li) + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (next) {
+        e.preventDefault(); setCurrent(next);
+        const i = next.querySelector('[data-alleles]');
+        if (i && !i.disabled) { i.focus(); i.select(); } else next.focus();
+        if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
   });
   panel.addEventListener('change', e => {
     const doc = PACK.documents[docIndex];
     if (e.target.matches('[data-state]')) {
-      const tr = e.target.closest('tr.cell'); const input = tr.querySelector('[data-alleles]');
+      const li = e.target.closest('.cell'); const input = li.querySelector('[data-alleles]');
       input.disabled = e.target.value !== 'VALUE';
       if (!input.disabled) input.focus();
     }
@@ -503,19 +784,31 @@
       const d = labels.documents[doc.id] = labels.documents[doc.id] || {};
       d[e.target.dataset.doc] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
       if (e.target.dataset.doc === 'not_a_report' && e.target.checked) {
-        for (const cell of doc.cells) labels.cells[cell.cell_id] = { locus: cell.locus, state: 'NOT_A_REPORT', alleles: [], resolution: null, unsure: false, decision: cell.status === 'RESOLVED' ? 'EDITED' : 'APPROVED', pipeline_value: cell.value, pipeline_status: cell.status, labelled_utc: new Date().toISOString() };
-        save(); renderDoc(); return;
+        for (const cell of doc.cells) {
+          labels.cells[cell.cell_id] = {
+            locus: cell.locus, state: 'NOT_A_REPORT', alleles: [], resolution: null, unsure: false,
+            decision: cell.status === 'RESOLVED' ? 'EDITED' : 'APPROVED',
+            pipeline_value: cell.value, pipeline_status: cell.status,
+            labelled_utc: new Date().toISOString(),
+          };
+        }
+        save(); renderDoc(); toast('Every cell on this document marked "not a lab report".'); return;
       }
       save();
     }
   });
   panel.addEventListener('input', e => {
-    if (e.target.matches('[data-alleles]')) e.target.closest('tr').querySelector('.sugg').classList.remove('hidden');
+    if (e.target.matches('[data-alleles]')) {
+      e.target.classList.remove('bad');
+      e.target.closest('.cell').querySelector('.readings').classList.remove('veiled');
+    }
   });
+
   document.getElementById('prev').onclick = () => { if (docIndex > 0) { docIndex--; renderDoc(); } };
   document.getElementById('next').onclick = () => { if (docIndex + 1 < PACK.documents.length) { docIndex++; renderDoc(); } };
   document.getElementById('jump').onchange = e => { docIndex = Number(e.target.value); renderDoc(); };
   document.getElementById('hideSugg').onchange = renderDoc;
+
   let annotatorWas = '';
   document.getElementById('annotator').onchange = () => {
     // Labels are stored per annotator. Someone who labels a few rows before
@@ -537,17 +830,31 @@
       labels.cells = Object.assign({}, carried.cells);
       labels.documents = Object.assign({}, carried.documents || {});
       save();
+      toast('Your unnamed work moved across to this name.');
     }
     renderDoc();
   };
-  document.getElementById('zoomIn').onclick = () => { zoom = (zoom || page.clientWidth / PACK.documents[docIndex].width) * 1.4; layoutImage(); };
-  document.getElementById('zoomOut').onclick = () => { zoom = (zoom || page.clientWidth / PACK.documents[docIndex].width) / 1.4; layoutImage(); };
-  document.getElementById('zoomFit').onclick = () => { zoom = null; layoutImage(); };
-  document.getElementById('autoZoom').onchange = e => { autoZoom = e.target.checked; };
+
+  const setZoom = z => { zoom = z; layoutImage(); };
+  document.getElementById('zoomIn').onclick = () => setZoom(Math.min(MAX_ZOOM, (zoom || page.clientWidth / PACK.documents[docIndex].width) * 1.35));
+  document.getElementById('zoomOut').onclick = () => setZoom(Math.max(0.05, (zoom || page.clientWidth / PACK.documents[docIndex].width) / 1.35));
+  document.getElementById('zoomFit').onclick = () => setZoom(null);
+  document.getElementById('autoZoom').onclick = e => {
+    autoZoom = !autoZoom;
+    const btn = e.currentTarget;
+    btn.classList.toggle('on', autoZoom);
+    btn.setAttribute('aria-pressed', String(autoZoom));
+  };
   window.addEventListener('resize', layoutImage);
+
+  const help = document.getElementById('help');
+  document.getElementById('helpBtn').onclick = () => { if (help.showModal) help.showModal(); };
+  document.getElementById('helpClose').onclick = () => { if (help.close) help.close(); };
   document.addEventListener('keydown', e => {
     if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); document.getElementById('next').click(); }
     if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); document.getElementById('prev').click(); }
+    const tag = document.activeElement ? document.activeElement.tagName : '';
+    if (e.key === '?' && !/INPUT|TEXTAREA|SELECT/.test(tag)) { e.preventDefault(); if (help.showModal) help.showModal(); }
   });
 
   window.addEventListener('beforeunload', event => {
@@ -564,9 +871,11 @@
     };
     const blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = `hla_review_${name}_${PACK.pack_id}.json`; a.click();
+    a.href = URL.createObjectURL(blob); a.download = 'hla_review_' + name + '_' + PACK.pack_id + '.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast('Exported ' + payload.n_cells.toLocaleString() + ' labelled cells.');
   };
+  document.getElementById('importBtn').onclick = () => document.getElementById('import').click();
   document.getElementById('import').onchange = e => {
     const file = e.target.files[0]; if (!file) return;
     file.text().then(text => {
@@ -574,9 +883,13 @@
       if (payload.pack !== PACK.pack_id && !confirm('This file was exported from a different pack. Import anyway?')) return;
       labels.cells = Object.assign(labels.cells, payload.cells || {});
       labels.documents = Object.assign(labels.documents, payload.documents || {});
-      if (payload.annotator) document.getElementById('annotator').value = payload.annotator;
+      if (payload.annotator) {
+        document.getElementById('annotator').value = payload.annotator;
+        annotatorWas = payload.annotator;
+      }
       save(); renderDoc();
-    });
+      toast('Imported ' + Object.keys(payload.cells || {}).length.toLocaleString() + ' cells.');
+    }).catch(() => toast('That file is not a labels export.'));
   };
 
   function start() {

@@ -82,7 +82,8 @@ def test_the_page_starts_and_renders_a_document(tmp_path: Path) -> None:
     assert report["error"] is None, report["error"]
     assert report["started"] is True
     assert report["renderedHtmlLength"] > 500, "the panel is empty"
-    assert "doc 1/" in report["wroteProgress"], report["wroteProgress"]
+    assert "cells" in report["wroteProgress"], report["wroteProgress"]
+    assert "documents done" in report["wroteProgress"], report["wroteProgress"]
     assert report["ok"] is True
 
 
