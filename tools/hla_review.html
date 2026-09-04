@@ -26,21 +26,27 @@
   --surface-2: #f2f4f7;
   --ink:       #12161c;
   --ink-2:     #4a5361;
-  --ink-3:     #78828f;
+  --ink-3:     #5f6874;   /* 4.5:1 on --surface; #78828f measured 3.4 */
   --line:      #dfe3e9;
   --line-2:    #eceff3;
 
   --accent:      #2f6fed;
   --accent-ink:  #ffffff;
   --accent-soft: #e8f0fe;
+  /* Text ON a soft background needs its own value: the base accent and the
+     base green measured 3.97 and 3.46 against their own tints. */
+  --accent-on:   #1a52c4;
 
   --ok:        #1f9254;
+  --ok-on:     #14663a;
   --ok-soft:   #e7f6ed;
   --edit:      #b46a00;
+  --edit-on:   #8a5200;
   --edit-soft: #fff3e0;
   --add:       #2f6fed;
   --add-soft:  #e8f0fe;
   --bad:       #c62828;
+  --bad-on:    #a31d1d;
   --bad-soft:  #fdecec;
 
   --r-sm: 6px;  --r-md: 10px;  --r-lg: 14px;
@@ -54,10 +60,11 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg:#0e1116; --surface:#161a21; --surface-2:#1d222b; --ink:#e7ebf0; --ink-2:#aab3c0;
-    --ink-3:#7c8694; --line:#2a313c; --line-2:#222932;
-    --accent:#5b8dff; --accent-ink:#0b1020; --accent-soft:#1a2540;
-    --ok:#43c07a; --ok-soft:#14301f; --edit:#e0a34a; --edit-soft:#302512;
-    --add:#5b8dff; --add-soft:#1a2540; --bad:#ff6b6b; --bad-soft:#331a1a;
+    --ink-3:#98a2b0; --line:#2a313c; --line-2:#222932;
+    --accent:#5b8dff; --accent-ink:#0b1020; --accent-soft:#1a2540; --accent-on:#9dbaff;
+    --ok:#43c07a; --ok-on:#7fdba6; --ok-soft:#14301f;
+    --edit:#e0a34a; --edit-on:#f0c98a; --edit-soft:#302512;
+    --add:#5b8dff; --add-soft:#1a2540; --bad:#ff6b6b; --bad-on:#ff9b9b; --bad-soft:#331a1a;
     --shadow-1:0 1px 2px rgba(0,0,0,.5); --shadow-2:0 4px 12px rgba(0,0,0,.5);
     --shadow-3:0 12px 32px rgba(0,0,0,.6);
   }
@@ -102,7 +109,13 @@ header {
 .brand small { font-weight: 500; color: var(--ink-3); font-size: 12px; }
 .spacer { flex: 1 1 auto; }
 .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
-.field input[type=text] { width: 9.5rem; }
+  .field input[type=text] { width: 9rem; }
+  /* The header must stay one line at ordinary widths: wrapping pushes the
+     progress ring onto a second row and the whole thing reads as broken. */
+  @media (max-width: 1400px) { .brand small { display: none; } }
+  @media (max-width: 1250px) { .field .lbl { position: absolute; width: 1px; height: 1px;
+                                             overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
+  @media (max-width: 1120px) { .counts { display: none; } header { gap: var(--s-2); } }
 .docnav { display: flex; align-items: center; gap: 4px; background: var(--surface-2);
           border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }
 .docnav button { border: none; background: transparent; padding: 4px 8px; }
@@ -152,7 +165,7 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .vtools button { border: none; background: transparent; border-radius: 999px; padding: 5px 10px; font-size: 12px; }
 .vtools .zoomlabel { font-variant-numeric: tabular-nums; color: var(--ink-3); font-size: 11px;
                      min-width: 3.2rem; text-align: center; }
-.vtools .on { background: var(--accent-soft); color: var(--accent); }
+.vtools .on { background: var(--accent-soft); color: var(--accent-on); }
 
 /* ---- panel ------------------------------------------------------------- */
 #panel { min-height: 0; overflow: auto; scroll-behavior: smooth; }
@@ -163,8 +176,8 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--s-3); }
 .tag { font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 3px 9px; border-radius: 999px;
        background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
-.tag.primary { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
-.tag.danger  { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.tag.primary { background: var(--accent-soft); color: var(--accent-on); border-color: transparent; }
+.tag.danger  { background: var(--bad-soft); color: var(--bad-on); border-color: transparent; }
 .doclevel { display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-4); align-items: center; }
 .doclevel label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
 .doclevel select { padding: 4px 8px; }
@@ -205,14 +218,14 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .rd .val { font-family: var(--mono); font-weight: 600; color: var(--ink);
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rd-pipe .val { font-size: 14px; }
-.rd-agree .val { font-family: inherit; font-weight: 500; color: var(--ok); }
-.rd-differ .val { color: var(--bad); }
+.rd-agree .val { font-family: inherit; font-weight: 500; color: var(--ok-on); }
+.rd-differ .val { color: var(--bad-on); }
 .rd .dim { font-family: var(--mono); font-weight: 400; color: var(--ink-3); }
 .chip { font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; flex: none; }
-.chip.bad { background: var(--bad-soft); color: var(--bad); }
-.chip.warn { background: var(--edit-soft); color: var(--edit); }
+.chip.bad { background: var(--bad-soft); color: var(--bad-on); }
+.chip.warn { background: var(--edit-soft); color: var(--edit-on); }
 .rd .note { font-size: 11.5px; color: var(--ink-3); white-space: normal; }
-.rd .why  { font-size: 11.5px; color: var(--edit); white-space: normal; }
+.rd .why  { font-size: 11.5px; color: var(--edit-on); white-space: normal; }
 
 /* ---- the answer -------------------------------------------------------- */
 .answer { display: flex; flex-direction: column; gap: 6px; }
@@ -224,10 +237,10 @@ main { flex: 1 1 auto; min-height: 0; display: grid;
 .answer .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .answer .row label { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 5px; }
 .cell.APPROVED .confirm, .cell.EDITED .confirm, .cell.ADDED .confirm {
-  background: var(--ok-soft); border-color: transparent; color: var(--ok); font-weight: 600; }
+  background: var(--ok-soft); border-color: transparent; color: var(--ok-on); font-weight: 600; }
 
 /* ---- banner, toast, help ---------------------------------------------- */
-.warnbar { flex: 0 0 auto; background: var(--bad-soft); color: var(--bad); border-bottom: 1px solid var(--bad);
+.warnbar { flex: 0 0 auto; background: var(--bad-soft); color: var(--bad-on); border-bottom: 1px solid var(--bad);
            padding: 10px var(--s-4); font-weight: 600; font-size: 13px; }
 #toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 18px);
          background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px;
@@ -253,8 +266,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
 <header>
   <span class="brand"><span class="dot"></span>HLA review <small id="packid"></small></span>
 
-  <label class="field">Annotator
-    <input id="annotator" type="text" placeholder="your name" autocomplete="off" spellcheck="false">
+  <label class="field"><span class="lbl">Annotator</span>
+    <input id="annotator" type="text" placeholder="your name" aria-label="annotator name"
+           autocomplete="off" spellcheck="false">
   </label>
 
   <div class="docnav">
@@ -262,6 +276,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
     <select id="jump" aria-label="jump to a document"></select>
+    <button id="nextTodo" class="ghost" title="Next document with unlabelled cells (Alt+N)" aria-label="next unlabelled document">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h7M4 18h11"/><path d="M16 15l3 3 4-5"/></svg>
+    </button>
     <button id="next" class="ghost" title="Next document (Alt+Down)" aria-label="next document">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
     </button>
@@ -278,8 +295,8 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   </div>
   <div class="counts" id="progress" aria-live="polite"></div>
 
-  <label class="field" title="Hide the readings until you type, so you are not anchored by them"><input type="checkbox" id="hideSugg"> blind</label>
-  <button id="export" class="primary" title="Download your labels">
+  <label class="field" title="Hide the readings until you type, so you are not anchored by them"><input type="checkbox" id="hideSugg"> <span class="lbl">blind</span></label>
+  <button id="export" class="primary" title="Download your labels (this is what you hand back)">
     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
     Export
   </button>
@@ -320,6 +337,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       <dt><kbd>Alt</kbd> + <kbd>Down</kbd></dt><dd>Next document</dd>
       <dt><kbd>Alt</kbd> + <kbd>Up</kbd></dt><dd>Previous document</dd>
       <dt><kbd>Down</kbd> <kbd>Up</kbd></dt><dd>Move between cells</dd>
+      <dt><kbd>Alt</kbd> + <kbd>N</kbd></dt><dd>Jump to the next document that still has unlabelled cells</dd>
       <dt><kbd>?</kbd></dt><dd>This panel</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close</dd>
     </dl>
@@ -680,7 +698,8 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + '<input type="text" data-alleles value="' + esc(text) + '" placeholder="11 15" '
         + 'aria-label="alleles for ' + esc(cell.locus) + '"' + (state === 'VALUE' ? '' : ' disabled') + '>'
         + '<div class="row"><label><input type="checkbox" data-unsure' + (lab && lab.unsure ? ' checked' : '') + '> unsure</label>'
-        + '<button class="confirm" data-confirm>' + (lab ? '✓ done' : 'confirm') + '</button></div>'
+        + '<button class="confirm" data-confirm title="' + (lab ? 'Change your answer and confirm again' : 'Record this reading') + '">'
+        + (lab ? '✓ done' : 'confirm') + '</button></div>'
         + '</div></li>';
     }
     html += '</ul></div>';
@@ -807,6 +826,21 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   document.getElementById('prev').onclick = () => { if (docIndex > 0) { docIndex--; renderDoc(); } };
   document.getElementById('next').onclick = () => { if (docIndex + 1 < PACK.documents.length) { docIndex++; renderDoc(); } };
   document.getElementById('jump').onchange = e => { docIndex = Number(e.target.value); renderDoc(); };
+
+  function documentIsDone(d) {
+    return d.cells.length && d.cells.every(c => labels.cells[c.cell_id]);
+  }
+  function goToNextUnlabelled() {
+    // 150 documents and a session spread over days: without this, resuming
+    // means hunting through the jump list for the first one without a tick.
+    const n = PACK.documents.length;
+    for (let step = 1; step <= n; step++) {
+      const i = (docIndex + step) % n;
+      if (!documentIsDone(PACK.documents[i])) { docIndex = i; renderDoc(); return; }
+    }
+    toast('Every document in this pack is labelled.');
+  }
+  document.getElementById('nextTodo').onclick = goToNextUnlabelled;
   document.getElementById('hideSugg').onchange = renderDoc;
 
   let annotatorWas = '';
@@ -855,6 +889,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); document.getElementById('prev').click(); }
     const tag = document.activeElement ? document.activeElement.tagName : '';
     if (e.key === '?' && !/INPUT|TEXTAREA|SELECT/.test(tag)) { e.preventDefault(); if (help.showModal) help.showModal(); }
+    // Alt, not a bare letter: focus sits in an allele input almost all the time,
+    // so a plain `n` would either be swallowed or would fire while typing.
+    if (e.altKey && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); goToNextUnlabelled(); }
   });
 
   window.addEventListener('beforeunload', event => {
