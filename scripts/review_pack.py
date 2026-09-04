@@ -478,6 +478,22 @@ def write_launcher(out: Path) -> None:
     (out / "serve.sh").write_text("\n".join(posix), encoding="ascii", newline="")
 
 
+def refresh_page(out: Path, page: Path) -> int:
+    """Replace only the page in an existing pack.
+
+    Rebuilding a pack re-cuts thousands of crops, which makes iterating on the
+    page itself slow enough that one stops testing it. The pack's data is
+    untouched, so a labeller's stored progress survives.
+    """
+    if not (out / "pack.json").exists():
+        print(f"no pack at {out}; build one first")
+        return 2
+    shutil.copyfile(page, out / "index.html")
+    write_launcher(out)
+    print(f"page refreshed in {out}; reload the browser (Ctrl+F5)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
@@ -492,7 +508,14 @@ def main() -> int:
         default=None,
         help="directory of <engine>.json files {engine, cells:{cell_id: text}} to show as well",
     )
+    parser.add_argument(
+        "--page-only",
+        action="store_true",
+        help="replace index.html in an existing pack and touch nothing else",
+    )
     args = parser.parse_args()
+    if args.page_only:
+        return refresh_page(args.out, args.page)
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")
         return 2

@@ -7,42 +7,90 @@
 <style>
   :root { --ok:#d7f5dc; --edit:#ffe9b8; --add:#dbe9ff; --pend:#f3f3f3; --bad:#ffd6d6; --line:#ccc; --ink:#222; }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.35 system-ui, Segoe UI, Arial, sans-serif; color:var(--ink); background:#fafafa; }
-  header { display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:center; padding:.5rem .8rem; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
-  header input[type=text] { width:11rem; }
-  header .progress { font-variant-numeric:tabular-nums; }
-  button { cursor:pointer; padding:.25rem .6rem; }
-  main { display:grid; grid-template-columns: minmax(380px, 46%) 1fr; gap:.6rem; padding:.6rem; height:calc(100vh - 3.2rem); }
-  #viewer { position:relative; overflow:auto; border:1px solid var(--line); background:#333; }
+  /* A flex column, NOT `calc(100vh - <guessed header height>)`. The header
+     wraps to two or three lines depending on window width, so any hard-coded
+     height overflows the viewport and cuts the bottom off the panel — which is
+     exactly what it did. */
+  html, body { height:100%; }
+  body { margin:0; display:flex; flex-direction:column; overflow:hidden;
+         font:14px/1.35 system-ui, Segoe UI, Arial, sans-serif; color:var(--ink); background:#fafafa; }
+  header { flex:0 0 auto; display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center; padding:.5rem .8rem; background:#fff; border-bottom:1px solid var(--line); }
+  header input[type=text] { width:11rem; padding:.25rem .4rem; }
+  header .progress { font-variant-numeric:tabular-nums; font-weight:600; }
+  header .sep { width:1px; align-self:stretch; background:var(--line); }
+  button { cursor:pointer; padding:.25rem .6rem; border:1px solid #b9b9b9; background:#fff;
+           border-radius:4px; font:inherit; }
+  button:hover { background:#f2f2f2; }
+  #bar { flex:0 0 auto; height:3px; background:#e6e6e6; }
+  #bar > i { display:block; height:100%; background:#2f7d3c; width:0; transition:width .15s; }
+  main { flex:1 1 auto; min-height:0; display:grid; grid-template-columns: minmax(340px, 42%) 1fr;
+         gap:.6rem; padding:.6rem; }
+  /* min-height:0 on both, or a grid child refuses to shrink below its content
+     and pushes the page taller than the window. */
+  #viewer { position:relative; min-height:0; overflow:auto; border:1px solid var(--line); background:#2b2b2b; border-radius:4px; }
+  #panel { min-height:0; }
+  @media (max-width: 980px) {
+    main { grid-template-columns:1fr; grid-template-rows:minmax(160px, 38%) 1fr; }
+  }
   #stage { position:relative; display:inline-block; }
   #stage img { display:block; }
   .hl { position:absolute; border:2px solid #ff3b3b; box-shadow:0 0 0 2px rgba(255,255,255,.7); pointer-events:none; display:none; }
   .hl.anchor { border-color:#2d7cff; }
-  #panel { overflow:auto; }
-  .doc { background:#fff; border:1px solid var(--line); padding:.6rem; margin-bottom:.6rem; }
+  #panel { overflow:auto; min-height:0; }
+  .doc { background:#fff; border:1px solid var(--line); border-radius:4px; padding:.7rem .8rem; margin-bottom:.6rem; }
   .tags span { display:inline-block; background:#eee; border-radius:3px; padding:0 .4rem; margin:.1rem .2rem .1rem 0; font-size:12px; }
   .tags span.primary { background:#ffd27a; }
   table { width:100%; border-collapse:collapse; }
-  th, td { border-bottom:1px solid #e5e5e5; padding:.3rem .35rem; vertical-align:middle; text-align:left; }
+  th, td { border-bottom:1px solid #e8e8e8; padding:.45rem .5rem; vertical-align:middle; text-align:left; }
   th { font-size:12px; color:#555; font-weight:600; }
   tr.cell { background:var(--pend); }
+  tr.cell:hover { filter:brightness(.985); }
   tr.cell.APPROVED { background:var(--ok); }
   tr.cell.EDITED { background:var(--edit); }
   tr.cell.ADDED { background:var(--add); }
   tr.cell.NONE { background:#fff; }
   tr.cell.current td:first-child { box-shadow: inset 4px 0 #2d7cff; }
-  td.locus { font-weight:700; width:3.6rem; }
-  td.crop img { max-height:48px; max-width:260px; cursor:zoom-in; image-rendering:auto; }
-  td.crop img.big { max-height:140px; max-width:640px; cursor:zoom-out; }
-  td.sugg { font-family:ui-monospace, Consolas, monospace; font-size:12.5px; white-space:nowrap; }
-  td.sugg .eng { color:#666; display:inline-block; width:6.2rem; }
-  td.sugg .v { color:#000; }
-  td.sugg .verdict { color:#777; }
-  td.sugg .CONTRADICTED, td.sugg .SPLIT, td.sugg .DIGITS_LOST { color:#b00020; font-weight:600; }
-  td.sugg.hidden > div { visibility:hidden; }
-  td.edit input[type=text] { width:9.5rem; font-family:ui-monospace, Consolas, monospace; }
-  td.edit select { max-width:9rem; }
-  td.edit label { white-space:nowrap; font-size:12px; }
+  td.locus { font-weight:700; width:4.2rem; font-size:15px; letter-spacing:.2px; }
+  /* The crop IS the evidence. It gets the room. */
+  td.ev { min-width:0; }
+  td.ev .crop { margin-bottom:.3rem; }
+  td.ev .sugg { min-width:0; }
+  /* Tall enough to read, capped so a wide two-allele crop cannot push the
+     answer control off the panel — which is exactly what `max-width:none` did. */
+  td.ev .crop img { display:block; max-height:56px; max-width:100%; width:auto; cursor:zoom-in;
+                background:#fff; border:1px solid #d8d8d8; border-radius:3px; padding:2px; }
+  td.ev .crop img.big { max-height:200px; max-width:620px; cursor:zoom-out; }
+  td.ev .crop .nobox { color:#999; font-size:12px; font-style:italic; }
+  .sugg { font-family:ui-monospace, Consolas, monospace; font-size:12.5px; line-height:1.5; }
+  .rd { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rd .eng { color:#7a7a7a; display:inline-block; width:5.6rem; font-family:system-ui, sans-serif;
+             font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+  .rd .v { color:#111; font-weight:600; }
+  .rd-pipe .v { font-size:14px; }
+  .rd-agree { color:#2f7d3c; }
+  .rd-agree .v { color:#2f7d3c; font-weight:500; font-family:system-ui, sans-serif; }
+  .rd-differ .v { color:#b00020; }
+  .rd-differ .verdict { color:#b00020; font-weight:700; margin-left:.5rem; font-size:11px; }
+  .rd-dim .v { color:#777; font-weight:400; }
+  .rd .flag { color:#8a6d00; background:#fff4d6; border-radius:3px; padding:0 .35rem; margin-left:.5rem;
+              font-family:system-ui, sans-serif; font-size:11px; }
+  .rd .why { color:#8a5300; font-family:system-ui, sans-serif; white-space:normal; }
+  .rd .votes { color:#777; margin-left:.4rem; }
+  .sugg.hidden > div { visibility:hidden; }
+  /* A fixed, narrow answer column, stacked. Laid out in a row it took 456px of
+     a 707px panel and pushed the confirm button out of sight. */
+  td.edit { width:196px; vertical-align:top; padding-top:.55rem; }
+  td.edit .answer { display:flex; flex-direction:column; gap:.32rem; }
+  td.edit .answer-row { display:flex; align-items:center; justify-content:space-between; gap:.4rem; }
+  td.edit input[type=text] { width:100%; font-family:ui-monospace, Consolas, monospace;
+                             font-size:15px; padding:.28rem .4rem; border:1px solid #b9b9b9; border-radius:3px; }
+  td.edit input[type=text]:focus { outline:2px solid #2d7cff; outline-offset:0; border-color:#2d7cff; }
+  td.edit select { width:100%; padding:.26rem; }
+  td.edit label { white-space:nowrap; font-size:12px; color:#555; }
+  td.edit button[data-confirm] { padding:.28rem .7rem; font-weight:600; }
+  tr.cell.APPROVED td.edit button[data-confirm],
+  tr.cell.EDITED td.edit button[data-confirm],
+  tr.cell.ADDED td.edit button[data-confirm] { background:#fff; border:1px solid #9c9c9c; }
   .doclevel { display:flex; flex-wrap:wrap; gap:.6rem 1.2rem; margin:.4rem 0 .6rem; align-items:center; }
   .doclevel .pipe { color:#666; font-size:12px; }
   .help { font-size:12px; color:#555; }
@@ -62,8 +110,9 @@
   <label><input type="checkbox" id="hideSugg"> hide suggestions until I type</label>
   <button id="export">Export labels</button>
   <label><button type="button" onclick="document.getElementById('import').click()">Import labels</button><input id="import" type="file" accept="application/json" hidden></label>
-  <span class="help"><kbd>Enter</kbd> approve/confirm &amp; next · <kbd>Alt+↓</kbd>/<kbd>Alt+↑</kbd> next/prev doc · click a row to highlight it on the image · zoom: <button id="zoomOut">−</button><button id="zoomFit">fit</button><button id="zoomIn">+</button></span>
+  <span class="help"><kbd>Enter</kbd> approve/confirm &amp; next · <kbd>Alt+↓</kbd>/<kbd>Alt+↑</kbd> next/prev doc · click a row to highlight it on the image · zoom: <button id="zoomOut">−</button><button id="zoomFit">fit page</button><button id="zoomIn">+</button> <label><input type="checkbox" id="autoZoom" checked> zoom to the row</label></span>
 </header>
+<div id="bar"><i></i></div>
 <main>
   <div id="viewer"><div id="stage"><img id="page" alt="report"><div class="hl" id="hlValue"></div><div class="hl anchor" id="hlAnchor"></div></div></div>
   <div id="panel"></div>
@@ -80,14 +129,22 @@
   const STATES_HLA = ['VALUE', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
   const STATES_DRBX = ['PRESENT_ONLY', 'ABSENT', 'VALUE', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
   let docIndex = 0;
-  let zoom = null; // null = fit width
+  let zoom = null;          // null = fit the pane's width
+  let autoZoom = true;      // selecting a row zooms in far enough to read it
+  const TARGET_ROW_PX = 34; // how tall a value row should be on screen
+  const MAX_ZOOM = 4;
   const key = () => 'hla_review:' + PACK.pack_id + ':' + (document.getElementById('annotator').value.trim() || 'anon');
-  let labels = load();
 
   // Whether this browser will actually keep anything. Opened straight off the
   // disk, or in a private window, localStorage can be unavailable — and a
   // labelling tool that silently forgets two hours of work is worse than one
   // that refuses to start, so this is probed once and said out loud.
+  //
+  // This MUST be initialised before the first `load()`. `function load()` is
+  // hoisted but `let storageWorks` is not, so calling load() above this line
+  // throws a temporal-dead-zone ReferenceError that kills the whole script and
+  // renders an empty page. That shipped once; `test_review_page_renders` now
+  // opens the page in a real browser so it cannot ship again.
   let storageWorks = (function () {
     try {
       localStorage.setItem('hla_review:probe', '1');
@@ -95,6 +152,13 @@
       return true;
     } catch (e) { return false; }
   })();
+
+  // Deliberately NOT `let labels = load()` here. `load()` is hoisted but the
+  // `let`s it reads are not, so calling anything at the top of this scope
+  // risks a temporal-dead-zone ReferenceError that kills the script and
+  // renders a blank page. That shipped once. Nothing in this scope now runs
+  // until `start()` at the very bottom, after every declaration exists.
+  let labels = { cells: {}, documents: {} };
 
   function load() {
     if (!storageWorks) return {};
@@ -117,8 +181,6 @@
       + 'or export your labels before you close the tab.';
     document.body.insertBefore(bar, document.querySelector('main'));
   }
-  labels.cells = labels.cells || {};
-  labels.documents = labels.documents || {};
 
   // ---- helpers -----------------------------------------------------------
   function bodies(value) {
@@ -157,6 +219,10 @@
       if (cell.kind !== 'DRBX') return 'VALUE';
       return cell.value === 'ABSENT' ? 'ABSENT' : 'PRESENT_ONLY';
     }
+    // The form prints this row and the laboratory never fills it (HA-009).
+    // That is BLANK, not "type a value here": asking a reviewer to invent one
+    // is the opposite of what NOT_TESTED means.
+    if (cell.status === 'NOT_TESTED') return 'BLANK';
     const why = (cell.suggestions && cell.suggestions.pipeline && cell.suggestions.pipeline.reason) || '';
     if (/no anchor on this document|no grouped DRB3\/4\/5 header/.test(why)) return 'NOT_PRINTED';
     if (/no box at all/.test(why)) return 'BLANK';       // label printed, cell empty
@@ -179,9 +245,15 @@
 
   function renderProgress() {
     const total = PACK.n_cells;
-    const done = Object.keys(labels.cells).filter(id => PACK.documents.some(d => d.cells.some(c => c.cell_id === id))).length;
+    const known = new Set();
+    for (const d of PACK.documents) for (const c of d.cells) known.add(c.cell_id);
+    const done = Object.keys(labels.cells).filter(id => known.has(id)).length;
     const docsDone = PACK.documents.filter(d => d.cells.length && d.cells.every(c => labels.cells[c.cell_id])).length;
-    document.getElementById('progress').textContent = `doc ${docIndex + 1}/${PACK.n_documents} · ${docsDone} docs done · ${done}/${total} cells`;
+    document.getElementById('progress').textContent = PACK.documents.length
+      ? `doc ${docIndex + 1}/${PACK.n_documents} · ${docsDone} done · ${done}/${total} cells`
+      : 'this pack contains no documents';
+    const bar = document.querySelector('#bar > i');
+    if (bar) bar.style.width = (100 * done / Math.max(total, 1)).toFixed(1) + '%';
     const jump = document.getElementById('jump');
     if (jump.options.length !== PACK.documents.length) {
       jump.innerHTML = PACK.documents.map((d, i) => `<option value="${i}">${i + 1}. ${esc(d.primary_tag)} ${esc(d.family || '')}</option>`).join('');
@@ -214,30 +286,109 @@
       Math.max(...cell.value_boxes.map(b => b[2])), Math.max(...cell.value_boxes.map(b => b[3]))] : null;
     place(hv, vb); place(ha, cell.anchor_box);
     const box = vb || cell.anchor_box;
-    if (box) {
-      const y = box[1] * page.clientHeight, x = box[0] * page.clientWidth;
-      viewer.scrollTo({ top: Math.max(0, y - viewer.clientHeight / 2), left: Math.max(0, x - viewer.clientWidth / 3), behavior: 'smooth' });
+    if (!box) return;
+
+    // Fit-width on a portrait report in a narrow pane renders the print at
+    // about 45% — too small to check a digit against, which is the entire task.
+    // Selecting a row zooms until the ROW is a readable height and centres it.
+    // The reader keeps the overview via the `fit` button.
+    const doc = PACK.documents[docIndex];
+    const rowFraction = Math.max(box[3] - box[1], 0.004);
+    const wanted = Math.min(MAX_ZOOM, (TARGET_ROW_PX / rowFraction) / doc.height);
+    if (autoZoom && wanted > (zoom || page.clientWidth / doc.width)) {
+      zoom = wanted;
+      layoutImage();
     }
+    const cx = ((box[0] + box[2]) / 2) * page.clientWidth;
+    const cy = ((box[1] + box[3]) / 2) * page.clientHeight;
+    viewer.scrollTo({
+      top: Math.max(0, cy - viewer.clientHeight / 2),
+      left: Math.max(0, cx - viewer.clientWidth / 2),
+      behavior: 'smooth',
+    });
+  }
+
+  const READER_ORDER = ['tesseract5', 'ppocrv5', 'decode'];
+
+  function readersFor(cell) {
+    const s = cell.suggestions || {};
+    const out = [];
+    for (const name of READER_ORDER) {
+      if (s[name]) out.push({ name, reading: s[name].reading, verdict: s[name].verdict, votes: s[name].votes });
+    }
+    // Any confirmer the pack carries that this list does not name, plus the
+    // separate per-engine suggestion files. Iterating the object rather than a
+    // hard-coded list is what keeps a renamed engine from silently vanishing —
+    // `tesseract` became `tesseract5` once and took both confirmers with it.
+    for (const name of Object.keys(s)) {
+      if (name === 'pipeline' || READER_ORDER.includes(name)) continue;
+      out.push({ name, reading: s[name].reading, verdict: s[name].verdict, votes: s[name].votes });
+    }
+    for (const eng of PACK.engines || []) {
+      const txt = (PACK.suggestions[eng] || {})[cell.cell_id];
+      if (txt !== undefined) out.push({ name: eng, reading: txt, verdict: null });
+    }
+    return out;
   }
 
   function suggestionHtml(cell) {
-    const s = cell.suggestions || {};
+    const p = (cell.suggestions || {}).pipeline || {};
+    const readers = readersFor(cell);
+    const pipeKey = bodies(cell.value).sort().join(' ');
     const rows = [];
-    const p = s.pipeline || {};
-    rows.push(`<div><span class="eng">pipeline</span><span class="v">${esc(p.value || '—')}</span> <span class="verdict">${esc(p.status)}${p.repaired ? ' · repaired' : ''}${p.second_allele === 'UNREAD' ? ' · 2nd UNREAD' : ''}${p.stability && p.stability !== 'NOT_CHECKED' ? ' · ' + esc(p.stability) : ''}</span></div>`);
-    if (p.raw && p.raw !== p.value) rows.push(`<div><span class="eng">raw OCR</span><span class="v">${esc(p.raw)}</span></div>`);
-    if (p.status !== 'RESOLVED' && p.reason) rows.push(`<div><span class="eng">why refused</span><span class="verdict">${esc(p.reason)}</span></div>`);
-    if (s.tesseract) rows.push(`<div><span class="eng">tesseract</span><span class="v">${esc(s.tesseract.reading || '—')}</span> <span class="verdict ${esc(s.tesseract.verdict)}">${esc(s.tesseract.verdict)}</span></div>`);
-    if (s.decode) rows.push(`<div><span class="eng">decode</span><span class="v">${esc(s.decode.reading || '—')}</span> <span class="verdict ${esc(s.decode.verdict)}">${esc(s.decode.verdict)}</span>${s.decode.verdict === 'SPLIT' ? ` <span class="verdict">${esc(fmtVotes(s.decode.votes || {}))}</span>` : ''}</div>`);
-    for (const eng of PACK.engines || []) {
-      const txt = (PACK.suggestions[eng] || {})[cell.cell_id];
-      if (txt !== undefined) rows.push(`<div><span class="eng">${esc(eng)}</span><span class="v">${esc(txt || '—')}</span></div>`);
+
+    // The pipeline's own line always shows: it is the value being judged.
+    const flags = [];
+    if (p.repaired) flags.push('glyph repaired');
+    if (p.second_allele === 'UNREAD') flags.push('2nd allele UNREAD');
+    if (p.stability && p.stability !== 'NOT_CHECKED' && p.stability !== 'UNANIMOUS') flags.push(p.stability);
+    rows.push(
+      `<div class="rd rd-pipe"><span class="eng">pipeline</span>` +
+      `<span class="v">${esc(p.value || '—')}</span>` +
+      (flags.length ? `<span class="flag">${esc(flags.join(' · '))}</span>` : '') +
+      `</div>`);
+    if (p.raw && p.raw !== p.value) {
+      rows.push(`<div class="rd rd-dim"><span class="eng">raw OCR</span><span class="v">${esc(p.raw)}</span></div>`);
+    }
+    if (p.status !== 'RESOLVED' && p.reason) {
+      rows.push(`<div class="rd rd-why"><span class="eng">refused</span><span class="why">${esc(p.reason)}</span></div>`);
+    }
+
+    // Readers that agree with the pipeline are collapsed into one line: five
+    // identical rows per cell is noise, and noise is what hides the sixth row
+    // that does not match.
+    const agree = [], differ = [];
+    for (const r of readers) {
+      const said = bodies(r.reading).sort().join(' ');
+      const same = r.verdict ? r.verdict === 'CONFIRMED' || r.verdict === 'UNANIMOUS'
+                             : (said && said === pipeKey);
+      (same ? agree : differ).push(r);
+    }
+    if (agree.length) {
+      rows.push(`<div class="rd rd-agree" title="${esc(agree.map(r => r.name).join(', '))}">` +
+        `<span class="eng">agree</span><span class="v">${agree.length} reader${agree.length > 1 ? 's' : ''}: ` +
+        `${esc(agree.map(r => r.name).join(', '))}</span></div>`);
+    }
+    for (const r of differ) {
+      const label = r.verdict || 'reads';
+      const votes = r.verdict === 'SPLIT' && r.votes ? ` <span class="votes">${esc(fmtVotes(r.votes))}</span>` : '';
+      rows.push(`<div class="rd rd-differ"><span class="eng">${esc(r.name)}</span>` +
+        `<span class="v">${esc(r.reading || '—')}</span>` +
+        `<span class="verdict ${esc(label)}">${esc(label)}</span>${votes}</div>`);
     }
     return rows.join('');
   }
 
   function renderDoc() {
     const doc = PACK.documents[docIndex];
+    if (!doc) {
+      // An empty or exhausted pack is an operator mistake, not a stack trace.
+      panel.innerHTML = '<div class="doc"><p class="warn">This pack contains no documents. '
+        + 'Rebuild it with <code>scripts/review_pack.py</code>.</p></div>';
+      page.removeAttribute('src');
+      renderProgress();
+      return;
+    }
     page.src = doc.image;
     zoom = null; layoutImage(); highlight(null);
     const dl = labels.documents[doc.id] || {};
@@ -256,23 +407,30 @@
         <label><input type="checkbox" data-doc="not_a_report" ${dl.not_a_report ? 'checked' : ''}> not a lab report</label>
         <label><input type="checkbox" data-doc="unsure" ${dl.unsure ? 'checked' : ''}> unsure about this document</label>
       </div>
-      <table><thead><tr><th>locus</th><th>crop</th><th>suggestions</th><th>your reading</th></tr></thead><tbody>`;
+      <table><thead><tr><th>locus</th><th>what the page shows, and what each reader made of it</th><th>your reading</th></tr></thead><tbody>`;
     for (const cell of doc.cells) {
       const lab = labels.cells[cell.cell_id];
       const states = cell.kind === 'DRBX' ? STATES_DRBX : STATES_HLA;
       const defaultState = defaultStateFor(cell);
       const state = lab ? lab.state : defaultState;
       const text = lab ? lab.alleles.join(' ') : (cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
+      // Evidence (crop above the readings) in ONE column, the answer in the
+      // next. Four side-by-side columns needed 1,210px in a 707px panel, which
+      // put the input the reviewer is meant to use off the right-hand edge.
       html += `<tr class="cell ${lab ? lab.decision : ''}" data-cell="${cell.cell_id}">
         <td class="locus">${esc(cell.locus)}</td>
-        <td class="crop">${cell.crop ? `<img src="${cell.crop}" alt="">` : '<span class="help">no box</span>'}</td>
-        <td class="sugg ${hide && !lab ? 'hidden' : ''}">${suggestionHtml(cell)}</td>
-        <td class="edit">
-          <select data-state>${states.map(s => `<option value="${s}" ${s === state ? 'selected' : ''}>${s}</option>`).join('')}</select>
-          <input type="text" data-alleles value="${esc(text)}" placeholder="e.g. 11 15  or  11:01" ${state === 'VALUE' ? '' : 'disabled'}>
-          <label><input type="checkbox" data-unsure ${lab && lab.unsure ? 'checked' : ''}> unsure</label>
-          <button data-confirm>${lab ? '✓' : 'confirm'}</button>
-        </td></tr>`;
+        <td class="ev">
+          <div class="crop">${cell.crop ? `<img src="${cell.crop}" alt="crop of the ${esc(cell.locus)} cell">` : '<span class="nobox">no box on this row</span>'}</div>
+          <div class="sugg ${hide && !lab ? 'hidden' : ''}">${suggestionHtml(cell)}</div>
+        </td>
+        <td class="edit"><div class="answer">
+          <select data-state aria-label="reading state for ${esc(cell.locus)}">${states.map(s => `<option value="${s}" ${s === state ? 'selected' : ''}>${s}</option>`).join('')}</select>
+          <input type="text" data-alleles value="${esc(text)}" placeholder="11 15" aria-label="alleles for ${esc(cell.locus)}" ${state === 'VALUE' ? '' : 'disabled'}>
+          <div class="answer-row">
+            <label><input type="checkbox" data-unsure ${lab && lab.unsure ? 'checked' : ''}> unsure</label>
+            <button data-confirm>${lab ? '✓ done' : 'confirm'}</button>
+          </div>
+        </div></td></tr>`;
     }
     html += '</tbody></table></div>';
     panel.innerHTML = html;
@@ -310,8 +468,8 @@
       labelled_utc: new Date().toISOString(),
     };
     tr.className = 'cell ' + dec + ' current';
-    tr.querySelector('[data-confirm]').textContent = '✓';
-    tr.querySelector('td.sugg').classList.remove('hidden');
+    tr.querySelector('[data-confirm]').textContent = '✓ done';
+    tr.querySelector('.sugg').classList.remove('hidden');
     save();
     return true;
   }
@@ -328,7 +486,7 @@
     const tr = e.target.closest('tr.cell');
     if (tr) setCurrent(tr);
     if (e.target.matches('[data-confirm]')) { if (confirmRow(tr)) focusNextRow(tr); }
-    if (e.target.matches('td.crop img')) e.target.classList.toggle('big');
+    if (e.target.matches('.crop img')) e.target.classList.toggle('big');
   });
   panel.addEventListener('focusin', e => { const tr = e.target.closest('tr.cell'); if (tr) setCurrent(tr); });
   panel.addEventListener('keydown', e => {
@@ -352,16 +510,40 @@
     }
   });
   panel.addEventListener('input', e => {
-    if (e.target.matches('[data-alleles]')) e.target.closest('tr').querySelector('td.sugg').classList.remove('hidden');
+    if (e.target.matches('[data-alleles]')) e.target.closest('tr').querySelector('.sugg').classList.remove('hidden');
   });
   document.getElementById('prev').onclick = () => { if (docIndex > 0) { docIndex--; renderDoc(); } };
   document.getElementById('next').onclick = () => { if (docIndex + 1 < PACK.documents.length) { docIndex++; renderDoc(); } };
   document.getElementById('jump').onchange = e => { docIndex = Number(e.target.value); renderDoc(); };
   document.getElementById('hideSugg').onchange = renderDoc;
-  document.getElementById('annotator').onchange = () => { labels = load(); labels.cells = labels.cells || {}; labels.documents = labels.documents || {}; renderDoc(); };
+  let annotatorWas = '';
+  document.getElementById('annotator').onchange = () => {
+    // Labels are stored per annotator. Someone who labels a few rows before
+    // typing their name would otherwise watch the work vanish into the `anon`
+    // bucket, so unnamed work is carried across.
+    //
+    // ONLY from the unnamed bucket. The golden protocol needs two INDEPENDENT
+    // labellers, and they will often share a machine; carrying one named
+    // person's answers into the next person's session would silently destroy
+    // the independence the whole comparison rests on.
+    const carried = labels;
+    const cameFromAnon = annotatorWas === '';
+    annotatorWas = document.getElementById('annotator').value.trim();
+    labels = load();
+    labels.cells = labels.cells || {};
+    labels.documents = labels.documents || {};
+    const hadWork = carried && Object.keys(carried.cells || {}).length;
+    if (cameFromAnon && hadWork && !Object.keys(labels.cells).length) {
+      labels.cells = Object.assign({}, carried.cells);
+      labels.documents = Object.assign({}, carried.documents || {});
+      save();
+    }
+    renderDoc();
+  };
   document.getElementById('zoomIn').onclick = () => { zoom = (zoom || page.clientWidth / PACK.documents[docIndex].width) * 1.4; layoutImage(); };
   document.getElementById('zoomOut').onclick = () => { zoom = (zoom || page.clientWidth / PACK.documents[docIndex].width) / 1.4; layoutImage(); };
   document.getElementById('zoomFit').onclick = () => { zoom = null; layoutImage(); };
+  document.getElementById('autoZoom').onchange = e => { autoZoom = e.target.checked; };
   window.addEventListener('resize', layoutImage);
   document.addEventListener('keydown', e => {
     if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); document.getElementById('next').click(); }
@@ -397,8 +579,15 @@
     });
   };
 
-  renderDoc();
-  if (!storageWorks) warnAboutStorage();
+  function start() {
+    labels = load();
+    labels.cells = labels.cells || {};
+    labels.documents = labels.documents || {};
+    renderDoc();
+    if (!storageWorks) warnAboutStorage();
+  }
+
+  start();
 })();
 </script>
 </body>
