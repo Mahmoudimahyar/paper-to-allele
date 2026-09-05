@@ -31,7 +31,9 @@ time. Four gates now stand between a candidate box and a RESOLVED value:
 
 Anchors are found by `glyphs.canonical_locus_label`, which repairs the
 recognizer's measured final-character confusions (`DRBI` is read 3.5x more often
-than `DRB1`) and refuses interior damage.
+than `DRB1`) and refuses interior damage. Where a form prints the Class I labels
+as bare letters, which that matcher refuses and must go on refusing, the page's
+own structure promotes them instead (`_bare_class_i_anchors`).
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from typing import Literal
 
 from kidneymatch.hla.vocabulary import FirstFieldVocabulary, load_vocabulary
 from kidneymatch.ocr.glyphs import (
+    CLASS_I_LOCI,
     AlleleValue,
     canonical_locus_label,
     is_grouped_drbx_header,
@@ -73,6 +76,31 @@ DEFAULT_LOCI: tuple[str, ...] = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", 
 # label heights tall; a box several times taller is a detector blob spanning
 # rows, and it is "aligned" with every row it crosses (review W3).
 MAX_VALUE_HEIGHT_RATIO = 2.5
+
+# Some forms print the Class I labels as bare letters (`A`, `B`, `C`).
+# `canonical_locus_label` refuses them on purpose and must go on refusing: `A`
+# is also a blood group, an initial, a list marker and a column heading, and a
+# token that short cannot name a locus by what it says. Geometry can still say
+# it is a label, which is the rule the constitution already states — the cell
+# assigns the locus, never the text — so a bare letter anchors only where the
+# page's own structure makes it one. On the reviewer's 220 labels this is the
+# single largest cause of a locus never being looked for at all.
+BARE_CLASS_I = re.compile(r"^([ABC])\s*[:.\-–—]?\s*$", re.IGNORECASE)
+# Unambiguous locus labels the page must already print before any bare letter
+# is read as one: two, so a single stray HLA word cannot make a table.
+BARE_MIN_NAMED_LOCI = 2
+# How far the letter's left edge may sit from the label column those labels
+# form, in label heights.
+BARE_COLUMN_SLACK = 2.0
+# Bare letters standing in that column that make a table of their own. Two is
+# enough: `A` over `B` in the label column of a form that also prints DRB1 and
+# DQB1 is an HLA table, and a blood group is printed once, not stacked.
+BARE_MIN_STACK = 2
+# A lone letter is promoted only when a spelled-out label sits within this many
+# label heights of its row, so it is demonstrably inside the same block. The
+# stack does not need it: a real HLA table is eight rows tall, and the Class I
+# rows sit that far above the Class II labels by design.
+BARE_ROW_GAP = 4.0
 
 
 class ResolutionStatus(StrEnum):
@@ -225,11 +253,14 @@ def find_anchors(boxes: list[Box], locus: str, anchor_pattern: str | None = None
     if anchor_pattern is not None:
         compiled = re.compile(anchor_pattern, re.IGNORECASE)
         return [b for b in boxes if compiled.match((b.text or "").strip())]
-    return [b for b in boxes if canonical_locus_label(b.text or "") == locus]
+    spelled = [b for b in boxes if canonical_locus_label(b.text or "") == locus]
+    # A label spelled out always wins; the bare letter is only ever a fallback,
+    # so a page printing `HLA-A` is never re-read from a stray `A` elsewhere.
+    return spelled or _bare_class_i_anchors(boxes, locus)
 
 
-def _all_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
-    """Every box on the page that names any locus, with the locus it names."""
+def _named_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
+    """Every box whose TEXT names a locus, with the locus it names."""
     out = []
     for box in boxes:
         text = box.text or ""
@@ -238,6 +269,80 @@ def _all_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
             out.append((named, box))
         elif is_grouped_drbx_header(text):
             out.append((GROUPED_DRBX_OWNER, box))
+    return out
+
+
+def _bare_class_i_column(boxes: list[Box]) -> dict[str, list[Box]]:
+    """Bare `A`, `B` and `C` boxes the page's structure makes locus labels.
+
+    Every condition is structural, so none of them requires believing the
+    letter itself:
+
+    1. the page already spells out at least `BARE_MIN_NAMED_LOCI` distinct
+       locus labels, so it is an HLA table and not a page with a stray letter;
+    2. the letter stands in the column those labels form;
+    3. something allele-shaped sits to its right on its own row;
+    4. it is one of `BARE_MIN_STACK` such letters stacked in that column, or
+       else a spelled-out label sits within `BARE_ROW_GAP` of its row.
+
+    The fourth is what separates a Class I block from a blood group: a group is
+    printed once and a table prints `A` over `B`. Distance alone cannot do it,
+    because on a real form the Class I rows sit six to nine label heights above
+    the Class II labels, which is exactly where a stray letter also sits.
+    """
+    named = _named_locus_anchors(boxes)
+    if len({name for name, _ in named} - {GROUPED_DRBX_OWNER}) < BARE_MIN_NAMED_LOCI:
+        return {}
+    lefts = sorted(box.x0 for _, box in named)
+    heights = sorted(box.height for _, box in named)
+    column = lefts[len(lefts) // 2]
+    unit = heights[len(heights) // 2] or 1e-6
+
+    standing: dict[str, list[tuple[Box, bool]]] = {}
+    for box in boxes:
+        found = BARE_CLASS_I.match((box.text or "").strip())
+        if found is None or found.group(1).upper() not in CLASS_I_LOCI:
+            continue
+        if abs(box.x0 - column) > BARE_COLUMN_SLACK * unit:
+            continue
+        if not any(
+            other.x0 > box.x1
+            and abs(other.centre_y - box.centre_y) <= box.height
+            and parse_allele_value((other.text or "").strip()) is not None
+            for other in boxes
+        ):
+            continue
+        beside = any(
+            abs(box.centre_y - other.centre_y) <= BARE_ROW_GAP * unit for _, other in named
+        )
+        standing.setdefault(found.group(1).upper(), []).append((box, beside))
+
+    if len(standing) >= BARE_MIN_STACK:
+        return {letter: [box for box, _ in found] for letter, found in standing.items()}
+    kept = {letter: [box for box, beside in found if beside] for letter, found in standing.items()}
+    return {letter: found for letter, found in kept.items() if found}
+
+
+def _bare_class_i_anchors(boxes: list[Box], locus: str) -> list[Box]:
+    """The bare letters the page's structure promotes to this locus's label."""
+    if locus not in CLASS_I_LOCI:
+        return []
+    return _bare_class_i_column(boxes).get(locus.upper(), [])
+
+
+def _all_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
+    """Every box on the page that names any locus, with the locus it names.
+
+    Includes the bare Class I letters the page's structure promotes, so that
+    ownership and scale are judged against every label the form actually
+    prints rather than only the ones spelled out in full.
+    """
+    out = _named_locus_anchors(boxes)
+    claimed = {name for name, _ in out}
+    for locus in sorted(CLASS_I_LOCI):
+        if locus in claimed:
+            continue
+        out.extend((locus, box) for box in _bare_class_i_anchors(boxes, locus))
     return out
 
 
