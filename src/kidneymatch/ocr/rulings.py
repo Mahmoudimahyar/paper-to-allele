@@ -102,6 +102,12 @@ SWEEP_RANGE_DEG = 15.0
 SWEEP_STEP_DEG = 1.0
 SWEEP_FLOOR_DEG = 0.01
 
+# The version every stored decision is keyed by. Bump it when the estimators
+# or the decision rule change; old rows stay. v2: the scatter bound calibrated
+# on real photographs (1.5 deg) and the vertical family demoted from a veto to
+# the perspective flag.
+GEOMETRY_VERSION = "rulings/v2+lsd+sweep"
+
 
 class GeometryDecision(StrEnum):
     """What the page's geometry licenses."""

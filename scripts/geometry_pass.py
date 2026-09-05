@@ -43,11 +43,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from kidneymatch.ocr.rulings import PageGeometry, page_geometry  # noqa: E402
-
-# v2: the scatter bound calibrated on real photographs (1.5 deg) and the
-# vertical family demoted from a veto to the perspective flag.
-GEOMETRY_VERSION = "rulings/v2+lsd+sweep"
+from kidneymatch.ocr.rulings import (  # noqa: E402
+    GEOMETRY_VERSION,
+    PageGeometry,
+    page_geometry,
+)
 
 DEFAULT_EXPORT = ROOT / "data/raw/ChatExport_2026-08-31"
 DEFAULT_DB = ROOT / "data/derived/geometry.sqlite"

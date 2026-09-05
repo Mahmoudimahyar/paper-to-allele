@@ -68,6 +68,8 @@ from kidneymatch.ocr.anchors import (  # noqa: E402
     resolve_document,
 )
 from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx  # noqa: E402
+from kidneymatch.ocr.geometry import PageFrame, restore, restore_drbx  # noqa: E402
+from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 from kidneymatch.ocr.store import read_corpus  # noqa: E402
 from kidneymatch.ocr.templates import LayoutPrototype, assign_prototype  # noqa: E402
 
@@ -148,7 +150,57 @@ def connect(path: Path) -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA synchronous=NORMAL")
     con.executescript(SCHEMA)
+    # Columns added after the table first existed. `CREATE TABLE IF NOT EXISTS`
+    # leaves an older database without them, and a positional insert would then
+    # break the moment they were expected — so they are added here, named.
+    columns = {row[1] for row in con.execute("PRAGMA table_info(document)")}
+    for name, ddl in (("tilt_deg", "REAL"), ("frame", "TEXT")):
+        if name not in columns:
+            con.execute(f"ALTER TABLE document ADD COLUMN {name} {ddl}")
+    con.commit()
     return con
+
+
+def load_geometry(path: Path | None) -> dict[str, tuple[str, float]]:
+    """Per-document page geometry from `scripts/geometry_pass.py`: (decision, theta).
+
+    Absent, the identity frame applies everywhere, which is the pipeline of
+    today. Only a ROTATE decision — two estimators agreeing — moves anything.
+    """
+    if path is None or not path.exists():
+        return {}
+    con = sqlite3.connect(path)
+    try:
+        return {
+            sha: (str(decision), float(theta))
+            for sha, decision, theta in con.execute(
+                "SELECT sha256, decision, theta_deg FROM page_geometry WHERE geometry_version=?",
+                (GEOMETRY_VERSION,),
+            )
+        }
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        con.close()
+
+
+# Below this tilt the frame is a wash. Measured on the 53 ROTATE pages of the
+# review pack: under 1.5 degrees the row rules already tolerate the drift and
+# the estimator's own error is as large as the tilt, so cells were gained and
+# lost in equal numbers (9 each); from 2 degrees the frame gained 5 cells and
+# lost none. The geometry pass still records ROTATE from half a degree — that
+# is measurement — but the extraction only acts on it from here.
+MIN_FRAME_TILT_DEG = 1.5
+
+
+def frame_for(document, geometry: dict[str, tuple[str, float]]) -> PageFrame | None:
+    """The frame the row rules run in for this document, or None for identity."""
+    decision, theta = geometry.get(document.sha256, ("NONE", 0.0))
+    if decision != "ROTATE" or not document.width or not document.height:
+        return None
+    if abs(theta) < MIN_FRAME_TILT_DEG:
+        return None
+    return PageFrame(theta_deg=theta, width=int(document.width), height=int(document.height))
 
 
 def _box(box: Box | None) -> str | None:
@@ -210,16 +262,25 @@ def extract(
     prefixed_families: set[str] | None = None,
     caption_role: Role = Role.UNKNOWN,
     testing_policy: LocusTestingPolicy | None = None,
+    frame: PageFrame | None = None,
 ) -> tuple[list[tuple], dict]:
     """Every fact this document yields. Pure: no I/O, so it is testable."""
     latin = document.boxes
     rows: list[tuple] = []
     comparison = is_comparison_sheet(latin)
 
+    # The row rules read a LEVEL page. Where the geometry pass declared the
+    # photograph ROTATE — two estimators agreeing on the tilt — the stored
+    # boxes are straightened first and every rule runs unchanged on them;
+    # provenance is restored to the boxes as stored below. Without a frame this
+    # is the identity and byte-for-byte the pipeline of before.
+    level = frame if frame is not None else PageFrame.identity(1, 1)
+    latin_level, back = level.rectify(latin)
+
     # Which printed form is this? An unrecognised one gets the conservative
     # default; claiming a family would apply its authored cell rule to a layout
     # it was never measured on.
-    assignment = assign_prototype(latin, prototypes or [])
+    assignment = assign_prototype(latin_level, prototypes or [])
     family = assignment.prototype_id if assignment else None
     rule = (
         FAMILY_RULE
@@ -251,7 +312,10 @@ def extract(
             )
         )
 
-    loci = resolve_document(latin, rule, vocabulary=vocabulary)
+    loci = {
+        locus: restore(result, back)
+        for locus, result in resolve_document(latin_level, rule, vocabulary=vocabulary).items()
+    }
     for locus, result in loci.items():
         status = result.status
         reason = result.reason
@@ -288,7 +352,9 @@ def extract(
             value_boxes=_boxes(result.value_boxes),
         )
 
-    genes = resolve_grouped_drbx(latin)
+    genes = {
+        gene: restore_drbx(fact, back) for gene, fact in resolve_grouped_drbx(latin_level).items()
+    }
     for gene, fact in genes.items():
         add(
             gene,
@@ -368,6 +434,10 @@ def extract(
         "consistency": consistency.value,
         "consistency_reason": consistency_reason,
         "n_facts": sum(1 for r in rows if r[3] == ResolutionStatus.RESOLVED.value),
+        # The frame the row rules ran in. `tilt_deg` is the straightening angle
+        # applied to the stored boxes; 0 with the identity frame.
+        "tilt_deg": float(level.theta_deg),
+        "frame": "identity" if level.is_identity else "ROTATE",
     }
     return rows, summary
 
@@ -401,9 +471,17 @@ def run(
     limit: int | None,
     batch: int,
     source_db: Path | None = None,
+    geometry_db: Path | None = None,
 ) -> int:
     vocabulary = load_vocabulary()
     testing_policy = load_testing_policy()
+    geometry = load_geometry(geometry_db)
+    if geometry:
+        rotate = sum(1 for decision, _ in geometry.values() if decision == "ROTATE")
+        print(
+            f"page geometry known for {len(geometry):,} documents, {rotate:,} of them ROTATE",
+            flush=True,
+        )
     print(
         "loci this laboratory does not test: "
         + ", ".join(
@@ -452,6 +530,7 @@ def run(
             prefixed,
             caption_roles.get(document.sha256, Role.UNKNOWN),
             testing_policy,
+            frame_for(document, geometry),
         )
         facts.extend(rows)
         documents.append(
@@ -466,8 +545,11 @@ def run(
                 summary["consistency_reason"],
                 summary["n_facts"],
                 now,
+                summary["tilt_deg"],
+                summary["frame"],
             )
         )
+        tally["frame_rotate"] += summary["frame"] == "ROTATE"
         for row in rows:
             tally[row[3]] += 1
         tally["comparison_sheets"] += summary["comparison_sheet"]
@@ -485,7 +567,10 @@ def run(
                 facts,
             )
             con.executemany(
-                "INSERT OR REPLACE INTO document VALUES (?,?,?,?,?,?,?,?,?,?)", documents
+                "INSERT OR REPLACE INTO document (sha256, extraction_version, rel_path, "
+                "quality_band, family, comparison_sheet, consistency, consistency_reason, "
+                "n_facts, created_utc, tilt_deg, frame) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                documents,
             )
             con.commit()
             facts.clear()
@@ -549,6 +634,12 @@ def main() -> int:
         default=ROOT / "data/derived/source.sqlite",
         help="the source store, for caption role evidence; skipped when absent",
     )
+    parser.add_argument(
+        "--geometry",
+        type=Path,
+        default=ROOT / "data/derived/geometry.sqlite",
+        help="page geometry from scripts/geometry_pass.py; identity frames when absent",
+    )
     args = parser.parse_args()
     if args.status:
         return status(args.out)
@@ -563,6 +654,7 @@ def main() -> int:
         args.limit,
         args.batch_size,
         args.source,
+        args.geometry,
     )
 
 
