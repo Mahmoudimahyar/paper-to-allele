@@ -401,6 +401,25 @@ read** — and the 4 held as inked the human called blank, the abstaining
 direction. Every pass re-judges its own earlier decisions and withdraws one
 it can no longer measure, so the fact follows the evidence in both directions.
 
+### The second reader is a generation behind, measured (2026-09-05)
+Section 4 chose Tesseract as the independent confirmer and the 2026-09-03
+survey added PP-OCRv5; both were ranked by agreement with a *trusted set*,
+which is consensus, not truth. With the reviewer's labels in hand the engines
+were re-run against what a person read (`ENGINE_BENCH_2026-09-05.md`, 67
+labelled cells): PP-OCRv6-medium reads 65 exactly, PP-OCRv5-en-mobile — the
+shipped confirmer — 50, Tesseract 32, and Qwen3-VL-4B 52 at 19x the cost. On
+the cells where the pipeline is right, v5 raised 12 false alarms of 57 and v6
+none. v6 now reads every resolved cell and every proposal under its own
+`confirmer_version` (96.9% confirmed against v5's 90.0%, 0.4% silent against
+2.6%), and the promotion gate runs on it.
+
+That swap forced one new rule: v6 contradicts 57 of the 760 cells v5 had
+licensed for promotion. A fact built from two engines agreeing is **withdrawn
+when a reader at least as good as the licensing one disagrees** (`ENGINE_RANK`
+carries the measured order); a weaker reader disagreeing remains the review
+budget, not a veto — Tesseract contradicts 14% of everything and reads half
+these cells. Net 961 promoted, and a withdrawn cell returns to the pool.
+
 ### Page geometry v3
 The projection sweep corroborates the rulings within 2° (1,231 of 1,595 pages
 refused at 1° disagreed by less), and the rulings' own agreement check — added

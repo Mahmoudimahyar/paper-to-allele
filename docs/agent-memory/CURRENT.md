@@ -15,8 +15,7 @@ becoming facts. The review page now shows the messages posted with each image.
 
 ## Locked facts
 - **The archive is present**, local-only and gitignored, at
-  `data/raw/ChatExport_2026-08-31`: 23,566 unique original images, 90% above
-  900 px (KI-009 corrected the earlier "median 520 px").
+  `data/raw/ChatExport_2026-08-31`: 23,566 unique images, 90% above 900 px.
 - **The source layer is parsed (HIST-001, HIST-002).** 180,441 messages and
   3,456 service events — the 183,897 the archive characterization counted —
   with **zero unparsed fragments**, into `source.sqlite`. Re-import is a no-op.
@@ -38,36 +37,39 @@ becoming facts. The review page now shows the messages posted with each image.
   anchor on 9,817 documents before it shipped. The adversarial review (133
   agents, 24 findings, all fixed) then withdrew 154 of the band's cells and 7
   the DRB3/4/5 header owns.
-- **Page geometry (`rulings/v3+lsd+sweep`):** the sweep corroborates within 2°
-  and the agreement check is calibrated on photographs (3°/0.7). Corpus: 6,511
-  ROTATE (27.6%) / 14,139 STRAIGHT / 2,916 UNCERTAIN; 1,591 pages levelled at
-  extraction (from 1.5°, KI-024). A tilt estimate from the stored boxes is
-  biased 1.44° and was rejected (KI-025).
+- **Page geometry (`rulings/v3+lsd+sweep`):** the sweep corroborates within 2°,
+  the agreement check calibrated on photographs (3°/0.7). Corpus: 6,511 ROTATE
+  / 14,139 STRAIGHT / 2,916 UNCERTAIN; 1,591 pages levelled (from 1.5°,
+  KI-024). A tilt estimate from the stored boxes is biased (KI-025).
+- **Recognizers, against the reviewer's labels** (67 value cells,
+  `ENGINE_BENCH_2026-09-05.md`): **PP-OCRv6-medium 65 exact (97%)**, the
+  pipeline as it ships 57, PP-OCRv5-server 55, Qwen3-VL-4B 52 at 475 ms/crop,
+  the shipped confirmer 50, Tesseract 32, our own recognizer 14. v6's two
+  misses are the cells the detector gave one box; no pair ever agreed on a
+  wrong value. v6 now reads every resolved cell (96.9% confirmed against v5's
+  90.0%, 0.4% silent against 2.6%) and licenses the promotion gate: **961
+  promoted** (was 760), 57 withdrawn because v6 contradicts what v5 licensed.
 - **The decode and the confirmers.** `confirm_pass.py` gained two targets:
-  `--target proposals` judges PP-OCRv5 against the decode's proposal (2,008
-  judged, 44% CONTRADICTED — what promoting on the decode alone would have
-  done) and `promote_proposals.py` promotes the CONFIRMED ones, never on a LOW
-  page, re-judged with admissibility: **760 promoted**, marked
-  `source=decode+ppocrv5`. `--target drbx` reads every PRESENT gene box: of
-  1,912 repaired `DRBS` tokens PP-OCRv5 confirms 1,152, contradicts 20
-  (demoted) and renders the same `S` on 740. Tesseract re-read the 5,859
-  changed cells (1,881 / 949 / 3,029). The upright-crop decode ablation on the
-  levelled pages was a wash; crops stay axis-aligned.
-- **The DRB3/4/5 row prints gene names** (22,017 gene tokens vs 75 bare
-  numbers); one question per row on the page; grammar v2 waits on HA-011.
-- **The printed table is read as a grid (`ocr/lattice.py`).** The rulings the
-  geometry pass already stored place a label the recognizer could not read
-  (the form's template says where; **+2,272 cells**, 0 values swapped) and the
-  second DRB3/4/5 slot. Ink measured in that slot with the rulings removed
-  certifies ABSENT when it is paper (`drbx_ink_pass.py`: 1,826 rows → **4,540
-  genes**; 287 rows refused because their only token rests on the S-for-5
-  repair). `cell_ink_pass.py` measures the ~24,000 empty labelled cells and
-  **writes no fact**: 14.7k read as paper, but `NOT_TESTED` is HA-009's
-  per-laboratory verdict, so HA-012 asks the human. On the reviewer's labels
-  the ink measure has never called a cell paper where a value was read.
+  `--target proposals` judges a reader against the decode's proposal, and
+  `promote_proposals.py` promotes the CONFIRMED ones — never on a LOW page,
+  re-judged with admissibility, and withdrawn when a reader at least as good
+  as the licensing one disagrees (`ENGINE_RANK`). `--target drbx` reads every
+  PRESENT gene box: of 1,912 repaired `DRBS` tokens PP-OCRv5 confirms 1,152,
+  contradicts 20 (demoted) and renders the same `S` on 740. The upright-crop
+  decode ablation on the levelled pages was a wash; crops stay axis-aligned.
+- **The DRB3/4/5 row prints gene names** (22,017 vs 75 bare numbers); one
+  question per row on the page; grammar v2 waits on HA-011.
+- **The printed table is read as a grid (`ocr/lattice.py`).** The stored
+  rulings place a label the recognizer could not read (the form's template says
+  where; **+2,272 cells**, 0 values swapped) and the second DRB3/4/5 slot. Ink
+  measured in that slot certifies ABSENT when it is paper (`drbx_ink_pass.py`:
+  **4,540 genes**; 287 rows refused for resting on the S-for-5 repair).
+  `cell_ink_pass.py` measures the ~24,000 empty labelled cells and **writes no
+  fact** — 14.7k read as paper, but `NOT_TESTED` is HA-009's per-laboratory
+  verdict, so HA-012 asks the human. On the labels the ink measure has never
+  called a cell paper where a value was read.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci), 2,495
-  by a caption corroborating a weak printed field (`documents/role.py`,
-  `documents/abo.py` — the Persian words and the anchored ABO cell).
+  by a caption corroborating a weak printed field (`documents/role.py`).
 - **Accuracy is still unvalidated (KI-012); this is the binding constraint.**
   The 187-cell export scored 78 correct / 74 correct abstentions / 29 missed /
   4 contradicted / 2 partial at the start of this session and **87 / 71 / 23
@@ -76,8 +78,7 @@ becoming facts. The review page now shows the messages posted with each image.
   header v2 finds gene names PP-OCRv5 confirms. The blind golden corpus waits
   on a person.
 - **Two form facts constrain the product:** DPA1/DPB1 printed, never filled
-  (`NOT_TESTED`, HA-009); the dominant letterhead disclaims its own blood-group
-  field (KI-014).
+  (HA-009); the letterhead disclaims its own blood-group field (KI-014).
 - **The zero-fact documents are mostly not reports (KI-018):** ~170 of 4,944
   recoverable. Raw inputs are immutable; geometry determines locus, not text.
 
@@ -96,9 +97,8 @@ HA-001, HA-002, HA-010 (cloud keys, optional).
 - P0 harness repair, P1 autonomy, P2 test depth (12-step gate, invariant
   traceability, coverage ratchet 65% / medical modules 100%, PII scanner,
   bandit + gitleaks + osv-scanner, mutmut).
-- Derived local stores, all gitignored: `ocr_pass.sqlite`, `facts.sqlite`,
-  `source.sqlite`, `geometry.sqlite`, `data/review/hla_pack/`,
-  `data/review/queue.json`.
+- Derived local stores, all gitignored: `ocr_pass`, `facts`, `source`,
+  `geometry` (sqlite), `data/review/hla_pack/`, `data/review/queue.json`.
 - Committed measurements the thresholds rest on: `config/hla_first_fields.json`,
   `locus_testing_rates.json`, `locus_genotype_frequencies.json`.
 
@@ -112,8 +112,8 @@ HA-001, HA-002, HA-010 (cloud keys, optional).
    `promoted`, `ink_certified`) only when the reviewer has finished this one.
    After any refresh: decode, the three confirm targets,
    `promote_proposals.py`, `drbx_ink_pass.py`, `cell_ink_pass.py`.
-3. Agent, needs no human: MEDIA-001 and DEDUPE-001 remain the last MVP-HIST
-   tasks; then ENTITY-001. Human: HA-004 before any matching beyond the ABO gate.
+3. Agent, needs no human: MEDIA-001, DEDUPE-001, then ENTITY-001. Human:
+   HA-004 before any matching beyond the ABO gate.
 
 ## Last verified baseline
 `python scripts/verify_repo.py` → see the handoff of 2026-09-05 (third session).
