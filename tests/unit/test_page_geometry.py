@@ -174,3 +174,19 @@ def test_a_level_page_is_untouched_by_a_level_frame() -> None:
     result = restore(resolve_locus(rectified, "DRB1", FAMILY_RULE), back)
     assert result.anchor_box is LABEL
     assert result.values == ["DRB1*15", "DRB1*11"]
+
+
+def test_a_box_drawn_on_the_level_page_goes_back_to_the_stored_frame() -> None:
+    """A label placed by a form's template is computed on the level page; its
+    provenance must name the stored one, like every recognized box."""
+    from kidneymatch.ocr.geometry import unrectify_box
+
+    frame = PageFrame(theta_deg=4.0, width=1000, height=1300)
+    stored = Box(0.30, 0.40, 0.38, 0.43, "HLA-A")
+    level = frame.rectify_box(stored)
+    back = unrectify_box(frame, level)
+    assert back.centre_x == pytest.approx(stored.centre_x, abs=2e-3)
+    assert back.centre_y == pytest.approx(stored.centre_y, abs=2e-3)
+    assert back.text == "HLA-A"
+    identity = PageFrame.identity(1000, 1300)
+    assert unrectify_box(identity, stored) is stored

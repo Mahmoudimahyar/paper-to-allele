@@ -38,6 +38,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -63,15 +64,32 @@ from kidneymatch.hla.testing_policy import (  # noqa: E402
 from kidneymatch.hla.vocabulary import load_vocabulary  # noqa: E402
 from kidneymatch.ocr.anchors import (  # noqa: E402
     Box,
+    LocusResolution,
     ResolutionStatus,
     ValueRule,
+    enforce_exclusivity,
     resolve_document,
+    resolve_in_row,
 )
 from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx  # noqa: E402
-from kidneymatch.ocr.geometry import PageFrame, restore, restore_drbx  # noqa: E402
+from kidneymatch.ocr.geometry import (  # noqa: E402
+    PageFrame,
+    restore,
+    restore_drbx,
+    unrectify_box,
+)
+from kidneymatch.ocr.glyphs import canonical_locus_label  # noqa: E402
+from kidneymatch.ocr.lattice import Lattice  # noqa: E402
+from kidneymatch.ocr.lattice import lattice_for as build_lattice  # noqa: E402
+from kidneymatch.ocr.lattice import load_rulings as load_stored_rulings  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 from kidneymatch.ocr.store import read_corpus  # noqa: E402
-from kidneymatch.ocr.templates import LayoutPrototype, assign_prototype  # noqa: E402
+from kidneymatch.ocr.templates import (  # noqa: E402
+    LayoutPrototype,
+    assign_prototype,
+    constant_label_positions,
+    fit_similarity,
+)
 
 EXTRACTION_VERSION = "facts/v1"
 
@@ -199,6 +217,123 @@ def load_geometry(path: Path | None) -> dict[str, tuple[str, float]]:
 MIN_FRAME_TILT_DEG = 1.5
 
 
+def load_rulings(path: Path | None) -> dict[str, tuple[int, int, str, str]]:
+    """The stored rulings of every page under this geometry version (see `ocr.lattice`)."""
+    return load_stored_rulings(path, GEOMETRY_VERSION)
+
+
+def lattice_for(
+    document, rulings: dict[str, tuple[int, int, str, str]], frame: PageFrame | None
+) -> Lattice | None:
+    return build_lattice(document.sha256, rulings, frame)
+
+
+# A label the recognizer could not read is placed by the form's template only
+# when the page fits that template this well (a fraction of the labels'
+# spread; `assign_prototype` accepts up to 0.04) — a row off is a row wrong.
+MAX_TEMPLATE_RESIDUAL = 0.04
+# The virtual label box: the page's median label size, centred where the
+# template puts the label.
+_LABEL_SIZE_FALLBACK = (0.08, 0.025)
+
+
+def _label_size(boxes: list[Box]) -> tuple[float, float]:
+    labels = [b for b in boxes if canonical_locus_label(b.text or "")]
+    if len(labels) < 3:
+        return _LABEL_SIZE_FALLBACK
+    widths = sorted(b.x1 - b.x0 for b in labels)
+    heights = sorted(b.height for b in labels)
+    return widths[len(widths) // 2], heights[len(heights) // 2]
+
+
+def bind_in_lattice(
+    boxes: list[Box],
+    results: dict[str, LocusResolution],
+    rule: ValueRule,
+    lattice: Lattice,
+    prototype: LayoutPrototype | None,
+    vocabulary,
+    frame: PageFrame | None = None,
+    back: dict[int, Box] | None = None,
+) -> tuple[dict[str, LocusResolution], set[str]]:
+    """Second pass over the row rule's abstentions, with the printed table.
+
+    Two cases, both bound by `resolve_in_row` under every gate:
+    * "no anchor": the label glyphs were unreadable. The form's template says
+      where that label is printed; if a ruled row sits there, a virtual label
+      box is placed and the row's boxes are read. Only on a page that fits the
+      template, and the form must print the locus on its values (the family
+      rule), so a value from a wrong row names another locus and is refused.
+    * "anchor found but no box": the label was read, the overlap test found
+      nothing. The ruled row around the label is the printed cell; its boxes
+      are the candidates. Also only under the family rule: the row has no
+      distance cap, so on a form that prints bare numbers anything in the band
+      would bind.
+    A lattice reading replaces the row rule's only when it RESOLVES; anything
+    less keeps the abstention the row rule gave, so nothing is made worse.
+    Returns the results and the loci the lattice bound.
+    """
+    out = dict(results)
+    bound: set[str] = set()
+    label_w, label_h = _label_size(boxes)
+    fit = None
+    if prototype is not None and rule.require_prefix:
+        fit = fit_similarity(constant_label_positions(boxes), prototype)
+        if fit is not None and fit.residual > MAX_TEMPLATE_RESIDUAL:
+            fit = None
+    for locus, result in results.items():
+        if result.status is ResolutionStatus.RESOLVED:
+            continue
+        reason = result.reason or ""
+        if reason == "no anchor on this document":
+            if fit is None or locus not in prototype.positions:
+                continue
+            px, py = prototype.positions[locus]
+            xc, yc = (px - fit.dx) / fit.scale, (py - fit.dy) / fit.scale
+            band = lattice.row_band(xc, yc, label_h)
+            if band is None:
+                continue
+            anchor = Box(xc - label_w / 2, yc - label_h / 2, xc + label_w / 2, yc + label_h / 2, "")
+            if frame is not None and back is not None and not frame.is_identity:
+                # This box was drawn on the LEVEL page; provenance names the
+                # stored one, like every box the recognizer produced.
+                back[id(anchor)] = unrectify_box(frame, anchor)
+            placed = resolve_in_row(boxes, locus, rule, anchor, (band.top, band.bottom), vocabulary)
+            if placed.status is ResolutionStatus.RESOLVED:
+                out[locus] = replace(
+                    placed,
+                    reason=(
+                        f"label unread; placed by the form's template ({prototype.prototype_id}) "
+                        "and the ruled row" + (f"; {placed.reason}" if placed.reason else "")
+                    ),
+                )
+                bound.add(locus)
+        elif (
+            reason.startswith("anchor found but no box")
+            and result.anchor_box is not None
+            and rule.require_prefix
+        ):
+            # Only on a form measured to print the locus on every value. The
+            # ruled row has no distance cap and no overlap test, so on a form
+            # that prints bare numbers any number in the band would bind; the
+            # value's own prefix is what corroborates the row (gate 2), the
+            # same licence the virtual anchor runs under.
+            anchor = result.anchor_box
+            band = lattice.row_band(anchor.centre_x, anchor.centre_y, anchor.height)
+            if band is None:
+                continue
+            rowed = resolve_in_row(boxes, locus, rule, anchor, (band.top, band.bottom), vocabulary)
+            if rowed.status is ResolutionStatus.RESOLVED:
+                out[locus] = replace(
+                    rowed,
+                    reason="bound in the ruled row" + (f"; {rowed.reason}" if rowed.reason else ""),
+                )
+                bound.add(locus)
+    if bound:
+        out = enforce_exclusivity(out)
+    return out, bound
+
+
 def frame_for(document, geometry: dict[str, tuple[str, float]]) -> PageFrame | None:
     """The frame the row rules run in for this document, or None for identity."""
     decision, theta = geometry.get(document.sha256, ("NONE", 0.0))
@@ -269,6 +404,7 @@ def extract(
     caption_role: Role = Role.UNKNOWN,
     testing_policy: LocusTestingPolicy | None = None,
     frame: PageFrame | None = None,
+    lattice: Lattice | None = None,
 ) -> tuple[list[tuple], dict]:
     """Every fact this document yields. Pure: no I/O, so it is testable."""
     latin = document.boxes
@@ -318,10 +454,14 @@ def extract(
             )
         )
 
-    loci = {
-        locus: restore(result, back)
-        for locus, result in resolve_document(latin_level, rule, vocabulary=vocabulary).items()
-    }
+    results = resolve_document(latin_level, rule, vocabulary=vocabulary)
+    lattice_bound: set[str] = set()
+    if lattice is not None:
+        prototype = next((p for p in prototypes or [] if p.prototype_id == family), None)
+        results, lattice_bound = bind_in_lattice(
+            latin_level, results, rule, lattice, prototype, vocabulary, level, back
+        )
+    loci = {locus: restore(result, back) for locus, result in results.items()}
     for locus, result in loci.items():
         status = result.status
         reason = result.reason
@@ -353,7 +493,7 @@ def extract(
                 result.second_allele.value if status is ResolutionStatus.RESOLVED else None
             ),
             reason=reason,
-            rule_id=rule_id,
+            rule_id=rule_id + ("+lattice" if locus in lattice_bound else ""),
             anchor_box=_box(result.anchor_box),
             value_boxes=_boxes(result.value_boxes),
         )
@@ -482,6 +622,9 @@ def run(
     vocabulary = load_vocabulary()
     testing_policy = load_testing_policy()
     geometry = load_geometry(geometry_db)
+    rulings = load_rulings(geometry_db)
+    if rulings:
+        print(f"ruled grids known for {len(rulings):,} documents", flush=True)
     if geometry:
         rotate = sum(1 for decision, _ in geometry.values() if decision == "ROTATE")
         print(
@@ -546,6 +689,7 @@ def run(
             caption_roles.get(document.sha256, Role.UNKNOWN),
             testing_policy,
             frame_for(document, geometry),
+            lattice_for(document, rulings, frame_for(document, geometry)),
         )
         facts.extend(rows)
         documents.append(

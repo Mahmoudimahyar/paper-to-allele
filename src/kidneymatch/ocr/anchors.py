@@ -652,6 +652,65 @@ def _bind(
     )
 
 
+def resolve_in_row(
+    boxes: list[Box],
+    locus: str,
+    rule: ValueRule,
+    anchor: Box,
+    band: tuple[float, float],
+    vocabulary: FirstFieldVocabulary | None = None,
+) -> LocusResolution:
+    """Bind the values of one printed ROW: the space between two rulings.
+
+    The candidates are every box whose centre lies in the band, right of the
+    anchor, in reading order — the printed cell is the geometry, so there is
+    no distance cap and no overlap test to pass. Every gate then runs exactly
+    as it does for an anchored cell: a label is not a value, another label may
+    own the box, the value must parse, name this locus on a form that prints
+    the locus, and be admissible. The anchor may be a VIRTUAL box placed by the
+    form's template where a label the recognizer could not read is printed;
+    on the three known forms every value prints its locus, so a value in the
+    wrong row refuses itself (gate 2) rather than binding.
+    """
+    vocabulary = vocabulary if vocabulary is not None else load_vocabulary()
+    top, bottom = band
+    found = sorted(
+        (
+            box
+            for box in boxes
+            if box is not anchor and box.x0 > anchor.x1 and top <= box.centre_y <= bottom
+        ),
+        key=lambda box: box.x0,
+    )
+    return _bind(boxes, locus, rule, anchor, found, vocabulary)
+
+
+def enforce_exclusivity(results: dict[str, LocusResolution]) -> dict[str, LocusResolution]:
+    """Withdraw every reading that shares a value box with another locus.
+
+    One box cannot be two genes' values; when it happens both readings are
+    withdrawn rather than one being preferred. Applied by `resolve_document`
+    and again after any later binding (the ruled-row binding) adds readings.
+    """
+    owners: dict[int, list[str]] = {}
+    for locus, result in results.items():
+        if result.status is not ResolutionStatus.RESOLVED:
+            continue
+        for box in result.value_boxes:
+            owners.setdefault(id(box), []).append(locus)
+    contested = {locus for claims in owners.values() if len(claims) > 1 for locus in claims}
+    out = dict(results)
+    for locus in contested:
+        out[locus] = LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=results[locus].anchor_box,
+            value_boxes=results[locus].value_boxes,
+            reason="a value box on this document was bound by more than one locus",
+        )
+    return out
+
+
 def resolve_document(
     boxes: list[Box],
     rule: ValueRule,
@@ -673,20 +732,4 @@ def resolve_document(
         if locus not in GROUPED_DRBX_GENES
     }
 
-    owners: dict[int, list[str]] = {}
-    for locus, result in results.items():
-        if result.status is not ResolutionStatus.RESOLVED:
-            continue
-        for box in result.value_boxes:
-            owners.setdefault(id(box), []).append(locus)
-
-    contested = {locus for claims in owners.values() if len(claims) > 1 for locus in claims}
-    for locus in contested:
-        results[locus] = LocusResolution(
-            locus,
-            ResolutionStatus.REVIEW_REQUIRED,
-            anchor_box=results[locus].anchor_box,
-            value_boxes=results[locus].value_boxes,
-            reason="a value box on this document was bound by more than one locus",
-        )
-    return results
+    return enforce_exclusivity(results)

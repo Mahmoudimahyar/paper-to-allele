@@ -233,7 +233,11 @@ def main() -> int:
     for key, count in tally.items():
         print(f"  {key:<44}{count:>9,}")
     print_comparison(compare(args.facts, backup, extract_facts.EXTRACTION_VERSION))
-    print("\nnext: decode_pass.py and confirm_pass.py examine the changed cells.")
+    print(
+        "\nnext: decode_pass.py, then confirm_pass.py (--target resolved, proposals, drbx), "
+        "then promote_proposals.py, drbx_ink_pass.py and cell_ink_pass.py; "
+        "re-extraction reset what they decided."
+    )
     return 0
 
 

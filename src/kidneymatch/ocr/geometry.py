@@ -120,6 +120,30 @@ class PageFrame:
         return rectified, {id(new): old for new, old in zip(rectified, boxes, strict=True)}
 
 
+def unrectify_box(frame: PageFrame, box: Box) -> Box:
+    """A box measured on the LEVEL page, placed back on the stored one.
+
+    The inverse of the rotation `rectify_box` applies, without its
+    de-inflation: a box the pipeline drew itself on the level page (a label
+    placed by a form's template) has the printed size already, so only its
+    centre moves. Provenance must name the stored frame, whatever frame the
+    box was computed in.
+    """
+    if frame.is_identity:
+        return box
+    inverse = PageFrame(-frame.theta_deg, frame.width, frame.height)
+    cx, cy = inverse.rotate_pixel(box.centre_x * frame.width, box.centre_y * frame.height)
+    half_w = (box.x1 - box.x0) / 2
+    half_h = (box.y1 - box.y0) / 2
+    return Box(
+        cx / frame.width - half_w,
+        cy / frame.height - half_h,
+        cx / frame.width + half_w,
+        cy / frame.height + half_h,
+        box.text,
+    )
+
+
 def restore(resolution: LocusResolution, back: dict[int, Box]) -> LocusResolution:
     """The same outcome, with provenance pointing at the boxes as stored."""
     anchor = resolution.anchor_box

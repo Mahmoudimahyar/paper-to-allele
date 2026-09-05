@@ -156,3 +156,62 @@ def test_resolution_records_the_anchor_box_for_provenance() -> None:
     result = resolve([LABEL, VALUE_1])
     assert result.anchor_box == LABEL
     assert result.value_boxes == [VALUE_1]
+
+
+# --- the ruled row -----------------------------------------------------------
+
+
+def test_a_ruled_row_binds_its_boxes_without_a_distance_cap() -> None:
+    """The printed cell is the geometry: the band between two rulings, right of
+    the label, whatever the gap."""
+    from kidneymatch.ocr.anchors import resolve_in_row
+
+    far = Box(x0=0.80, y0=0.50, x1=0.86, y1=0.53, text="11")
+    result = resolve_in_row([LABEL, VALUE_1, far], "DRB1", RULE, LABEL, (0.49, 0.54))
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.values == ["15", "11"]
+
+
+def test_a_box_outside_the_band_or_left_of_the_anchor_is_not_a_candidate() -> None:
+    from kidneymatch.ocr.anchors import resolve_in_row
+
+    left = Box(x0=0.02, y0=0.50, x1=0.08, y1=0.53, text="07")
+    result = resolve_in_row([LABEL, left, OTHER_ROW], "DRB1", RULE, LABEL, (0.49, 0.54))
+    assert result.status is ResolutionStatus.REVIEW_REQUIRED
+    assert "no box" in result.reason
+
+
+def test_the_ruled_row_runs_every_gate() -> None:
+    """A label in the band is not a value; a value naming another locus on a
+    prefixed form is refused; the virtual anchor gets no special treatment."""
+    from kidneymatch.ocr.anchors import resolve_in_row
+
+    prefixed = ValueRule(
+        direction="right", align_overlap=0.2, max_gap=None, max_values=2, require_prefix=True
+    )
+    virtual = Box(x0=0.10, y0=0.50, x1=0.18, y1=0.53, text="")
+    label_in_band = Box(x0=0.40, y0=0.50, x1=0.48, y1=0.53, text="HLA-DQB1")
+    assert (
+        "locus label"
+        in resolve_in_row(
+            [virtual, VALUE_1, label_in_band], "DRB1", RULE, virtual, (0.49, 0.54)
+        ).reason
+    )
+    foreign = Box(x0=0.22, y0=0.50, x1=0.30, y1=0.53, text="DQB1*03")
+    assert (
+        "geometry and text disagree"
+        in resolve_in_row([virtual, foreign], "DRB1", prefixed, virtual, (0.49, 0.54)).reason
+    )
+
+
+def test_exclusivity_withdraws_both_claims_on_a_shared_box() -> None:
+    from kidneymatch.ocr.anchors import enforce_exclusivity
+
+    shared = Box(x0=0.22, y0=0.50, x1=0.28, y1=0.53, text="15")
+    a = LocusResolution("A", ResolutionStatus.RESOLVED, values=["15"], value_boxes=[shared])
+    b = LocusResolution("B", ResolutionStatus.RESOLVED, values=["15"], value_boxes=[shared])
+    c = LocusResolution("C", ResolutionStatus.RESOLVED, values=["07"], value_boxes=[OTHER_ROW])
+    out = enforce_exclusivity({"A": a, "B": b, "C": c})
+    assert out["A"].status is ResolutionStatus.REVIEW_REQUIRED
+    assert out["B"].status is ResolutionStatus.REVIEW_REQUIRED
+    assert out["C"] is c
