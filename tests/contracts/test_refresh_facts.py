@@ -163,3 +163,46 @@ def test_snapshot_is_a_faithful_copy(tmp_path: Path) -> None:
     b = sqlite3.connect(backup).execute("SELECT * FROM fact").fetchall()
     assert a == b
     shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_compare_reports_transitions_gains_and_the_swap_stop_signal(tmp_path: Path) -> None:
+    """A locus losing resolved cells and a value swapped between two resolved
+    readings are stop signals; a second allele gained is not."""
+    module = load()
+    before, after = tmp_path / "before.sqlite", tmp_path / "after.sqlite"
+    for path, rows in (
+        (
+            before,
+            [
+                ("d1", "A", "RESOLVED", "A*02"),
+                ("d2", "B", "RESOLVED", "B*44 B*51"),
+                ("d3", "B", "RESOLVED", "B*07"),
+                ("d4", "C", "REVIEW_REQUIRED", None),
+            ],
+        ),
+        (
+            after,
+            [
+                ("d1", "A", "RESOLVED", "A*02 A*24"),  # a second allele gained
+                ("d2", "B", "RESOLVED", "B*44 B*52"),  # SWAPPED
+                ("d3", "B", "REVIEW_REQUIRED", None),  # B loses a resolved cell
+                ("d4", "C", "RESOLVED", "C*07"),  # gained
+            ],
+        ),
+    ):
+        con = sqlite3.connect(path)
+        con.execute("CREATE TABLE fact (sha256, field, extraction_version, status, value)")
+        con.executemany("INSERT INTO fact VALUES (?,?,'facts/v1',?,?)", rows)
+        con.commit()
+        con.close()
+    report = module.compare(after, before)
+    assert report["second_alleles_gained"] == 1
+    assert report["values_swapped"] == 1
+    assert report["alleles_dropped"] == 0
+    assert report["loci_losing_resolved_cells"] == ["B"]
+    assert report["per_locus"]["C"] == {
+        "resolved_before": 0,
+        "resolved_after": 1,
+        "REVIEW_REQUIRED->RESOLVED": 1,
+    }
+    module.print_comparison(report)  # must not raise

@@ -44,6 +44,7 @@ are not the same claim:
 | tokens | emission | measured discordance against the DRB1 row |
 |---|---|---|
 | 2 | named genes PRESENT, the third ABSENT | 0.09% |
+| 2, one repaired S | named PRESENT, others REVIEW | 7 of 10 labelled "absent" genes were printed |
 | 1 | that gene PRESENT, the other two UNKNOWN | calling them ABSENT is wrong 5.90% of the time |
 | 0 | all three UNKNOWN, never ABSENT | 63.2% of empty rows have a DRB1 that expects a gene |
 | >2 | all three REVIEW_REQUIRED | never truncate to the first two |
@@ -76,15 +77,24 @@ GENES = ("DRB3", "DRB4", "DRB5")
 
 # The header. Case-sensitive on purpose: lowercase `s`/`a` are not in the
 # measured confusion set for this cell, and ignoring case would widen the accept
-# surface for nothing. The three digits 3, 4 and [5S] in that order are
-# mandatory — they ARE the printed enumeration that licenses reading a gene name
-# from the row.
+# surface for nothing. The digits 3 and [5S] in that order are mandatory, and
+# the 4 too unless an HLA prefix and a slash-misread letter stand in for it —
+# they ARE the printed enumeration that licenses reading a gene name from the
+# row. v2 (2026-09-05): measured on the 9,648 documents without a recognised
+# header, the B slot reads R (88), E (29), $ (38), H (14) or D (12) and the
+# slashes read as 1 (98); 605 documents gain a header, 505 of them with a gene
+# token then on the band. `glyphs._GROUPED_DRBX` mirrors this pattern.
 GROUPED_DRBX_HEADER = re.compile(
     r"^[\s\-–—.,:;'\"]*"  # leading punctuation and crop noise
-    r"(?:[HI]{0,3}L?A[\s\-–—]*)?"  # HLA- and its misreads: ILA, IILA, HILA, LA, A
-    r"DR[B8]\s*"  # B is read as 8
-    r"3[\s/,.\-\\|'\"AMUV]*"  # separator; `/` is read as A M U V
-    r"4[\s/,.\-\\|'\"AMUV]*"
+    r"(?P<hla>[HI]{0,3}L?A[\s\-–—]*)?"  # HLA- and its misreads: ILA, IILA, HILA, LA, A
+    r"DR[B8RE$HD]\s*"  # B is read as 8, R, E, $, H, D — the stem's own letters never
+    r"3"
+    # The printed 4 with its separators (`/` is read as A M U V, and as 1) —
+    # or, behind an HLA prefix only, a slash-misread letter standing where the
+    # 4 was: `HLA-DRB3AS`, `HLA-DRB3A/S` (99 documents). Without the prefix a
+    # 4-less token is refused: `DRB3/5` is a pair of gene names on the row.
+    r"(?:[\s/,.\-\\|'\"AMUV1]*4[\s/,.\-\\|'\"AMUV1]*"
+    r"|(?(hla)[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV1]*|(?!)))"
     r"[5S]"  # the final 5 read as S
     r"[\s*:;.,)\-]*$"
 )
@@ -323,11 +333,25 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
     # Both haplotype slots are only accounted for when two tokens were read.
     # With one, the second column is far more often unread than empty.
     others = GeneCall.ABSENT if len(named) == 2 else GeneCall.UNKNOWN
+    others_status = ResolutionStatus.RESOLVED if len(named) == 2 else ResolutionStatus.UNKNOWN
     others_reason = (
         "both haplotypes accounted for by two gene tokens"
         if len(named) == 2
         else "only one gene token read; the second column is unread or empty"
     )
+    if len(named) == 2 and any(repaired for _, _, repaired in named):
+        # A slot that rests on the S-for-5 repair does not account for a
+        # haplotype. The repair names DRB5 reliably (5 of 6 labelled PRESENT
+        # calls stood), but an S is also how a final 3 reads: on the labelled
+        # pack the reviewer found a gene printed that such a row had called
+        # ABSENT on 7 of 10 cells — `DRBS DRBS` was `DRB3 DRB5`, `DRBS/S` was
+        # `DRB3/5`. The named genes stay PRESENT; the others are a question.
+        others = GeneCall.UNKNOWN
+        others_status = ResolutionStatus.REVIEW_REQUIRED
+        others_reason = (
+            "a slot on this row rests on an S read as 5; the other genes' absence "
+            "is not certified (7 of 10 such labelled cells printed the gene)"
+        )
 
     facts: dict[str, DrbxFact] = {}
     for gene, box, repaired in named:
@@ -352,11 +376,7 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             facts[gene] = DrbxFact(
                 gene=gene,
                 call=others,
-                status=(
-                    ResolutionStatus.RESOLVED
-                    if others is GeneCall.ABSENT
-                    else ResolutionStatus.UNKNOWN
-                ),
+                status=others_status,
                 header_box=header,
                 tokens_on_row=len(named),
                 reason=others_reason,

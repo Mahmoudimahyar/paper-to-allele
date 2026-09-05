@@ -105,6 +105,85 @@ def reconcile(facts: Path, backup: Path, extraction_version: str = "facts/v1") -
     return tally
 
 
+HLA_FIELDS = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1", "DRB3", "DRB4", "DRB5")
+
+
+def compare(facts: Path, backup: Path, extraction_version: str = "facts/v1") -> dict[str, object]:
+    """The refreshed facts against the snapshot, per locus. Counts only.
+
+    This is part of the procedure, not an afterthought: on 2026-09-05 a label
+    change made the letterhead's `LAB` an HLA-B anchor, the totals looked
+    plausible, and only this comparison showed B falling from 11,774 to 2,039
+    resolved cells on "2 anchors found". A locus whose resolved count falls,
+    and any value SWAPPED between two resolved readings, are stop signals.
+    """
+    con = sqlite3.connect(facts)
+    con.execute("ATTACH DATABASE ? AS before", (str(backup),))
+    marks = ",".join("?" * len(HLA_FIELDS))
+    per_locus: dict[str, dict[str, int]] = {}
+    for field, old, new, count in con.execute(
+        "SELECT n.field, o.status, n.status, COUNT(*) FROM main.fact n "
+        "JOIN before.fact o ON o.sha256=n.sha256 AND o.field=n.field "
+        "AND o.extraction_version=n.extraction_version "
+        f"WHERE n.field IN ({marks}) AND n.extraction_version=? GROUP BY 1, 2, 3",
+        (*HLA_FIELDS, extraction_version),
+    ):
+        row = per_locus.setdefault(field, {"resolved_before": 0, "resolved_after": 0})
+        if old == "RESOLVED":
+            row["resolved_before"] += count
+        if new == "RESOLVED":
+            row["resolved_after"] += count
+        if old != new:
+            row[f"{old}->{new}"] = row.get(f"{old}->{new}", 0) + count
+    swapped = gained = dropped = 0
+    for old_value, new_value in con.execute(
+        "SELECT o.value, n.value FROM main.fact n "
+        "JOIN before.fact o ON o.sha256=n.sha256 AND o.field=n.field "
+        "AND o.extraction_version=n.extraction_version "
+        f"WHERE n.field IN ({marks}) AND n.extraction_version=? "
+        "AND o.status='RESOLVED' AND n.status='RESOLVED' AND o.value != n.value",
+        (*HLA_FIELDS, extraction_version),
+    ):
+        a, b = (old_value or "").split(), (new_value or "").split()
+        if set(a) <= set(b) and len(b) > len(a):
+            gained += 1
+        elif set(b) <= set(a) and len(a) > len(b):
+            dropped += 1
+        else:
+            swapped += 1
+    con.close()
+    return {
+        "per_locus": per_locus,
+        "second_alleles_gained": gained,
+        "alleles_dropped": dropped,
+        "values_swapped": swapped,
+        "loci_losing_resolved_cells": sorted(
+            f for f, row in per_locus.items() if row["resolved_after"] < row["resolved_before"]
+        ),
+    }
+
+
+def print_comparison(report: dict[str, object]) -> None:
+    print("\ncompared with the snapshot, per locus (RESOLVED before -> after):")
+    for field, row in sorted(report["per_locus"].items()):  # type: ignore[union-attr]
+        moves = ", ".join(
+            f"{k} {v:,}" for k, v in sorted(row.items(), key=lambda kv: -kv[1]) if "->" in k
+        )
+        print(f"  {field:<5}{row['resolved_before']:>9,} -> {row['resolved_after']:>9,}   {moves}")
+    print(
+        f"  among cells resolved both times: {report['second_alleles_gained']:,} second alleles "
+        f"gained, {report['alleles_dropped']:,} dropped, {report['values_swapped']:,} SWAPPED"
+    )
+    losing = report["loci_losing_resolved_cells"]
+    if losing or report["values_swapped"]:
+        print(
+            "  STOP SIGNAL: "
+            + (f"resolved cells fell on {', '.join(losing)}; " if losing else "")
+            + (f"{report['values_swapped']:,} values swapped; " if report["values_swapped"] else "")
+            + "explain each before any pass or promotion runs"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
@@ -153,6 +232,7 @@ def main() -> int:
     print("\nreconciled against the snapshot:")
     for key, count in tally.items():
         print(f"  {key:<44}{count:>9,}")
+    print_comparison(compare(args.facts, backup, extract_facts.EXTRACTION_VERSION))
     print("\nnext: decode_pass.py and confirm_pass.py examine the changed cells.")
     return 0
 

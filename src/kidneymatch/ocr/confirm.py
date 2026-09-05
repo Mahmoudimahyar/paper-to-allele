@@ -111,3 +111,34 @@ def confirm_value(
     return (
         Confirmation.CONFIRMED if sorted(ours) == sorted(confirmed) else Confirmation.CONTRADICTED
     )
+
+
+# A gene NAME on the DRB3/4/5 presence row, as the second engine renders it.
+# The stem is optional (it is the crop of one gene box); every gene digit that
+# stands alone counts, because a pair printed in one box (`DRB3/4`, 333
+# documents) names two genes and both facts share that box; a standalone `S`
+# is the same ambiguity the primary repaired (`DRBS`, `drbx.py`) and is no
+# opinion, never a confirmation of the repair it was meant to check.
+_GENE_STEM = re.compile(r"(?:HLA[\s\-]*)?D\s*R\s*[B8]?", re.IGNORECASE)
+_GENE_DIGIT = re.compile(r"(?<![0-9])([345])(?![0-9])")
+_GENE_S = re.compile(r"(?<![0-9A-Z])S(?![0-9A-Z])", re.IGNORECASE)
+
+
+def confirm_gene(gene: str, confirmer_reading: str) -> Confirmation:
+    """Does the independent engine read this gene's name in the box?
+
+    `gene` is `DRB3`, `DRB4` or `DRB5` as the primary pipeline bound it from
+    the grouped row; the locus is not in question, only which of the three
+    printed names the box holds. Why this exists: the primary's `DRBS` is
+    repaired to DRB5, and on the labelled pack an S was also how a printed
+    3 read (7 of 10 rows that called a gene ABSENT beside a repaired token had
+    it printed). A second model reading the same crop is the check the repair
+    never had — so a reading that itself says `S` is no check at all.
+    """
+    text = _GENE_STEM.sub(" ", (confirmer_reading or "").strip())
+    if _GENE_S.search(text):
+        return Confirmation.UNCONFIRMED
+    digits = set(_GENE_DIGIT.findall(text))
+    if gene[-1] in digits:
+        return Confirmation.CONFIRMED
+    return Confirmation.CONTRADICTED if digits else Confirmation.UNCONFIRMED

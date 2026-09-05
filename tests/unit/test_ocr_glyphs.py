@@ -8,7 +8,8 @@ most of the corpus's anchors and made locus resolution look impossible.
 But a repair that changes which GENE a label names is the most dangerous string
 operation in this project. These tests fix the boundary:
 
-* **Accepting an anchor is strict.** Only the FINAL character is repaired, only
+* **Accepting an anchor is strict.** The FINAL character is repaired, plus one
+interior confusion (Q as O), only
   `1`-like glyphs to `1` and `S` to `5`. Interior damage (`DRRI` for `DRB1`,
   where `B` was read `R`) is refused: measured, interior repair would add ~1%
   more anchors, and it is the only mechanism by which `DRB1` could become
@@ -72,12 +73,82 @@ def test_a_damaged_final_character_is_repaired(token: str, expected: str) -> Non
     ],
 )
 def test_interior_damage_is_refused_not_guessed(token: str) -> None:
-    """Repairing the interior is how `DRB1` becomes `DPB1`.
+    """Repairing `R` or `P` is how `DRB1` becomes `DPB1`.
 
-    Measured on the corpus, interior repair would add roughly 1% more anchors.
-    That is not worth a mechanism that can silently rename a gene.
+    The one interior repair made (`Q` read as `O`, below) cannot reach a locus
+    that prints an R or a P in that position; these stay refused.
     """
     assert canonical_locus_label(token) is None
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        # Q read as O/0 in the second position. Measured: 774 refused `DOB…`
+        # values sat under a DQB1 anchor against 1 under DRB1; the 2,410
+        # documents printing `DOBI` carry a DRB1 anchor 87% of the time and a
+        # DQB1 anchor 4.6%. 3,101 documents gain their DQB1 anchor.
+        ("HLA-DOBI", "DQB1"),  # 2,150 boxes
+        ("DOBI", "DQB1"),  # 261
+        ("HLA-DOB1", "DQB1"),
+        ("HLA-D0B1", "DQB1"),
+        ("HLA-DOAI", "DQA1"),  # 805
+        ("HLA-DOAT", "DQA1"),  # 118
+        ("HLADOAI", "DQA1"),
+        # punctuation after the name
+        ("HLA-DRB1*:", "DRB1"),  # 277
+        ('HLA-DQB1":', "DQB1"),  # 307
+        ("HLA-A*:", "A"),  # 513
+        ("HLA-B:", "B"),  # 261
+        ("HLA-C':", "C"),
+        ("DPBI:", "DPB1"),
+        ("HLA-DRBI*:", "DRB1"),
+        # the recognizer's renderings of the prefix
+        ("IILA-DRB1", "DRB1"),
+        ("ILA-DQB1", "DQB1"),
+        ("LA-B", "B"),
+    ],
+)
+def test_the_measured_label_spellings_of_2026_09_05_are_anchors(token: str, expected: str) -> None:
+    assert canonical_locus_label(token) == expected
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "DRB1*",
+        "DQB1*",
+        "DRB3*",
+        "DRBS*",
+        'DRB1"',  # the star rendered as a quote is still a star
+        "DQB1'",
+        'DRBS"',
+        "DOB",
+        "HLA-DOB",
+        "HLA-DQ81",
+        "A-B",
+        "LAB",
+        "LAB.",
+        "LAA",
+    ],
+)
+def test_a_star_without_the_prefix_and_a_short_stem_stay_refused(token: str) -> None:
+    """`DRB1*` on its own is as likely a value whose digits were not read: a
+    value stub must never anchor. `DOB` names nothing; `DQ81` has no geometry
+    evidence behind an 8-for-B repair; `A-` is not the HLA prefix, and neither
+    is the `LA` of the letterhead's `LAB` — measured, that one made 9,817 B
+    cells "2 anchors found" before it was caught."""
+    assert canonical_locus_label(token) is None
+
+
+def test_a_value_whose_prefix_reads_DOB_names_DQB1() -> None:
+    value = parse_allele_value("DOBI*02")
+    assert value is not None
+    assert value.locus_prefix == "DQB1"
+    assert value.repaired is True
+    starless = parse_allele_value("DOB102")
+    assert starless is not None and starless.locus_prefix == "DQB1"
+    assert starless.first_field == "02"
 
 
 @pytest.mark.parametrize("token", ["DRB1*11", "DRB1*11:01", "DQB1*03", "*11", "11"])
@@ -127,27 +198,11 @@ def test_every_canonical_locus_name_survives_a_round_trip(locus: str) -> None:
 def test_the_set_of_gene_renaming_repairs_is_exactly_the_accepted_one() -> None:
     """The safety property the whole design rests on, stated honestly.
 
-    For `DQA`, `DQB`, `DPA` and `DPB` only one gene exists, so the final
-    character carries no gene information and repairing it cannot rename
-    anything. For `DRB` the final character IS the gene, so every repair there
-    is a potential rename, and the module docstring used to deny this.
-
-    Sweeping every single-character mutation over printable ASCII finds exactly
-    30 renames, all within the DRB family and all of the form "a letter the
-    repair table maps to `1` or `5`". They are accepted with evidence:
-
-    * `I/i/l/L/T/t/!/|` to `1`: the likelihood ratio for a printed `1` over a
-      printed `3` reading as `I` is about 891, giving P(DRB1 | "DRBI") ~ 99.90%,
-      with 368 of 368 same-column geometry checks consistent. `DRBI` outnumbers
-      `DRB1` 3.5 to 1, so refusing it would cost 12,679 anchors.
-    * `S/s` to `5`: measured against the independently-read DRB1 row, standalone
-      `DRBS` matches a genotype expecting DRB5 in 99.2% of 1,020 cases against
-      17.7% for DRB3 (ADR 0008).
-
-    The residual risk is a printed `3`, `4` or `5` misread as one of those
-    letters, measured at roughly 0.09% for `3` to `I`. This test pins the set so
-    that adding any new substitution has to confront the list rather than
-    quietly widening it.
+    Every single-glyph damage of every class II name is swept, and the set of
+    (printed, canonicalised) pairs where the result is ANOTHER gene is pinned
+    here in full: the six final-character renames inside the DRB family, and
+    the three crossings the Q-as-O interior repair makes. Widening this set
+    is a decision about patients' genes and must be made in the open.
     """
     canonical_names = {name.upper() for name in CLASS_II_LOCI}
     renames = set()
@@ -170,20 +225,33 @@ def test_the_set_of_gene_renaming_repairs_is_exactly_the_accepted_one() -> None:
         ("DRB4", "DRB1"),
         ("DRB4", "DRB5"),
         ("DRB5", "DRB1"),
+        # `DOB1`: an R read as O is not a measured confusion, a Q read as O is;
+        # 774 refused `DOB…` values sat under DQB1 anchors against 1 under DRB1.
+        ("DRB1", "DQB1"),
+        ("DPB1", "DQB1"),
+        ("DPA1", "DQA1"),
     }, "a repair renames a gene in a way this test has not accepted"
 
 
 def test_no_repair_renames_a_gene_outside_the_DRB_family() -> None:
-    """The stems with only one gene can never be renamed by a repair."""
+    """The stems with only one gene are renamed by exactly one repair: a P read
+    as O in the second position lands on the Q locus. Nothing else may."""
     single_gene = {"DQA1", "DQB1", "DPA1", "DPB1"}
     canonical_names = {name.upper() for name in CLASS_II_LOCI}
+    # The one accepted crossing: a P read as O in the second position lands on
+    # the Q locus (`DOB1`, `DOA1`), because O is a measured misread of Q and
+    # not of P — 76 refused `DOA…` values sat under DQA1 anchors against 2
+    # under DPA1. Nothing else may cross.
+    accepted = {("DPA1", "DQA1"), ("DPB1", "DQB1")}
     for locus in sorted(single_gene):
         for position in range(len(locus)):
             for glyph in (chr(code) for code in range(33, 127)):
                 damaged = locus[:position] + glyph + locus[position + 1 :]
                 if damaged == locus or damaged.upper() in canonical_names:
                     continue
-                assert canonical_locus_label(damaged) in (locus, None), damaged
+                result = canonical_locus_label(damaged)
+                if result not in (locus, None):
+                    assert (locus, result) in accepted and position == 1 and glyph in "Oo0", damaged
 
 
 # --- the permissive side: rejecting a value ------------------------------

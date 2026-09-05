@@ -266,12 +266,25 @@ def test_the_calibrated_constants_are_pinned_at_their_boundaries() -> None:
     # straight below 0.5 deg
     assert decide(rulings(0.4), sweep(0.4)).decision is GeometryDecision.STRAIGHT
     assert decide(rulings(0.6), sweep(0.6)).decision is GeometryDecision.ROTATE
-    # the two estimators within 1 deg
-    assert decide(rulings(5.0), sweep(5.9)).decision is GeometryDecision.ROTATE
-    assert decide(rulings(5.0), sweep(6.2)).decision is GeometryDecision.UNCERTAIN
+    # the sweep corroborates the rulings within 2 deg (v3; 1 deg refused
+    # 1,231 pages whose sweep still vouched for the sign and size of the tilt)
+    assert decide(rulings(5.0), sweep(6.9)).decision is GeometryDecision.ROTATE
+    assert decide(rulings(5.0), sweep(7.2)).decision is GeometryDecision.UNCERTAIN
+    # and the rotation applied is the rulings', never the sweep's
+    assert decide(rulings(5.0), sweep(6.9)).theta_deg == 5.0
     # the sweep's confidence floor of 3
     assert decide(rulings(5.0), sweep(5.0, ratio=3.0)).decision is GeometryDecision.ROTATE
     assert decide(rulings(5.0), sweep(5.0, ratio=2.9)).decision is GeometryDecision.UNCERTAIN
+    # the rulings' own agreement floor of 0.7 (calibrated on the v2 corpus rows:
+    # 0.8 within 1 deg refused 6,772 pages already measured to a MAD under 1.5)
+    assert (
+        decide(replace(rulings(5.0), agreement_fraction=0.71), sweep(5.0)).decision
+        is GeometryDecision.ROTATE
+    )
+    assert (
+        decide(replace(rulings(5.0), agreement_fraction=0.69), sweep(5.0)).decision
+        is GeometryDecision.UNCERTAIN
+    )
 
 
 def test_the_perspective_flag_itself_never_vetoes() -> None:
@@ -371,3 +384,33 @@ def test_rotation_matrix_and_rotate_image_share_one_transform() -> None:
     found = (float(xs.mean()), float(ys.mean()))
     expected = matrix @ np.array([650.0, 150.0, 1.0])
     assert math.dist(found, (float(expected[0]), float(expected[1]))) < 1.5
+
+
+def two_grids_page(second_angle: float, second_lines: int = 5) -> Image.Image:
+    """Ten level rulings and `second_lines` rulings tilted by `second_angle`:
+    a page carrying a second grid, as a frame or a stamp does."""
+    image = Image.new("L", (1000, 1300), 255)
+    draw = ImageDraw.Draw(image)
+    for i in range(10):
+        y = 200 + i * 60
+        draw.line([(100, y), (900, y)], fill=0, width=3)
+    for i in range(second_lines):
+        y = 900 + i * 50
+        dy = math.tan(math.radians(second_angle)) * 800
+        draw.line([(100, y + dy / 2), (900, y - dy / 2)], fill=0, width=3)
+    return image
+
+
+def test_the_agreement_window_is_pinned_on_a_real_second_grid() -> None:
+    """`AGREEMENT_DEG` is read by `detect_rulings`, not `decide`, so only an
+    image can pin it: five of fifteen rulings 2.5 deg off the median sit inside
+    the 3 deg window (agreement 1.0) and the page is judged; at 4 deg they sit
+    outside it (agreement 0.67, under the 0.7 floor) and the page is refused as
+    two grids, whatever the sweep says."""
+    inside = page_geometry(gray(two_grids_page(2.5)))
+    assert inside.rulings.agreement_fraction is not None
+    assert inside.rulings.agreement_fraction >= 0.9
+    assert "agree with the median" not in inside.reason
+    outside = page_geometry(gray(two_grids_page(4.0)))
+    assert outside.decision is GeometryDecision.UNCERTAIN
+    assert "agree with the median" in outside.reason

@@ -327,3 +327,135 @@ def test_no_header_at_all_is_still_unknown_not_review() -> None:
     """A form that types these genes as three standalone rows is not a failure."""
     facts = resolve_grouped_drbx([at(0.40, "DRB3")])
     assert all(f.status is ResolutionStatus.UNKNOWN for f in facts.values())
+
+
+# --- header v2: the B slot's misreads and the slash read as 1 ----------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "HLA-DRR3/4/5",  # 88 documents without a v1 header
+        "DR$3/4/5",  # 38
+        "DRE3/4/5",  # 29
+        "HLA-DRH3/4/5",  # 14
+        "IILA-DRD3/4/S",  # 12
+        "HLA-DRB3145",  # 46 — the slashes read as 1
+        "HLA-DRB314/5",  # 26
+        "HLA-DRB3/415",  # 26
+        "HLA-DRB3AS",  # 60 — the 4 lost, a slash-misread letter in its place
+        "HLA-DRB3A/S",  # 28
+        "HLA-DRB3AUS",  # 11
+    ],
+)
+def test_the_v2_header_spellings_are_recognised(text: str) -> None:
+    """Measured on the 9,648 documents without a v1 header: 605 gain one."""
+    header = Box(x0=0.10, y0=0.50, x1=0.24, y1=0.53, text=text)
+    assert calls([header, at(0.40, "DRB3"), at(0.70, "DRB4")])["DRB3"] is GeneCall.PRESENT
+
+
+@pytest.mark.parametrize("text", ["DRB3/5", "HLA-DRB3/5", "DRB3AS", "DRB35", "DR3/4/5", "DRB3/4"])
+def test_a_four_less_token_is_a_pair_or_nothing_never_a_header(text: str) -> None:
+    """`DRB3/5` names two genes on the row. Reading it as a header would make
+    a second header of it and refuse the whole row; without the HLA prefix
+    and a slash-misread letter standing in for the 4, no 4-less token is one."""
+    from kidneymatch.ocr.drbx import GROUPED_DRBX_HEADER
+
+    assert GROUPED_DRBX_HEADER.match(text) is None
+
+
+def test_the_pair_token_on_a_v2_header_row_still_names_both_genes() -> None:
+    header = Box(x0=0.10, y0=0.50, x1=0.24, y1=0.53, text="HLA-DRR3/4/5")
+    assert calls([header, at(0.40, "DRB3/5")]) == {
+        "DRB3": GeneCall.PRESENT,
+        "DRB4": GeneCall.ABSENT,
+        "DRB5": GeneCall.PRESENT,
+    }
+
+
+def test_glyphs_and_drbx_agree_on_what_a_grouped_header_is() -> None:
+    """Two copies of one pattern: `glyphs` refuses the header as a locus label
+    and recognises it as label-shaped; `drbx` reads the row. They must agree
+    on every measured spelling, or a header could anchor a locus."""
+    from kidneymatch.ocr.drbx import GROUPED_DRBX_HEADER
+    from kidneymatch.ocr.glyphs import _GROUPED_DRBX, canonical_locus_label
+
+    spellings = [
+        "HLA-DRB3/4/5",
+        "DRB3/4/5",
+        "HLA-DRB3/45",
+        "HLA-DRB3/4/S",
+        "HLA-DRB345",
+        "-DRB3/4/5",
+        "HLA-DRB34/5",
+        "DRB3,4,5",
+        "HLA-DR83/4/5",
+        "HLA-DRR3/4/5",
+        "DR$3/4/5",
+        "DRE3/4/5",
+        "HLA-DRB3145",
+        "HLA-DRB3AS",
+        "HLA-DRB3A/S",
+        "DRB3/5",
+        "HLA-DRB3/5",
+        "DRB3/4",
+        "DR345",
+        "DRB3",
+        "DRBS",
+        "DRB1",
+        "HLA-DRB1",
+    ]
+    assert GROUPED_DRBX_HEADER.pattern == _GROUPED_DRBX.pattern, (
+        "the two copies of the grouped-header pattern have diverged"
+    )
+    for text in spellings:
+        assert bool(GROUPED_DRBX_HEADER.match(text)) == bool(_GROUPED_DRBX.match(text)), text
+        if GROUPED_DRBX_HEADER.match(text):
+            assert canonical_locus_label(text) is None, text
+
+
+# --- a slot that rests on the S-for-5 repair certifies no absence ------------
+
+
+def test_two_tokens_both_read_DRBS_leave_the_other_genes_a_question() -> None:
+    """Labelled: `DRBS DRBS` was the printed `DRB3 DRB5`. DRB5 stands, repaired;
+    DRB3 and DRB4 are neither PRESENT nor ABSENT, and a human looks."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRBS"), at(0.70, "DRBS")])
+    assert facts["DRB5"].call is GeneCall.PRESENT
+    assert facts["DRB5"].status is ResolutionStatus.RESOLVED
+    assert facts["DRB5"].repaired is True
+    for gene in ("DRB3", "DRB4"):
+        assert facts[gene].call is GeneCall.UNKNOWN
+        assert facts[gene].status is ResolutionStatus.REVIEW_REQUIRED
+        assert "S read as 5" in facts[gene].reason
+
+
+def test_one_repaired_token_beside_a_clean_one_certifies_no_absence_either() -> None:
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3"), at(0.70, "DRBS")])
+    assert facts["DRB3"].call is GeneCall.PRESENT
+    assert facts["DRB5"].call is GeneCall.PRESENT and facts["DRB5"].repaired
+    assert facts["DRB4"].call is GeneCall.UNKNOWN
+    assert facts["DRB4"].status is ResolutionStatus.REVIEW_REQUIRED
+
+
+def test_a_pair_token_read_DRBS_S_is_the_same_question() -> None:
+    """Labelled: `DRBS/S` was the printed `DRB3/5`."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRBS/S")])
+    assert facts["DRB5"].call is GeneCall.PRESENT
+    assert facts["DRB3"].status is ResolutionStatus.REVIEW_REQUIRED
+    assert facts["DRB4"].status is ResolutionStatus.REVIEW_REQUIRED
+
+
+def test_two_clean_tokens_still_certify_the_third_gene_absent() -> None:
+    """3,761 rows print the same clean gene twice and 4,073 two different ones;
+    no labelled evidence contradicts their ABSENT calls, and they stand."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3"), at(0.70, "DRB3")])
+    assert facts["DRB3"].call is GeneCall.PRESENT
+    assert (
+        facts["DRB4"].call is GeneCall.ABSENT and facts["DRB4"].status is ResolutionStatus.RESOLVED
+    )
+    assert facts["DRB5"].call is GeneCall.ABSENT
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3"), at(0.70, "DRB4")])
+    assert (
+        facts["DRB5"].call is GeneCall.ABSENT and facts["DRB5"].status is ResolutionStatus.RESOLVED
+    )

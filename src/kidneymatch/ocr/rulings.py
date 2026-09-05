@@ -81,12 +81,27 @@ FAMILY_TOLERANCE = 20.0
 MIN_RULINGS = 6
 MAX_MAD_DEG = 1.5
 STRAIGHT_BELOW_DEG = 0.5
-AGREEMENT_DEG = 1.0
+# A ruling agrees with the median of its family within this; the agreement
+# fraction below is the share that do. Calibrated on the v2 corpus rows: at
+# 1 degree and a floor of 0.8 the check refused 6,772 of the 19,695 pages the
+# rulings had already measured to a MAD under 1.5 (a hand-held photograph
+# spreads its rulings over 1-3 degrees by perspective and curl); at 3 degrees
+# and 0.7 it refuses 88 of them and 969 of the UNCERTAIN pages, which is the
+# bimodal case it exists for: a second grid several degrees away holding at
+# least a third of the rulings.
+AGREEMENT_DEG = 3.0
+# How far the projection sweep may sit from the rulings and still corroborate
+# them. The sweep reads text lines and is the coarser instrument; the rulings
+# are the measurement. Measured corpus-wide at 1 degree, 1,595 pages were
+# refused as "estimators disagree" and 1,231 of them disagreed by less than
+# 2 — the sweep still vouching for the sign and the size of the tilt. The
+# rulings' own scatter and agreement checks guard the rest.
+SWEEP_AGREEMENT_DEG = 2.0
 # At least this share of the horizontal rulings must sit within AGREEMENT_DEG
 # of their median: the MAD is zero whenever one grid holds a majority, and a
 # frame edge or a second form holding the other 40% must not be rotated by
 # the majority's angle.
-MIN_AGREEMENT = 0.8
+MIN_AGREEMENT = 0.7
 # A page whose vertical family outnumbers its horizontal one this many times
 # over (with at least a dozen of them) has its rows standing up: sideways.
 SIDEWAYS_RATIO = 3
@@ -113,8 +128,9 @@ SWEEP_FLOOR_DEG = 0.01
 # The version every stored decision is keyed by. Bump it when the estimators
 # or the decision rule change; old rows stay. v2: the scatter bound calibrated
 # on real photographs (1.5 deg) and the vertical family demoted from a veto to
-# the perspective flag.
-GEOMETRY_VERSION = "rulings/v2+lsd+sweep"
+# the perspective flag. v3: the sweep corroborates within 2 deg (was 1), and
+# the rulings' own agreement check is calibrated on photographs (3 deg, 0.7).
+GEOMETRY_VERSION = "rulings/v3+lsd+sweep"
 
 
 class GeometryDecision(StrEnum):
@@ -522,7 +538,7 @@ def decide(rulings: RulingEstimate, sweep: SweepEstimate | None) -> PageGeometry
             "no independent estimate corroborates the rulings; "
             "a page is never rotated on one opinion",
         )
-    if abs(sweep.theta_deg - theta) > AGREEMENT_DEG:
+    if abs(sweep.theta_deg - theta) > SWEEP_AGREEMENT_DEG:
         return PageGeometry(
             GeometryDecision.UNCERTAIN,
             0.0,

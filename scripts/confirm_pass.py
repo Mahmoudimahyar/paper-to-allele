@@ -18,6 +18,29 @@ auto-accept set; `CONTRADICTED` is the review budget; `UNCONFIRMED` means the
 confirmer had no usable opinion and the value stands on the primary engine
 alone.
 
+## Three targets (2026-09-05)
+
+`--target resolved` (the default) reads every resolved HLA cell, as above.
+
+`--target proposals` reads the cells the resolver REFUSED for value shape and
+the constrained decode (`decode_pass.py`) then read cleanly on all nine offsets
+— a PROPOSAL. The primary recognizer's greedy text did not parse; the decode's
+grammar-constrained reading is a value, but a constrained decode turns ANY
+crop into a valid allele, so on its own it is never a fact. Here the second
+engine reads the same crop and is judged against the proposal instead of the
+stored value; a CONFIRMED verdict is what `promote_proposals.py` requires.
+Stored under `<engine>@proposal` so `--rescore` never compares it to the fact.
+
+`--target drbx` reads the gene NAME boxes of the DRB3/4/5 presence row and
+judges which of the three printed names the box holds (`confirm_gene`). The
+primary's `DRBS` is repaired to DRB5 on measured evidence, and the labelled
+pack showed the residual is real; this is the check the repair never had.
+Stored under `<engine>@drbx`. A PRESENT call that rests on the repair and is
+CONTRADICTED here is demoted to REVIEW_REQUIRED by the same run (the two
+labelled cases were exactly that: 21 of 1,912 repaired tokens corpus-wide);
+a contradicted call on a clean token stays RESOLVED and is the review budget,
+as for every other cell.
+
 Needs Tesseract on PATH or at the default Windows install location.
 
 Output is PHI and lands in gitignored `data/derived/facts.sqlite`.
@@ -41,7 +64,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from kidneymatch.hla.vocabulary import load_vocabulary  # noqa: E402
-from kidneymatch.ocr.confirm import Confirmation, confirm_value  # noqa: E402
+from kidneymatch.ocr.confirm import Confirmation, confirm_gene, confirm_value  # noqa: E402
 
 CONFIRMER_VERSION = "tesseract5/psm7-alnum"
 
@@ -67,6 +90,11 @@ ENGINES = {
 WHITELIST = string.digits + ":*ABCDPQRW"
 
 LOCI = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
+DRBX = ("DRB3", "DRB4", "DRB5")
+
+# What a pass reads, and the suffix that keeps its verdicts apart from the
+# resolved-cell verdicts under the same engine.
+TARGETS = {"resolved": "", "proposals": "@proposal", "drbx": "@drbx"}
 
 # Padding around the cell, as a fraction of the page. Measured: 10-30 px of
 # white padding made Tesseract WORSE (agreement 84% to 68-70%), so this is
@@ -167,6 +195,98 @@ def build_ppocr_reader():  # type: ignore[no-untyped-def]
     return read
 
 
+def select_work(con: sqlite3.Connection, target: str) -> list[tuple[str, str, str, str, str]]:
+    """(sha256, field, the value to judge against, value boxes, image path)."""
+    if target == "resolved":
+        placeholders = ",".join("?" * len(LOCI))
+        return con.execute(
+            "SELECT f.sha256, f.field, f.value, f.value_boxes, d.rel_path "
+            "FROM fact f JOIN document d ON d.sha256 = f.sha256 "
+            f"WHERE f.status='RESOLVED' AND f.field IN ({placeholders}) "
+            "AND f.value_boxes IS NOT NULL ORDER BY f.sha256, f.field",
+            LOCI,
+        ).fetchall()
+    if target == "proposals":
+        # The value judged is the DECODE's reading, never the fact's (the fact
+        # has none: the resolver refused the cell for value shape). Only the
+        # axis-aligned decoder's proposals, and only on cells refused for
+        # shape — a cell held for a star-less value on an unmeasured form is
+        # a policy question, not a reading question.
+        placeholders = ",".join("?" * len(LOCI))
+        return con.execute(
+            "SELECT f.sha256, f.field, k.reading, f.value_boxes, d.rel_path "
+            "FROM fact f JOIN document d ON d.sha256 = f.sha256 "
+            "JOIN decode k ON k.sha256 = f.sha256 AND k.field = f.field "
+            "AND k.extraction_version = f.extraction_version "
+            f"WHERE f.status='REVIEW_REQUIRED' AND f.field IN ({placeholders}) "
+            "AND f.reason LIKE '%does not parse%' AND f.value_boxes IS NOT NULL "
+            "AND k.verdict='PROPOSAL' AND k.decoder_version LIKE 'ctc-viterbi%' "
+            "AND k.decoder_version NOT LIKE '%+frame%' AND k.reading IS NOT NULL "
+            "ORDER BY f.sha256, f.field",
+            LOCI,
+        ).fetchall()
+    if target == "drbx":
+        placeholders = ",".join("?" * len(DRBX))
+        return con.execute(
+            "SELECT f.sha256, f.field, f.value, f.value_boxes, d.rel_path "
+            "FROM fact f JOIN document d ON d.sha256 = f.sha256 "
+            f"WHERE f.status='RESOLVED' AND f.field IN ({placeholders}) AND f.value='PRESENT' "
+            "AND f.value_boxes IS NOT NULL ORDER BY f.sha256, f.field",
+            DRBX,
+        ).fetchall()
+    raise ValueError(f"unknown target {target!r}")
+
+
+DEMOTED_REASON = (
+    "the S-for-5 repair on this gene token was contradicted by the second engine "
+    "reading the gene box; the printed name is a question for a person"
+)
+
+
+def demote_contradicted_repairs(con: sqlite3.Connection, confirmer_version: str) -> int:
+    """A repaired PRESENT gene that the gene-box reader contradicts goes to review.
+
+    The repair (`DRBS` -> DRB5) is right 98% of the time by this reader's own
+    count; where the reader disagrees, the primary's evidence is a repaired
+    glyph against an independent reading of the same box, and that is not a
+    fact. The box and raw text stay for provenance; `repaired` stays set so the
+    pack shows what happened. Idempotent.
+    """
+    placeholders = ",".join("?" * len(DRBX))
+    rows = con.execute(
+        "SELECT f.sha256, f.field FROM fact f JOIN confirmation c ON c.sha256=f.sha256 "
+        "AND c.field=f.field AND c.extraction_version=f.extraction_version "
+        f"WHERE f.field IN ({placeholders}) AND f.status='RESOLVED' AND f.value='PRESENT' "
+        "AND f.repaired=1 AND c.confirmer_version=? AND c.verdict='CONTRADICTED'",
+        (*DRBX, confirmer_version),
+    ).fetchall()
+    if rows:
+        con.executemany(
+            "UPDATE fact SET status='REVIEW_REQUIRED', value=NULL, reason=? "
+            "WHERE sha256=? AND field=? AND extraction_version='facts/v1'",
+            [(DEMOTED_REASON, sha, field) for sha, field in rows],
+        )
+        con.commit()
+    # And the other way: a demotion whose verdict is no longer CONTRADICTED
+    # (the reading was re-judged) is reinstated, so the fact follows the
+    # evidence in both directions.
+    back = con.execute(
+        "SELECT f.sha256, f.field FROM fact f JOIN confirmation c ON c.sha256=f.sha256 "
+        "AND c.field=f.field AND c.extraction_version=f.extraction_version "
+        f"WHERE f.field IN ({placeholders}) AND f.status='REVIEW_REQUIRED' AND f.reason=? "
+        "AND c.confirmer_version=? AND c.verdict!='CONTRADICTED'",
+        (*DRBX, DEMOTED_REASON, confirmer_version),
+    ).fetchall()
+    if back:
+        con.executemany(
+            "UPDATE fact SET status='RESOLVED', value='PRESENT', reason='' "
+            "WHERE sha256=? AND field=? AND extraction_version='facts/v1'",
+            back,
+        )
+        con.commit()
+    return len(rows) + len(back)
+
+
 def run(
     facts_db: Path,
     export: Path,
@@ -174,15 +294,25 @@ def run(
     limit: int | None,
     batch: int,
     engine: str = "tesseract5",
+    target: str = "resolved",
+    reader=None,  # type: ignore[no-untyped-def]  # a test injects one; None builds PP-OCRv5
 ) -> int:
     from PIL import Image
 
-    confirmer_version = ENGINES[engine]
-    read_ppocr = build_ppocr_reader() if engine == "ppocrv5" else None
+    confirmer_version = ENGINES[engine] + TARGETS[target]
+    read_ppocr = (
+        reader if reader is not None else (build_ppocr_reader() if engine == "ppocrv5" else None)
+    )
     vocabulary = load_vocabulary()
+
+    def judge(field: str, value: str | None, reading: str) -> Confirmation:
+        if target == "drbx":
+            return confirm_gene(field, reading)
+        accepted = tuple(part for part in (value or "").split() if part)
+        return confirm_value(field, accepted, reading, vocabulary)
+
     con = sqlite3.connect(facts_db)
     con.executescript(SCHEMA)
-
     done = {
         (sha, field)
         for sha, field in con.execute(
@@ -190,18 +320,11 @@ def run(
             (confirmer_version,),
         )
     }
-    placeholders = ",".join("?" * len(LOCI))
-    work = [
-        row
-        for row in con.execute(
-            "SELECT f.sha256, f.field, f.value, f.value_boxes, d.rel_path "
-            "FROM fact f JOIN document d ON d.sha256 = f.sha256 "
-            f"WHERE f.status='RESOLVED' AND f.field IN ({placeholders}) "
-            "AND f.value_boxes IS NOT NULL ORDER BY f.sha256, f.field",
-            LOCI,
-        )
-        if (row[0], row[1]) not in done
-    ]
+    work = [row for row in select_work(con, target) if (row[0], row[1]) not in done]
+    if target == "drbx":
+        demoted = demote_contradicted_repairs(con, confirmer_version)
+        if demoted:
+            print(f"repaired gene calls demoted to review on the stored verdicts: {demoted:,}")
     if limit:
         work = work[:limit]
     print(f"cells to confirm: {len(work):,}  (already done {len(done):,})", flush=True)
@@ -288,8 +411,7 @@ def run(
             else:
                 readings = read_crops(binary, crops)
             for (sha, field, value), reading in zip(kept, readings, strict=True):
-                accepted = tuple(part for part in (value or "").split() if part)
-                verdict = confirm_value(field, accepted, reading, vocabulary)
+                verdict = judge(field, value, reading)
                 tally[verdict.value] += 1
                 pending.append(
                     (sha, field, "facts/v1", confirmer_version, verdict.value, reading, now)
@@ -298,6 +420,8 @@ def run(
         con.executemany("INSERT OR REPLACE INTO confirmation VALUES (?,?,?,?,?,?,?)", pending)
         con.commit()
         pending.clear()
+        if target == "drbx":
+            tally["demoted"] += demote_contradicted_repairs(con, confirmer_version)
         seen = min(start + batch, len(work))
         elapsed = time.perf_counter() - started
         print(
@@ -308,7 +432,7 @@ def run(
 
     con.close()
     total = sum(tally.values())
-    print(f"\ncells confirmed against {confirmer_version}: {total:,}")
+    print(f"\n{target} cells judged against {confirmer_version}: {total:,}")
     for verdict in (Confirmation.CONFIRMED, Confirmation.CONTRADICTED, Confirmation.UNCONFIRMED):
         count = tally[verdict.value]
         print(f"  {verdict.value:<14}{count:>8,}  ({count / max(total, 1):6.1%})")
@@ -331,22 +455,37 @@ def rescore(facts_db: Path) -> int:
     vocabulary = load_vocabulary()
     con = sqlite3.connect(facts_db)
     rows = con.execute(
-        "SELECT c.sha256, c.field, c.verdict, c.reading, f.value FROM confirmation c "
-        "JOIN fact f ON f.sha256=c.sha256 AND f.field=c.field "
-        "AND f.extraction_version=c.extraction_version"
+        "SELECT c.sha256, c.field, c.verdict, c.reading, f.value, c.confirmer_version "
+        "FROM confirmation c JOIN fact f ON f.sha256=c.sha256 AND f.field=c.field "
+        "AND f.extraction_version=c.extraction_version "
+        # A `@proposal` reading was judged against the decode's proposal, which
+        # is not the fact's value; a `@drbx` one is re-judged by gene name.
+        "WHERE c.confirmer_version NOT LIKE '%@proposal'"
     ).fetchall()
     before: Counter[str] = Counter()
     after: Counter[str] = Counter()
     changed: list[tuple[str, str, str]] = []
-    for sha, field, old, reading, value in rows:
-        accepted = tuple(part for part in (value or "").split() if part)
-        new = confirm_value(field, accepted, reading or "", vocabulary).value
+    for sha, field, old, reading, value, version in rows:
+        if version.endswith(TARGETS["drbx"]):
+            new = confirm_gene(field, reading or "").value
+        else:
+            accepted = tuple(part for part in (value or "").split() if part)
+            new = confirm_value(field, accepted, reading or "", vocabulary).value
         before[old] += 1
         after[new] += 1
         if new != old:
-            changed.append((new, sha, field))
-    con.executemany("UPDATE confirmation SET verdict=? WHERE sha256=? AND field=?", changed)
+            changed.append((new, sha, field, version))
+    con.executemany(
+        "UPDATE confirmation SET verdict=? WHERE sha256=? AND field=? AND confirmer_version=?",
+        changed,
+    )
     con.commit()
+    for (version,) in con.execute(
+        "SELECT DISTINCT confirmer_version FROM confirmation WHERE confirmer_version LIKE '%@drbx'"
+    ).fetchall():
+        moved = demote_contradicted_repairs(con, version)
+        if moved:
+            print(f"repaired gene calls demoted or reinstated under {version}: {moved:,}")
     con.close()
     print(f"rescored {len(rows):,} stored readings; {len(changed):,} verdicts changed")
     for verdict in (Confirmation.CONFIRMED, Confirmation.CONTRADICTED, Confirmation.UNCONFIRMED):
@@ -369,6 +508,13 @@ def main() -> int:
         default="tesseract5",
         help="ppocrv5 needs the `confirm` extra; both write to the same table "
         "under their own confirmer_version, so neither replaces the other",
+    )
+    parser.add_argument(
+        "--target",
+        choices=sorted(TARGETS),
+        default="resolved",
+        help="resolved: every resolved HLA cell; proposals: cells the decode proposed "
+        "a value for, judged against that proposal; drbx: the DRB3/4/5 gene name boxes",
     )
     parser.add_argument(
         "--rescore",
@@ -394,7 +540,9 @@ def main() -> int:
             return 2
         binary = found
 
-    return run(args.facts, args.export, binary, args.limit, args.batch_size, args.engine)
+    return run(
+        args.facts, args.export, binary, args.limit, args.batch_size, args.engine, args.target
+    )
 
 
 if __name__ == "__main__":

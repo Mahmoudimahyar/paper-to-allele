@@ -37,7 +37,7 @@ than `DRB1`) and refuses interior damage.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Literal
 
@@ -45,6 +45,7 @@ from kidneymatch.hla.vocabulary import FirstFieldVocabulary, load_vocabulary
 from kidneymatch.ocr.glyphs import (
     AlleleValue,
     canonical_locus_label,
+    is_grouped_drbx_header,
     looks_like_locus_label,
     parse_allele_value,
 )
@@ -55,6 +56,15 @@ Direction = Literal["right", "below"]
 # Asking for them here bound neighbouring numbers as alleles on four documents,
 # every value impossible for the gene (review W10).
 GROUPED_DRBX_GENES = frozenset({"DRB3", "DRB4", "DRB5"})
+# The combined header is not a locus anchor (drbx.py reads its row), but it
+# owns that row the way any label does: a value nearer to it than to the
+# locus label above belongs to the presence row, whatever it says.
+GROUPED_DRBX_OWNER = "DRB3/4/5"
+# A label box taller than this many times the page's typical label is the
+# detector's, not the form's — stretched over a ruling or a neighbouring line —
+# and a band measured in its height would reach the next row. No tolerance
+# band is tried from such an anchor.
+TALL_ANCHOR_RATIO = 1.5
 
 # Loci this relation can legitimately read.
 DEFAULT_LOCI: tuple[str, ...] = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
@@ -167,6 +177,20 @@ class ValueRule:
     # default, where a bare value is legitimate.
     require_prefix: bool = False
 
+    # A tolerance for the overlap test, in anchor heights, used ONLY when the
+    # overlap test finds nothing at all (or a single value with its partner
+    # unread). Measured over the 11,140 default-rule documents: the nearest
+    # allele-shaped box to a label whose cell read empty sits 1.0 anchor height
+    # off its centre on 1,406 of 5,302 such cells — a photograph's drift, or a
+    # label box the detector stretched over a ruling. Applied as a first
+    # criterion, a band of 1.5 resolved 949 of them but also added candidates
+    # to 799 cells that already resolved and refused them; as a fallback it
+    # added 901 cells and 890 second alleles with 0 boxes bound to two loci and
+    # no resolved cell changed — hence a fallback, never a widening. Every gate
+    # runs under the widened alignment when the band is used, so a competing
+    # label sees the same boxes the band does; a tall anchor gets no band.
+    fallback_band: float | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class LocusResolution:
@@ -208,10 +232,21 @@ def _all_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
     """Every box on the page that names any locus, with the locus it names."""
     out = []
     for box in boxes:
-        named = canonical_locus_label(box.text or "")
+        text = box.text or ""
+        named = canonical_locus_label(text)
         if named is not None:
             out.append((named, box))
+        elif is_grouped_drbx_header(text):
+            out.append((GROUPED_DRBX_OWNER, box))
     return out
+
+
+def _anchor_is_tall(anchor: Box, boxes: list[Box]) -> bool:
+    """Is this label box out of scale with the page's other labels?"""
+    heights = sorted(box.height for _, box in _all_locus_anchors(boxes) if box is not anchor)
+    if len(heights) < 3:
+        return False
+    return anchor.height > TALL_ANCHOR_RATIO * heights[len(heights) // 2]
 
 
 def _aligned(anchor: Box, box: Box, rule: ValueRule) -> bool:
@@ -377,7 +412,50 @@ def resolve_locus(
 
     anchor = anchors[0]
     found = _candidates(boxes, anchor, rule)
+    if (
+        rule.fallback_band is not None
+        and len(found) < rule.max_values
+        and not _anchor_is_tall(anchor, boxes)
+    ):
+        # The overlap test read nothing, or one allele with its partner unread.
+        # Once more within the tolerance band; the wider reading is kept only
+        # when it contains everything the strict one found and no more boxes
+        # than the locus can have, so a strict result is never made worse. The
+        # gates run under the widened rule too: ownership by another label and
+        # the partner-beyond-the-chain guard must see what the band sees.
+        wide_rule = replace(rule, centre_band=rule.fallback_band)
+        wide = _candidates(boxes, anchor, wide_rule)
+        if (
+            len(wide) > len(found)
+            and len(wide) <= rule.max_values
+            and all(any(box is seen for seen in wide) for box in found)
+        ):
+            strict = _bind(boxes, locus, rule, anchor, found, vocabulary)
+            tolerant = _bind(boxes, locus, wide_rule, anchor, wide, vocabulary)
+            # The wider reading stands only if it resolves; otherwise the strict
+            # one is exactly what the rule said before the band existed.
+            if tolerant.status is ResolutionStatus.RESOLVED:
+                return tolerant
+            return strict
+    return _bind(boxes, locus, rule, anchor, found, vocabulary)
 
+
+def _bind(
+    boxes: list[Box],
+    locus: str,
+    rule: ValueRule,
+    anchor: Box,
+    found: list[Box],
+    vocabulary: FirstFieldVocabulary,
+) -> LocusResolution:
+    """Run every gate over the candidate boxes of one anchor.
+
+    The geometric gates run over EVERY box before any text is parsed, so a
+    refusal for value shape ("does not parse") means every box in the cell sat
+    where a value sits, named no label and belonged to no other anchor — which
+    is what lets `promote_proposals.py` treat the decode's reading of those
+    boxes as a value of this locus.
+    """
     if not found:
         # The label is printed but nothing was read in its cell. That is
         # REVIEW_REQUIRED, not UNKNOWN, and the distinction is a policy in
@@ -400,7 +478,24 @@ def resolve_locus(
             anchor_box=anchor,
             reason="anchor found but no box at all in its cell under this rule",
         )
-
+    set_aside = 0
+    if len(found) > rule.max_values and rule.require_prefix:
+        # On a form that prints the locus on every value, a candidate that
+        # names ANOTHER locus is the neighbouring row's value drifting into
+        # this row's band on a hand-held photograph — never this cell's. It
+        # is set aside before the count; a candidate that names no locus or
+        # does not parse is kept, and the gates below refuse the cell as
+        # before. Measured corpus-wide: 1,366 refused cells hold exactly two
+        # values naming this locus beside one or two naming another. The
+        # count set aside is recorded on the resolution.
+        kept = [
+            box
+            for box in found
+            if (value := parse_allele_value((box.text or "").strip())) is None
+            or value.locus_prefix in (None, locus)
+        ]
+        set_aside = len(found) - len(kept)
+        found = kept
     if len(found) > rule.max_values:
         # A locus has at most two alleles. More candidates means the row was
         # misread, and picking the nearest would be a guess.
@@ -411,11 +506,9 @@ def resolve_locus(
             value_boxes=found,
             reason=f"{len(found)} candidate values exceeds max_values={rule.max_values}",
         )
-
-    parsed: list[AlleleValue] = []
+    # The geometric gates, for every box, before a single character is read.
     for box in found:
         text = (box.text or "").strip()
-
         if box.height > MAX_VALUE_HEIGHT_RATIO * anchor.height:
             # Not one line of text. Such a box overlaps several printed rows, so
             # it is "aligned" with every label it crosses and was bound twice.
@@ -429,7 +522,6 @@ def resolve_locus(
                     "not a single line of text"
                 ),
             )
-
         if looks_like_locus_label(text):
             # Gate 1. The measured failure: 988 of 2,977 DRB1 bindings were the
             # next row's label, reported as this patient's allele.
@@ -440,7 +532,6 @@ def resolve_locus(
                 value_boxes=found,
                 reason=f"candidate {text!r} is a locus label, not a value",
             )
-
         owner = _owned_by_another_anchor(box, anchor, boxes, rule)
         if owner is not None:
             # Gate 3.
@@ -451,17 +542,18 @@ def resolve_locus(
                 value_boxes=found,
                 reason=f"candidate is closer to the {owner} label; another locus owns it",
             )
-
+    # The text gates. A box that does not parse is noted and the OTHER boxes
+    # are still put through every gate: a refusal for shape must mean that
+    # nothing else on the row was wrong.
+    parsed: list[AlleleValue] = []
+    unparsed: str | None = None
+    for box in found:
+        text = (box.text or "").strip()
         value = parse_allele_value(text)
         if value is None:
-            return LocusResolution(
-                locus,
-                ResolutionStatus.REVIEW_REQUIRED,
-                anchor_box=anchor,
-                value_boxes=found,
-                reason=f"candidate {text!r} does not parse as an allele value",
-            )
-
+            if unparsed is None:
+                unparsed = text
+            continue
         if value.separator_missing and not rule.require_prefix:
             # `B35` with no star. On a form measured to print `LOCUS*NN` on
             # 99.8-99.9% of its values (the family rule), that is the star the
@@ -479,7 +571,6 @@ def resolve_locus(
                     "measured to print the locus on its values"
                 ),
             )
-
         if rule.require_prefix and value.locus_prefix is None:
             # This family prints the locus on every value, so a bare number on
             # the row band is not one of its values. Without the distance cap
@@ -494,7 +585,6 @@ def resolve_locus(
                     f"this form prints the locus on every value, and {text!r} does not name one"
                 ),
             )
-
         if value.locus_prefix is not None and value.locus_prefix != locus:
             # Gate 2. Geometry says one gene, the printed value says another.
             return LocusResolution(
@@ -507,7 +597,6 @@ def resolve_locus(
                     "geometry and text disagree"
                 ),
             )
-
         if not vocabulary.covers(locus):
             # An unchecked value must never be presented as a checked one.
             return LocusResolution(
@@ -531,9 +620,15 @@ def resolve_locus(
                     f"in IMGT {vocabulary.imgt_version}"
                 ),
             )
-
         parsed.append(value)
-
+    if unparsed is not None:
+        return LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=anchor,
+            value_boxes=found,
+            reason=f"candidate {unparsed!r} does not parse as an allele value",
+        )
     beyond = _value_beyond_the_chain(boxes, anchor, found, rule)
     if beyond is not None:
         return LocusResolution(
@@ -544,7 +639,6 @@ def resolve_locus(
             reason="an allele-shaped box sits on this row beyond the chain; "
             "the second allele may have been cut off",
         )
-
     return LocusResolution(
         locus,
         ResolutionStatus.RESOLVED,
@@ -554,6 +648,7 @@ def resolve_locus(
         parsed_values=parsed,
         # One value read is not homozygosity: it is one value read.
         second_allele=SecondAllele.READ if len(parsed) >= 2 else SecondAllele.UNREAD,
+        reason=(f"{set_aside} candidate(s) naming another locus set aside" if set_aside else ""),
     )
 
 

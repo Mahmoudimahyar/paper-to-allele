@@ -20,11 +20,15 @@ established by geometry.
 
 Accepting an anchor is **strict**; rejecting a value is **permissive**.
 
-`canonical_locus_label` repairs only the FINAL character. Interior damage —
-`DRRI` for `DRB1`, where `B` was read as `R` — is refused. Measured, interior
-repair would add about 1% more anchors, and it is the only mechanism by which
-`DRB1` could canonicalise to `DPB1`. A 1% recall gain is not worth a mechanism
-that can silently rename a gene.
+`canonical_locus_label` repairs the FINAL character and exactly one interior
+confusion, `Q` read as `O`/`0`, on which the geometry is decisive (774 refused
+`DOB…` values under DQB1 anchors against 1 under DRB1; 21% of DQB1 labels).
+That repair can rename: a printed DRB1 or DPB1 whose second glyph read O
+becomes DQB1, and a DPA1 becomes DQA1 — 1 case in 775 by the measurement,
+accepted and pinned by the rename sweep in the tests. Other interior damage —
+`DRRI` for `DRB1`, where `B` was read as `R` — is refused: repairing `R` or
+`P` is the mechanism by which `DRB1` could canonicalise to `DPB1` on no
+evidence at all.
 
 `looks_like_locus_label` is deliberately broader: it recognises `DRRI` and a
 bare `A`, neither of which is good enough to anchor a locus. It exists so the
@@ -91,7 +95,29 @@ _DIGIT_REPAIRS = {**_FINAL_DIGIT_REPAIRS, "O": "0", "o": "0"}
 # The `*` between locus and allele, as the recognizer renders it.
 _STAR_VARIANTS = "*+°\"'`~^"
 
-_HLA_PREFIX = re.compile(r"^HLA[\s\-_]*", re.IGNORECASE)
+# `HLA-` and the recognizer's renderings of it: `ILA-`, `IILA-`, `HILA-`, and
+# `LA-` only before a separator. Measured the hard way: accepting a bare `LA`
+# made the letterhead's `LAB` (19,635 boxes) an HLA-B anchor and sent 9,817 B
+# cells to review as "2 anchors found".
+_HLA_PREFIX = re.compile(r"^(?:[HI]{1,3}LA|LA(?=[\s\-_]))[\s\-_]*", re.IGNORECASE)
+# What a label carries after its name: a colon, a star, quote-shaped noise.
+# `HLA-DRB1*:` (277 boxes), `HLA-DQB1":` (307), `HLA-A*:` (513), `HLA-B:` (261).
+# Without an HLA prefix only the colon-shaped trail goes: a quote is one of
+# the recognizer's renderings of the star (`_STAR_VARIANTS`), so `DRB1"` is
+# `DRB1*` — a value whose digits were not read — and must not anchor.
+_LABEL_TRAIL = re.compile(r"[\s:;.]+$")
+_LABEL_STAR_TRAIL = re.compile(r"[\s*:;.'\"]+$")
+# The one interior confusion of a class II label that is repaired: `Q` read as
+# `O` or `0` in the second position. No locus has an O there, and the geometry
+# is decisive: 774 refused `DOB…` values sat under a DQB1 anchor against 1
+# under DRB1 (76 `DOA…` under DQA1 against 2 under DPA1), while the 2,410
+# documents printing a `DOBI`-shaped token carry a DRB1 anchor 87% of the time
+# and a DQB1 anchor 4.6% — the token IS the missing DQB1 label. Corpus-wide
+# that is 3,101 documents gaining their DQB1 anchor and 1,029 their DQA1.
+# `R` and `P` are never repaired: reading one as the other renames a gene, so
+# `DRRI` and `DPRI` stay refused, and `8` in the third position is left alone
+# (45 boxes, no geometry evidence gathered).
+_INTERIOR_REPAIRS = {"O": "Q", "0": "Q"}
 
 # A token that could be a locus label, however damaged. Used only to REJECT.
 _LABEL_SHAPED = re.compile(
@@ -106,9 +132,11 @@ _LABEL_SHAPED = re.compile(
 # documents (`HLA-DRB345`, `HLA-DRB34/5`, `HLA-DR83/4/5`, leading-dash forms).
 _GROUPED_DRBX = re.compile(
     r"^[\s\-–—.,:;'\"]*"
-    r"(?:[HI]{0,3}L?A[\s\-–—]*)?"
-    r"DR[B8]\s*3[\s/,.\-\|'\"AMUV]*4[\s/,.\-\|'\"AMUV]*[5S]"
-    r"[\s*:;.,)\-]*$"
+    r"(?P<hla>[HI]{0,3}L?A[\s\-–—]*)?"
+    r"DR[B8RE$HD]\s*3"
+    r"(?:[\s/,.\-\\|'\"AMUV1]*4[\s/,.\-\\|'\"AMUV1]*"
+    r"|(?(hla)[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV1]*|(?!)))"
+    r"[5S][\s*:;.,)\-]*$"
 )
 
 _DIGIT_SLOT = "0-9" + "".join(sorted(set(_DIGIT_REPAIRS)))
@@ -180,7 +208,12 @@ class AlleleValue:
 def canonical_locus_label(token: str) -> str | None:
     """The locus this token names, or None if it does not reliably name one.
 
-    Strict by design. Repairs the final character only, and never the interior.
+    Strict by design. Repairs the final character and one interior confusion
+    (`_INTERIOR_REPAIRS`: Q read as O/0), nothing else, and strips the
+    punctuation a label carries after its name. The interior repair CAN move
+    a damaged label between loci — `DOB1` is DQB1 whether the page printed
+    DQB1, DRB1 or DPB1 — and is accepted on the geometry evidence recorded at
+    that constant; the rename sweep in the tests names the crossings.
     """
     stripped = (token or "").strip()
     if not stripped:
@@ -192,6 +225,10 @@ def canonical_locus_label(token: str) -> str | None:
 
     had_prefix = bool(_HLA_PREFIX.match(stripped))
     body = _HLA_PREFIX.sub("", stripped).strip()
+    # A star is stripped only behind an HLA prefix: `DRB1*` on its own is as
+    # likely a value whose digits were not read, and a value stub must never
+    # anchor a locus.
+    body = (_LABEL_STAR_TRAIL if had_prefix else _LABEL_TRAIL).sub("", body).strip()
     if not body:
         return None
 
@@ -202,8 +239,15 @@ def canonical_locus_label(token: str) -> str | None:
 
     if len(body) != 4:
         return None
-    repaired = (body[:-1] + _FINAL_DIGIT_REPAIRS.get(body[-1], body[-1])).upper()
+    second = _INTERIOR_REPAIRS.get(body[1].upper(), body[1])
+    repaired = (body[0] + second + body[2] + _FINAL_DIGIT_REPAIRS.get(body[-1], body[-1])).upper()
     return repaired if repaired in CLASS_II_LOCI else None
+
+
+def is_grouped_drbx_header(token: str) -> bool:
+    """Is this token the combined DRB3/4/5 header? `drbx.py` reads that row;
+    `anchors.py` lets the header own its row like any label."""
+    return bool(_GROUPED_DRBX.match((token or "").strip()))
 
 
 def looks_like_locus_label(token: str) -> bool:
