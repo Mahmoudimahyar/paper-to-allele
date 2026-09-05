@@ -1,13 +1,16 @@
 # Current project state
 
-**Updated:** 2026-09-03
+**Updated:** 2026-09-05
 **Canonical phase:** MVP-HIST
-**Active task:** none — HIST-001 and HIST-002 are COMPLETE; MEDIA-001/DEDUPE-001 are READY
+**Active task:** OCR-GEOM-001 (`docs/exec-plans/active/OCR-GEOM-001-geometry-and-drbx-row.md`), from the reviewer's first 165 labels; MEDIA-001/DEDUPE-001 stay READY
 
 ## Goal now
-Validate what is extracted. The pipeline is built, the source layer is parsed
-and the review instruments exist; every accuracy claim now waits on a person
-reading (HA-008, HA-007).
+Validate what is extracted, and fix what the first labels showed. 165 of the
+pack's 1,650 cells are labelled (HA-008): 17 of 19 "contradictions" were the
+page's own DRB3/4/5 question (KI-021, fixed), the misses were mostly a `*`
+the recognizer never read (KI-022, fixed: +2,368 cells corpus-wide), and tilt
+is real (35% of pack pages) but explained one miss. Research record:
+`docs/ingestion/CV_RESEARCH_2026-09-05.md`.
 
 ## Locked facts
 - **The archive is present**, local-only and gitignored, at
@@ -23,7 +26,18 @@ reading (HA-008, HA-007).
   on 110,050 message rows: the same image posted a mean of 4.7 times, which is
   the reposting signal ENTITY-001 needs.
 - **Extraction (ADR 0008, 0009):** 93,202 resolved facts with provenance,
-  63,233 review items, 24,663 `NOT_TESTED`. Runs the corpus in about a minute.
+  63,233 review items, 24,663 `NOT_TESTED` in `facts.sqlite` (v1). Re-extracted
+  into `facts_v2.sqlite` with the star-less parser and the page frame:
+  **95,581 resolved / 60,855 review**, 0 changed values, 46 cells moved to
+  review by the KI-015 guard. The main database is re-extracted in place once
+  the corpus geometry pass finishes; decode/confirm passes then cover the delta.
+- **Page geometry (OCR-GEOM-001):** `geometry_pass.py` measures tilt from the
+  printed rulings (LSD + projection sweep, never one estimator). Pack: 53
+  ROTATE / 71 STRAIGHT / 26 UNCERTAIN at ~60 ms/img. The extraction levels the
+  stored boxes from 1.5° of tilt (below that the frame is a wash, KI-024).
+- **The DRB3/4/5 row prints gene names**: 22,017 gene tokens vs 75 bare numbers
+  corpus-wide. The review page asks one question per row; grammar v2 waits on
+  HA-011.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci, up from
   40%), 2,495 of them because a caption corroborated a weak printed field. A
   caption that reads as a *request* for a role is refused: «اهدا کننده نیاز
@@ -53,9 +67,10 @@ HA-006 IMGT pinned to 3.62, the release py-ard 1.5.5 loads · HA-009 the
 untested-locus policy. Details in `HUMAN_ACTIONS.md` under Closed.
 
 ## Human actions open
-**HA-008 label the review pack (~2.5 h)** and **HA-007 the blind golden
-corpus** — every accuracy claim waits on these. Then HA-004 (Iranian
-histocompatibility practice, needs an immunologist; blocks V1-MATCH), HA-001,
+**HA-008 label the review pack** — 165/1,650 done; the 15 documents' DRB3/4/5
+rows must be re-confirmed under the one-row question (KI-021). **HA-007 the
+blind golden corpus.** **HA-011** codify the DRB3/4/5 grammar in the spec
+(blocks grammar v2 only). Then HA-004 (immunologist; blocks V1-MATCH), HA-001,
 HA-002, HA-010 (cloud keys, optional).
 
 ## Completed foundation
@@ -68,14 +83,18 @@ HA-002, HA-010 (cloud keys, optional).
   `config/locus_testing_rates.json`, `config/locus_genotype_frequencies.json`.
 
 ## Next actions
-1. **Human: label the pack (HA-008).** Then an agent scores it per stratum; the
-   clean-control rate decides whether anything may be published.
-2. Agent, needs no human: MEDIA-001 and DEDUPE-001 are READY and are the last
-   MVP-HIST tasks; then ENTITY-001 clustering over the measured link scores.
-3. Human: HA-004 before any matching work beyond the ABO gate.
+1. **Human: re-confirm the DRB3/4/5 rows, keep labelling (HA-008).** Score each
+   export with `scripts/pack_score.py`; the clean-control rate decides whether
+   anything may be published.
+2. Agent: when `geometry_pass.py --status` covers the corpus, re-extract
+   `facts.sqlite` in place with `--geometry`, then run `decode_pass.py` and
+   `confirm_pass.py` for the new cells. Then OCR-GEOM-001 M4 (crop discipline,
+   ablated on the labelled cells) and M5 (ruled-cell lattice); M6 after HA-011.
+3. Agent, needs no human: MEDIA-001 and DEDUPE-001 remain the last MVP-HIST
+   tasks; then ENTITY-001. Human: HA-004 before any matching beyond the ABO gate.
 
 Acceptance state: `python scripts/acceptance.py status`.
 
 ## Last verified baseline
-`python scripts/verify_repo.py` → **PASS (12 steps, none skipped)**, 2026-09-03.
+`python scripts/verify_repo.py` → **PASS (12 steps, none skipped)**, 2026-09-05.
 Re-run it yourself; this file records a past result, not the current environment.

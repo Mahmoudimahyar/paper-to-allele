@@ -51,6 +51,35 @@ Never put secret values in this file.
   `docs/ingestion/OPEN_ISSUES_SOLUTIONS_2026-09-02.md` issue 1.
 - **Secret?** No. The pack is PHI and stays under gitignored `data/review/`.
 - **Blocking now?** Blocks any accuracy number and the review-queue design.
+- **STATUS 2026-09-05: 165 of 1,650 cells labelled (15 documents).** Scored
+  with `uv run --frozen python scripts/pack_score.py --export <file>`. The
+  DRB3/4/5 rows of those 15 documents were labelled under the old three-cell
+  question and are NOT ground truth (KI-021): reload the page (Ctrl+F5), and
+  the row shows "re-confirm" — tick the genes printed, nothing else. The server
+  runs on http://localhost:8766 (port 8765 is taken by another program).
+
+### HA-011 — Codify the DRB3/4/5 row's grammar in the spec, and decide two semantics
+- **Needed by:** the row grammar v2 (`GROUPED_DRBX/v2`: bare numbers on the
+  row → review with candidate genes; a prefixed allele → presence plus a
+  proposal), and any use of DRB3/4/5 beyond presence in matching.
+- **Why:** the licence to read a gene NAME from token text inside the grouped
+  row — geometry fixes the row, the printed header enumerates the admissible
+  set — lives in ADR 0008 Decision 4. The spec outranks an ADR, and
+  `OCR_SPEC.md` §2 forbids assigning a locus from token text without naming
+  this exception. Measured corpus-wide (`CV_RESEARCH_2026-09-05.md` §4): the
+  row prints gene names 97% of the time, bare numbers on 48 documents,
+  prefixed alleles on 16.
+- **Decisions required:** (a) accept codifying the enumeration licence in
+  `OCR_SPEC.md` §2 and `HLA_VALIDATION_SPEC.md` §7 (per-gene presence,
+  expression, optional allele proposal; storage per gene; review unit the
+  printed row); (b) whether a `N`/null suffix on a DRB3/4/5 allele
+  (NOT_EXPRESSED) may ever feed matching, or stays REVIEW_REQUIRED for
+  matching purposes until an immunologist rules (HA-004); (c) whether a
+  DRB1-derived candidate set may be SHOWN to a reviewer as a hint on a bare
+  number (never bound by the pipeline).
+- **Secret?** No.
+- **Blocking now?** Blocks grammar v2 only; the one-row review question and
+  presence typing need no spec change.
 
 ### HA-010 — Cloud model API keys, only if a synthetic-only comparison is wanted
 - **Needed by:** the OCR model survey's cloud rows (Claude, GPT, Gemini).

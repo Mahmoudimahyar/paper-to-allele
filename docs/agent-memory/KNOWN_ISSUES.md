@@ -233,3 +233,43 @@ synthetic fixture now match what the export emits.
 **The general lesson:** a synthetic fixture built from a doc inherits the doc's
 errors, and only real input finds them. Every structural claim about the export
 should be re-checked against the archive once, cheaply, before it is trusted.
+
+## KI-021 — The labelling page asked three questions about one printed row (FIXED 2026-09-05)
+The review pack rendered DRB3, DRB4 and DRB5 as three cells each demanding
+"two alleles". The form prints that row as gene NAMES (22,017 gene tokens
+against 75 bare numbers corpus-wide), so the reviewer typed 03/04/05 — the
+digit of the printed name — into every one of the 17 DRB3/4/5 "values" of the
+first 165 labels, and copied the same number into two or three genes on five
+documents. Seventeen of nineteen "contradictions" were this artefact. The page
+now asks the row's question — which genes are printed — and derives the
+per-gene labels; labels made under the old question render as "re-confirm".
+Those 45 DRB3/4/5 labels in the reviewer's first export are not ground truth and
+must be re-confirmed. `docs/ingestion/CV_RESEARCH_2026-09-05.md` §1.
+
+## KI-022 — The recognizer drops the `*` and the value was refused for it (FIXED 2026-09-05)
+3,153 cells corpus-wide were refused only because `A*02` had been read `A02`
+— 45% of every shape refusal, 6 of the reviewer's 21 misses. The parser now
+accepts a prefix that names a locus followed by two or three digits, marks the
+missing star as a repair, and repairs the B/8 prefix confusion when a star
+follows. Corpus: +2,368 cells resolved, 46 moved the other way (all the KI-015
+second-allele guard), 0 changed values. Still open in the same family: 896
+prefixed values with a damaged prefix (`DRIL*##`) and 4,088 other shape
+refusals; the constrained decode already reads many of them (`PROPOSAL`), and
+the golden corpus decides whether a proposal may ever be promoted.
+
+## KI-023 — Three OpenCV wheels are in the lockfile
+`uv.lock` resolves `opencv-python-headless` (pinned in `pyproject.toml`),
+`opencv-python` 5.0 (through onnxtr) and `opencv-contrib-python` 4.10 into one
+environment; PyPI warns only one may be installed, and which `cv2` imports is
+whichever landed last (4.14 headless today). `cv2.createLineSegmentDetector`
+lives in the main module since 4.5.1, so nothing needs contrib. Resolve to one
+wheel with a `uv lock` and an OSS-register row; no behaviour depends on it yet.
+
+## KI-024 — Below 1.5 degrees the page frame is a wash
+On the review pack's 53 ROTATE pages the levelled frame gained and lost cells
+in equal numbers under 1.5° of tilt (9 each): the row rules already tolerate
+that drift and the estimators' own error is as large as the tilt. From 2° it
+gained 5 and lost none. The extraction therefore applies the frame from 1.5°
+(`extract_facts.MIN_FRAME_TILT_DEG`); the geometry pass still records ROTATE
+from 0.5° as measurement. Revisit with the crop-level rotation (M4), which is
+where small tilts actually cost recognition.

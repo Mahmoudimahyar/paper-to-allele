@@ -1,0 +1,108 @@
+# Computer-vision research for the four reviewer failure modes (2026-09-05)
+
+What the reviewer reported after the first 165 anchored labels, what a
+six-lens research sweep with an adversarial skeptic per lens found, and what
+was measured on this corpus before anything shipped. Every number below is a
+count or a rate; no value, caption or crop of a real report appears here.
+
+## 1. The four failure modes, and what the labels actually showed
+
+`scripts/pack_score.py` over the reviewer's export (165 cells, 15 documents):
+50 correct, 75 correct abstentions, 21 missed, 19 "contradicted".
+
+| reported | measured |
+|---|---|
+| DRB3/4/5: "the system assigns the same number to DRB3, DRB4 and DRB5" and "writes DRB4 instead of 04" | The **labelling page** asked three per-gene "type two alleles" questions about one printed row. All 17 DRB3/4/5 "values" typed were 03/04/05 — the digit of a printed gene NAME; the pipeline's raw tokens on those rows were gene-shaped 14/14 and digit-shaped 0/14. 17 of the 19 contradictions were this protocol artefact. |
+| Tilted photographs | Real corpus-wide (35% of the pack's pages rotate ≥0.5°, 9% ≥2°), but of the 21 misses only **1** sits on a page the rulings call tilted. |
+| "OCR doesn't grasp the structure" | 9 of the 21 misses were the value's `*` not read at all (`A##`, `C##`, `DQB1##`); 3 more were a damaged prefix; 5 were an unrecognised label; 3 a header miss; 1 an empty cell. Corpus-wide, **3,153 cells** were refused only for the missing star — 45% of every shape refusal. |
+| "boxes around each value form a table" | True: 13,793 documents carry a grouped DRB3/4/5 header on a ruled table; the rulings are the most precise thing on the page to measure tilt from, and they can certify an EMPTY cell. |
+
+## 2. What the research settled (winner / why the skeptic left it / killed)
+
+| failure mode | winner | evidence that survived | killed or deferred |
+|---|---|---|---|
+| tilt | rulings angle via `cv2.LineSegmentDetector` (9.4 ms/img, <0.01° on synthetic), corroborated by a Leptonica-style projection sweep; **rotate the geometry (stored boxes), not the pixels**; pixels only per crop on ROTATE pages | morphological long-kernel line extraction returns **0 segments at 7.3°** — a tilted ruling is not a horizontal run of pixels; the project's own detector keeps 80/80 boxes at 7.3° and 14°, so fixing row membership fixes the reported class | `straighten_pages=True` (double detection, integer angle), orientation classifiers (0.67 confidence on a clean page), DocAligner, UVDoc/DocScanner/DocTr (licence, ~1 s, no error certificate), sbrunner/deskew (scikit-image), jdeskew only as an experiment for unruled pages |
+| rulings unused | an own OpenCV lattice from the LSD segments (rows, columns, cells, ink ratio) — the only option that certifies emptiness and gives every learned model its gate | zero dependency; camelot's lattice recipe and img2table's algorithm notes as references | img2table (prunes empty rows; contrib cv2), PaddleX RT-DETR (Paddle runtime measured 6 s/img here), LORE, TableFormer, TATR |
+| DRB3/4/5 | one review question per printed row with per-gene answers derived; storage stays per gene (HLA_VALIDATION_SPEC §7); a bare number never binds a gene; DRB1 only ever generates a *review hint* | consistent with the constitution and OCR_SPEC §2; the "same number to three genes" defect was the page's question, not the pipeline | inferring a DRBX gene or first field from DRB1; template priors (circular); scoring the row as three fields |
+| low-resolution crops | crop discipline (rotated ROI, glyph height 24–32 px, engine-specific pad/stretch, **ablated** before shipping), grammar-constrained decoding with an in-grammar/unconstrained margin on every CTC engine, a confirmer A/B (PP-OCRv6 small, RepSVTR ONNX, en_PP-OCRv4 mobile), Qwen3-VL-4B locally as a tie-breaker on the disputed set only (982 ms/crop, 0.997/0.910 measured 2026-09-03) | the primary recogniser loses 56 points on a 0.4% crop pad, so any crop change must be ablated; the margin exists because a tight grammar turns a misread into a plausible wrong answer | PARSeq as third voter (+0.9 pt), calibration/LTT (≈16 errors in 1,650 cells fit nothing), text super-resolution (hallucination), TrOCR, Florence-2, Granite-Docling, Moondream, HunyuanOCR (licence bars medical use), PaddleOCR-VL |
+
+Cost envelope measured on this workstation (single process): JPEG decode + LSD
+≈ 30 ms/img; projection sweep ≈ 30 ms; both ≈ 60–90 ms/img (12 img/s);
+full-page `warpAffine` 48 ms; PP-OCRv5 en-mobile 13 ms/crop; Tesseract
+8.3 ms/crop; `extract_facts` ≈ 1 min for the corpus. Anything ≥ 0.2 s/img is
+gated to a subset; anything ≥ 0.5 s/crop to the disputed set, duty-cycled per
+`docs/operations/WORKSTATION_STABILITY.md`.
+
+## 3. What shipped, in the order the measurements justified
+
+1. **The DRB3/4/5 row is one question** (`tools/hla_review.html`): tick the
+   genes printed on the row; an allele only if one is printed beside a name;
+   03/04/05 beside a gene is refused as the gene's own digit. Per-gene labels
+   are derived; labels made under the old question render as "re-confirm".
+2. **Declared partial reads score as `partial`** (`review/golden.py`): a single
+   allele with `second_allele=UNREAD` inside the printed pair is an incomplete
+   record, not a false acceptance. Without the declaration the KI-015 rule
+   stands.
+3. **The star the recognizer never read** (`ocr/glyphs.py`): `A02` parses with
+   its prefix (marked repaired), `8*44` repairs the B/8 prefix confusion,
+   `Cw` names C. Corpus: **+2,368** cells REVIEW→RESOLVED, 46 the other way
+   (every one the KI-015 guard), 0 changed values; 5 of the reviewer's 21
+   misses recovered, 0 contradictions.
+4. **Page geometry from the rulings** (`ocr/rulings.py`, `scripts/geometry_pass.py`):
+   STRAIGHT / ROTATE / UNCERTAIN per document, never rotating on one
+   estimator. Calibrated on real photographs: a half-degree scatter bound
+   refused 79 of 150 pages; at 1.5° with the sweep as guard, 53 ROTATE / 71
+   STRAIGHT / 26 UNCERTAIN. Converging verticals (median 2.6° across a
+   hand-held page) are a perspective flag, not a veto.
+5. **The page frame** (`ocr/geometry.py`, `extract_facts.py --geometry`):
+   stored boxes are levelled before the row rules run, provenance restored.
+   Applied from 1.5° of tilt: under that the frame gained and lost 9 cells
+   each on the pack; from 2° it gained 5 and lost 0.
+
+## 4. The DRB3/4/5 row's measured grammar (E11)
+
+Over the 13,793 documents with exactly one grouped header, the tokens on the
+header's row band:
+
+| shape | tokens |
+|---|---:|
+| gene name (`DRB3` / `DRB4` / `DRB5`) | 22,017 |
+| gene pair in one box (`DRB3/4`) | 330 |
+| bare first field (`01`, `02`, …) | 75 (on 48 documents) |
+| single gene digit (`3`, `4`, `5`) | 45 |
+| prefixed allele (`DRB4*01…`) | 16 |
+| serotype (`DR51/52/53`) | 0 |
+| other (letters / digits / punctuation) | 1,295 |
+
+Rows: 9,664 print two tokens, 3,232 one, 562 none. Presence typing by name is
+97% of what the row prints, which is why the review question is "which genes
+are printed" and why a typed-slot grammar (bare number → review with candidate
+genes; prefixed allele → presence plus a proposal) is a small follow-up rather
+than the next step. It still needs the spec changes listed in HUMAN_ACTIONS
+(HA-011) before it is built: the licence to read a gene name from token text
+inside the grouped row lives in ADR 0008 and must be codified in OCR_SPEC §2.
+
+## 5. Open experiments
+
+| # | question | what settles it |
+|---|---|---|
+| E3 | ruled-table share and ruling detectability on phone photos | the corpus geometry pass's STRAIGHT/ROTATE/UNCERTAIN shares and `n_h/n_v` |
+| E4 | perspective prevalence | `perspective_flag` counts (pack: 71/150 under the calibrated thresholds) |
+| E6 | pad vs stretch vs rotate per engine | the crop ablation on the labelled cells |
+| E8 | best light confirmer on HLA cells | A/B on the 600-crop survey set + golden |
+| E9 | does polygon detection recover missed boxes? | `ocr_pass --mode polygons` on the gated residual |
+| E13 | golden-set size for a pooled 99% claim | ≥1,650 gold-readable cells over ≥100 documents (expect 180–220) |
+
+## 6. Do not do
+
+Learned dewarpers or table transformers over the corpus; `straighten_pages`;
+morphological long-kernel line extraction before deskew; any single angle
+estimator applying a rotation without agreement; PaddleX RT-DETR / SLANeXt /
+LORE / img2table; PARSeq, TrOCR, Florence-2, Granite-Docling, Moondream or
+PaddleOCR-VL as confirmers; HunyuanOCR (licence prohibits medical use); text
+super-resolution; calibration or LTT before the golden set holds ≥50 wrong
+reads; word-lexicon-only CTC constraints (they complete low-resolution reads);
+inferring a DRBX gene or first field from DRB1; emitting ABSENT from an empty
+cell; scoring the DRB3/4/5 row as three fields; new dependencies without a
+register row and `uv lock`; any cloud OCR/VLM or sending an image off the
+machine.
