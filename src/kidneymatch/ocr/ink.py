@@ -10,9 +10,11 @@ module measures that, for a cell whose location is known from the form's own
 structure (the DRB1 row directly above prints its two alleles in the same two
 columns).
 
-Nothing here decides a gene. It reports how much ink a region holds, with the
-table rulings removed, so a pass can certify a slot BLANK against a threshold
-calibrated on the columns that do hold a token. The paper level is the region's
+Nothing here decides a gene. It reports how much TEXT ink a region holds — dark
+pixels in glyph-shaped components, with the table rulings removed — so a pass
+can certify a slot BLANK against a threshold calibrated on the columns that
+do hold a token. A dash, a placeholder line or a ruling of any tilt is not
+glyph-shaped and is not ink here. The paper level is the region's
 own median; a region too dark to have a paper level (a photograph's shadow, a
 stamp) is unmeasurable and stays UNKNOWN.
 """
@@ -31,6 +33,17 @@ DARK_BELOW_PAPER = 60
 RULING_FRACTION = 0.6
 # Below this paper level the region has no white to measure against.
 MIN_PAPER = 120
+# Ink is counted only in connected components shaped like glyphs: at least
+# this tall (a fixed floor, or this share of the region's height, whichever is
+# larger) and not `LINE_ASPECT` times wider than tall. A printed dash is
+# shorter; a ruling of any tilt, or a placeholder line in an empty cell, is
+# far wider than it is tall. Measured on 23,719 empty labelled cells: 17,221
+# read as INKED under the plain dark count, most of them under 1% ink with
+# runs of 10-30 columns and no height — marks the detector rightly never boxed
+# as text.
+MIN_GLYPH_PX = 4
+MIN_GLYPH_SHARE = 0.2
+LINE_ASPECT = 8.0
 # A column region is widened by this share of its width on each side, so a
 # token printed a little off the DRB1 column still falls inside it.
 COLUMN_MARGIN = 0.15
@@ -52,6 +65,43 @@ class InkMeasure:
     paper: float  # the region's median grey level
 
 
+def _text_components(dark, min_height: int, line_aspect: float):  # type: ignore[no-untyped-def]
+    """Keep the dark pixels of components shaped like glyphs.
+
+    A glyph's connected component is at least `min_height` tall and not
+    line-shaped; a printed dash is shorter than that, and a ruling of any tilt
+    is `line_aspect` times wider than it is tall. 8-connected flood fill over
+    the dark pixels only, which are a small share of any region.
+    """
+    rows, cols = dark.shape
+    keep = np.zeros_like(dark)
+    seen = np.zeros_like(dark)
+    ys, xs = np.nonzero(dark)
+    for start_y, start_x in zip(ys.tolist(), xs.tolist(), strict=True):
+        if seen[start_y, start_x]:
+            continue
+        stack = [(start_y, start_x)]
+        seen[start_y, start_x] = True
+        pixels = []
+        while stack:
+            y, x = stack.pop()
+            pixels.append((y, x))
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < rows and 0 <= nx < cols and dark[ny, nx] and not seen[ny, nx]:
+                        seen[ny, nx] = True
+                        stack.append((ny, nx))
+        py = [y for y, _ in pixels]
+        px = [x for _, x in pixels]
+        height = max(py) - min(py) + 1
+        width = max(px) - min(px) + 1
+        if height >= min_height and width < line_aspect * height:
+            for y, x in pixels:
+                keep[y, x] = True
+    return keep
+
+
 def ink_measure(gray: NDArray[np.uint8]) -> InkMeasure | None:
     """Measure the ink in a greyscale region; None when it cannot be measured."""
     if gray.ndim != 2 or gray.size < 100:
@@ -64,12 +114,55 @@ def ink_measure(gray: NDArray[np.uint8]) -> InkMeasure | None:
     rulings_c = dark.mean(axis=0) > RULING_FRACTION
     dark[rulings_r, :] = False
     dark[:, rulings_c] = False
+    dark = _text_components(
+        dark, max(MIN_GLYPH_PX, int(MIN_GLYPH_SHARE * gray.shape[0])), LINE_ASPECT
+    )
     col_any = dark.any(axis=0)
     longest = best = 0
     for inked in col_any:
         best = best + 1 if inked else 0
         longest = max(longest, best)
     return InkMeasure(float(dark.mean()), float(col_any.mean()), int(longest), paper)
+
+
+# The blank thresholds, calibrated 2026-09-05 on 4,904 columns holding a read
+# gene token: none measured under 0.005 ink (2 under 0.01, 4,847 at 0.05 or
+# more) and 8 under 0.2 column coverage. A region is BLANK only when ALL three
+# hold, each at least 2.5x under the least-inked read token. On the 2,674
+# one-token DRB3/4/5 rows measured, 2,141 other columns sat under 0.001 ink
+# and 2,192 under 0.05 coverage — paper — while 295 carried 0.02 or more: a
+# token no engine read. Both labelled rows the reviewer marked ABSENT measured
+# under 0.001.
+BLANK_FRACTION = 0.002
+BLANK_COVERAGE = 0.05
+BLANK_RUN = 6
+# Re-measured under the glyph-component filter on 2,806 read-token columns:
+# 2,740 at 0.05 or more, 61 under 0.05, 2 under 0.02, 2 under 0.01 — and ONE
+# under 0.001, a token too small or faint for the measure. So a slot is called
+# paper only when the same measure sees the ink it knows is there on that page
+# (the read token, or the label itself) at this much: below it the page's
+# print is beyond the measure and the slot is UNMEASURABLE.
+CONTROL_FRACTION = 0.005
+
+
+def classify(measure: InkMeasure | None, control: InkMeasure | None = None) -> str:
+    """BLANK (paper), INKED (something is printed there), or UNMEASURABLE.
+
+    `control` is the measure of a region on the same page KNOWN to hold text
+    (the read gene token, the locus label). When it is given and reads under
+    `CONTROL_FRACTION`, the page's print is beyond this measure, and no slot on
+    it may be called paper.
+    """
+    if measure is None:
+        return "UNMEASURABLE"
+    if control is not None and control.fraction < CONTROL_FRACTION:
+        return "UNMEASURABLE"
+    blank = (
+        measure.fraction < BLANK_FRACTION
+        and measure.coverage < BLANK_COVERAGE
+        and measure.longest_run < BLANK_RUN
+    )
+    return "BLANK" if blank else "INKED"
 
 
 @dataclass(frozen=True, slots=True)

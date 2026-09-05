@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
-from kidneymatch.ocr.ink import ColumnRegion, column_regions, ink_measure
+from kidneymatch.ocr.ink import ColumnRegion, classify, column_regions, ink_measure
 
 pytestmark = pytest.mark.task("OCR-001")
 
@@ -83,3 +83,35 @@ def test_without_two_drb1_boxes_there_is_no_geometry() -> None:
         ],
         ColumnRegion,
     )
+
+
+def test_a_dash_or_a_tilted_line_in_an_empty_cell_is_not_ink() -> None:
+    """Empty cells are often printed with a dash or a placeholder line, and a
+    ruling on a slightly tilted page spreads over several pixel rows. None of
+    that has a vertical stroke; text does."""
+    image = Image.new("L", (300, 40), 245)
+    draw = ImageDraw.Draw(image)
+    draw.line([(40, 20), (120, 20)], fill=0, width=2)  # a printed dash
+    draw.line([(0, 30), (299, 34)], fill=0, width=2)  # a ruling tilted 0.8 deg
+    measure = ink_measure(np.asarray(image))
+    assert measure is not None
+    assert measure.fraction == 0.0 and measure.coverage == 0.0
+    with_text = image.copy()
+    ImageDraw.Draw(with_text).text((150, 8), "A*02", fill=0, font=ImageFont.load_default(size=18))
+    inked = ink_measure(np.asarray(with_text))
+    assert inked is not None and inked.fraction > 0.005 and inked.coverage > 0.08
+
+
+def test_a_slot_is_paper_only_when_the_page_s_own_print_is_measurable() -> None:
+    """The control is a region known to hold text. When the measure cannot see
+    that, it cannot certify paper anywhere on the page."""
+    paper = ink_measure(cell(None))
+    token = ink_measure(cell("DRB4"))
+    assert classify(paper) == "BLANK"
+    assert classify(paper, control=token) == "BLANK"
+    faint = ink_measure(
+        np.full((40, 120), 245, dtype=np.uint8)
+    )  # a "token" that measures as nothing
+    assert classify(paper, control=faint) == "UNMEASURABLE"
+    assert classify(token, control=faint) == "UNMEASURABLE", "nor is INKED claimed"
+    assert classify(None, control=token) == "UNMEASURABLE"
