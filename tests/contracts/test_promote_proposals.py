@@ -91,15 +91,15 @@ def database(tmp_path: Path) -> Path:
     ]
     con.executemany("INSERT INTO decode VALUES (?,?,'facts/v1',?,?,?)", decodes)
     confirmations = [
-        ("d1", "DQB1", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "DQB1*02 DQB1*05"),
-        ("d2", "A", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "A*24"),
-        ("d3", "B", "ppocrv5/en-mobile-rec@proposal", "CONTRADICTED", "B*35 B*52"),
-        ("d5", "C", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "B*07"),
-        ("d6", "B", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "B*35"),
-        ("d7", "A", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "A*02 A*24"),
-        ("d8", "DQB1", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "DQB1*03 DQB1*06"),
-        ("d10", "A", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "A*02 A*24"),
-        ("d11", "A", "ppocrv5/en-mobile-rec@proposal", "CONFIRMED", "A*83"),
+        ("d1", "DQB1", "ppocrv6/medium-rec@proposal", "CONFIRMED", "DQB1*02 DQB1*05"),
+        ("d2", "A", "ppocrv6/medium-rec@proposal", "CONFIRMED", "A*24"),
+        ("d3", "B", "ppocrv6/medium-rec@proposal", "CONTRADICTED", "B*35 B*52"),
+        ("d5", "C", "ppocrv6/medium-rec@proposal", "CONFIRMED", "B*07"),
+        ("d6", "B", "ppocrv6/medium-rec@proposal", "CONFIRMED", "B*35"),
+        ("d7", "A", "ppocrv6/medium-rec@proposal", "CONFIRMED", "A*02 A*24"),
+        ("d8", "DQB1", "ppocrv6/medium-rec@proposal", "CONFIRMED", "DQB1*03 DQB1*06"),
+        ("d10", "A", "ppocrv6/medium-rec@proposal", "CONFIRMED", "A*02 A*24"),
+        ("d11", "A", "ppocrv6/medium-rec@proposal", "CONFIRMED", "A*83"),
     ]
     con.executemany("INSERT INTO confirmation VALUES (?,?,'facts/v1',?,?,?,'t')", confirmations)
     con.commit()
@@ -215,3 +215,102 @@ def test_a_promotion_on_a_low_quality_page_is_withheld_and_an_old_one_withdrawn(
     assert d9[:4] == ("REVIEW_REQUIRED", None, None, 0)
     assert "withheld" in d9[4] and "LOW" in d9[4]
     assert module.promote(db)["withdrawn on LOW pages"] == 0, "withdrawal is idempotent"
+
+
+def test_a_promotion_a_third_reader_contradicts_is_withdrawn(tmp_path: Path) -> None:
+    """A fact built from two engines agreeing is withdrawn when another engine
+    reads the digits differently: the agreement no longer stands alone, and an
+    ambiguous critical read is REVIEW_REQUIRED, never a best guess."""
+    module = load()
+    db = database(tmp_path)
+    con = sqlite3.connect(db)
+    # d1 is promotable; a second, later reader disagrees with the same cell
+    con.execute(
+        "INSERT INTO confirmation VALUES ('d1','DQB1','facts/v1','ppocrv6/medium-rec',"
+        "'CONTRADICTED','DQB1*02 DQB1*03','t')"
+    )
+    con.commit()
+    con.close()
+    tally = module.promote(db)
+    assert tally["withdrawn: another reader contradicts the promoted value"] == 1
+    con = sqlite3.connect(db)
+    status, value, source, reason = con.execute(
+        "SELECT status, value, source, reason FROM fact WHERE sha256='d1'"
+    ).fetchone()
+    assert (status, value, source) == ("REVIEW_REQUIRED", None, None)
+    assert "contradicts" in reason
+    # the other promotion, which nothing contradicts, stands
+    assert con.execute("SELECT status FROM fact WHERE sha256='d2'").fetchone()[0] == "RESOLVED"
+
+
+def test_the_default_confirmer_is_the_best_measured_reader() -> None:
+    module = load()
+    assert module.CONFIRMER.startswith("ppocrv6/"), "the engine bench of 2026-09-05"
+    assert module.PREVIOUS_CONFIRMER.startswith("ppocrv5/")
+
+
+def test_only_a_reader_as_good_as_the_licensing_one_withdraws_a_promotion(
+    tmp_path: Path,
+) -> None:
+    """Tesseract reads half these cells and contradicts 14% of everything;
+    letting it veto a fact two better engines agreed on would abstain on noise.
+    A better reader disagreeing is the evidence that should withdraw one."""
+    module = load()
+    assert module.ENGINE_RANK["ppocrv6/medium-rec"] > module.ENGINE_RANK["tesseract5/psm7-alnum"]
+    db = database(tmp_path)
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO confirmation VALUES ('d2','A','facts/v1','tesseract5/psm7-alnum',"
+        "'CONTRADICTED','A*11','t')"
+    )
+    con.commit()
+    con.close()
+    tally = module.promote(db)  # licensed by ppocrv6
+    assert "withdrawn: another reader contradicts the promoted value" not in tally
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT status FROM fact WHERE sha256='d2'").fetchone()[0] == "RESOLVED"
+    con.close()
+    # the same cell, licensed by a weaker reader, IS withdrawn by a better one
+    (tmp_path / "second").mkdir(exist_ok=True)
+    db2 = database(tmp_path / "second")
+    con = sqlite3.connect(db2)
+    con.execute(
+        "UPDATE confirmation SET confirmer_version='ppocrv5/en-mobile-rec@proposal' "
+        "WHERE sha256='d2'"
+    )
+    con.execute(
+        "INSERT INTO confirmation VALUES ('d2','A','facts/v1','ppocrv6/medium-rec',"
+        "'CONTRADICTED','A*11','t')"
+    )
+    con.commit()
+    con.close()
+    tally = module.promote(db2, confirmer="ppocrv5/en-mobile-rec@proposal")
+    assert tally["withdrawn: another reader contradicts the promoted value"] == 1
+
+
+def test_a_withdrawn_promotion_can_be_promoted_again_when_the_disagreement_lifts(
+    tmp_path: Path,
+) -> None:
+    module = load()
+    db = database(tmp_path)
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO confirmation VALUES ('d1','DQB1','facts/v1','ppocrv6/medium-rec',"
+        "'CONTRADICTED','DQB1*02 DQB1*03','t')"
+    )
+    con.commit()
+    con.close()
+    assert module.promote(db)["withdrawn: another reader contradicts the promoted value"] == 1
+    con = sqlite3.connect(db)
+    assert (
+        con.execute("SELECT status FROM fact WHERE sha256='d1'").fetchone()[0] == "REVIEW_REQUIRED"
+    )
+    con.execute(
+        "UPDATE confirmation SET verdict='CONFIRMED', reading='DQB1*02 DQB1*05' "
+        "WHERE sha256='d1' AND confirmer_version='ppocrv6/medium-rec'"
+    )
+    con.commit()
+    con.close()
+    assert module.promote(db)["promoted DQB1"] == 1
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT status FROM fact WHERE sha256='d1'").fetchone()[0] == "RESOLVED"

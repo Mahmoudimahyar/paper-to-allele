@@ -215,3 +215,21 @@ def test_rescore_leaves_the_target_verdicts_alone(tmp_path: Path) -> None:
     ).fetchall()
     assert ("ppocrv5/en-mobile-rec@proposal", "CONFIRMED") in verdicts
     assert ("ppocrv5/en-mobile-rec@drbx", "CONFIRMED") in verdicts
+
+
+def test_every_ppocr_generation_is_selectable_and_keyed_apart(tmp_path: Path) -> None:
+    """PP-OCRv6 reads 65 of the reviewer's 67 labelled cells against v5's 50
+    (`docs/ingestion/ENGINE_BENCH_2026-09-05.md`). It is an addition, not a
+    replacement: a cell may carry every engine's verdict."""
+    module = load()
+    assert set(module.PPOCR_MODELS) == {"ppocrv5", "ppocrv6"}
+    assert module.ENGINES["ppocrv6"] != module.ENGINES["ppocrv5"]
+    db, export = corpus(tmp_path, module)
+    for engine in ("ppocrv5", "ppocrv6"):
+        assert (
+            module.run(db, export, "", None, 10, engine, "resolved", lambda images: ["A*02"]) == 0
+        )
+    con = sqlite3.connect(db)
+    versions = {v for (v,) in con.execute("SELECT DISTINCT confirmer_version FROM confirmation")}
+    assert versions == {module.ENGINES["ppocrv5"], module.ENGINES["ppocrv6"]}
+    assert con.execute("SELECT COUNT(*) FROM confirmation WHERE field='A'").fetchone()[0] == 2

@@ -77,10 +77,21 @@ CONFIRMER_VERSION = "tesseract5/psm7-alnum"
 PPOCR_CONFIRMER_VERSION = "ppocrv5/en-mobile-rec"
 PPOCR_MODEL = "en_PP-OCRv5_mobile_rec"
 
+# The next generation, measured against the reviewer's labels on 2026-09-05
+# (`docs/ingestion/ENGINE_BENCH_2026-09-05.md`): 65 of 67 labelled cells read
+# exactly, against 50 for the v5 mobile recogniser above, at 25 ms per crop
+# instead of 11.5 — and its two misses are the two cells where the detector
+# stored one box for two printed alleles. It replaces nothing: every verdict
+# is keyed by `confirmer_version`, so a cell may carry all three engines'.
+PPOCRV6_CONFIRMER_VERSION = "ppocrv6/medium-rec"
+PPOCRV6_MODEL = "PP-OCRv6_medium_rec"
+
 ENGINES = {
     "tesseract5": CONFIRMER_VERSION,
     "ppocrv5": PPOCR_CONFIRMER_VERSION,
+    "ppocrv6": PPOCRV6_CONFIRMER_VERSION,
 }
+PPOCR_MODELS = {"ppocrv5": PPOCR_MODEL, "ppocrv6": PPOCRV6_MODEL}
 
 # The alphabet a locus value can contain: allele digits, the field separator,
 # the star, and the letters that appear in locus names.
@@ -168,7 +179,7 @@ def read_crops(binary: str, crops: list[Path]) -> list[str]:
         return pages[: len(crops)]
 
 
-def build_ppocr_reader():  # type: ignore[no-untyped-def]
+def build_ppocr_reader(model_name: str = PPOCR_MODEL):  # type: ignore[no-untyped-def]
     """PP-OCRv5 recognition, English mobile. Needs the `confirm` extra.
 
     Recognition ONLY: the cell's geometry already came from the primary
@@ -179,7 +190,7 @@ def build_ppocr_reader():  # type: ignore[no-untyped-def]
     import numpy as np
     from paddleocr import TextRecognition
 
-    engine = TextRecognition(model_name=PPOCR_MODEL, device="cpu")
+    engine = TextRecognition(model_name=model_name, device="cpu")
 
     def read(images: list) -> list[str]:
         if not images:
@@ -300,9 +311,9 @@ def run(
     from PIL import Image
 
     confirmer_version = ENGINES[engine] + TARGETS[target]
-    read_ppocr = (
-        reader if reader is not None else (build_ppocr_reader() if engine == "ppocrv5" else None)
-    )
+    read_ppocr = reader
+    if read_ppocr is None and engine in PPOCR_MODELS:
+        read_ppocr = build_ppocr_reader(PPOCR_MODELS[engine])
     vocabulary = load_vocabulary()
 
     def judge(field: str, value: str | None, reading: str) -> Confirmation:
