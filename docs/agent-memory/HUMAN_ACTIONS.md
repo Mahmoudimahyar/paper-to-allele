@@ -57,6 +57,19 @@ Never put secret values in this file.
   question and are NOT ground truth (KI-021): reload the page (Ctrl+F5), and
   the row shows "re-confirm" — tick the genes printed, nothing else. The server
   runs on http://localhost:8766 (port 8765 is taken by another program).
+- **STATUS 2026-09-05 (later): 187 cells labelled (17 documents), scored, every
+  miss traced (ADR 0009 §7).** The page now shows the Telegram messages posted
+  with each image — a collapsible "Messages" block under the tags, with the
+  caption's role claim beside Role — after Ctrl+F5. The pack's own crops and
+  suggestions are from before this session's fixes and are deliberately NOT
+  rebuilt (the labels are keyed to them); the next pack will carry the fixes
+  and a `tilted` stratum. Two things the labels can settle next: DRB3/4/5 rows
+  where the page marks a gene "repaired" (was the printed name really DRB5?),
+  and cells marked "promoted" (760 corpus-wide). One caveat on the labels so
+  far: the page pre-sets NOT_PRINTED on a row the pipeline never anchored, and
+  Enter accepts it — on 8 of 21 such rows the pipeline now reads a value
+  (3 of them DRB3/4/5 rows with gene names PP-OCRv5 confirms), so a
+  NOT_PRINTED accepted by Enter is a default, not a reading of the page.
 
 ### HA-011 — Codify the DRB3/4/5 row's grammar in the spec, and decide two semantics
 - **Needed by:** the row grammar v2 (`GROUPED_DRBX/v2`: bare numbers on the

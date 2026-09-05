@@ -230,3 +230,118 @@ errors*. Labels are `golden-labels/v1` and are scored by `golden_score.py`
 against the pack's `pipeline.json`.
 
 Section 5 stands unchanged: still no accuracy, still nothing to Gold.
+
+## 7. Amendment 2026-09-05: what the second labelled export changed
+
+Written after the reviewer's second anchored export (187 cells, 17 documents)
+was traced cell by cell to a root cause and each cause was measured across the
+corpus (`docs/exec-plans/active/OCR-GEOM-001-geometry-and-drbx-row.md`, M4b).
+Under the refreshed facts the export scored 78 correct, 74 correct abstentions,
+29 missed, 4 contradicted, 2 partial. Every change below is a rule the labels
+and a corpus measurement both bore out; no change binds a value to a locus its
+printed label does not name, the one label repair that can move a damaged
+label between loci is accepted on the geometry evidence below and pinned by
+the tests, and every promoted or newly-bound cell keeps its provenance.
+
+### The locus label's interior: one repair, measured
+`canonical_locus_label` repaired only the final character. The recognizer reads
+`DQB1` as `DOBI` (2,150 boxes `HLA-DOBI`, 261 `DOBI`) and `DQA1` as `DOAI`, so
+those labels never anchored and the values beneath them, which print the same
+prefix, never parsed. The geometry is decisive: 774 refused `DOB…` values sat
+under a DQB1 anchor against 1 under DRB1 (76 `DOA…` under DQA1 against 2 under
+DPA1), and the 2,410 documents printing a `DOBI`-shaped token carry a DRB1
+anchor 87% of the time and a DQB1 anchor 4.6%. The one interior repair is
+therefore `O`/`0` → `Q` in the second position; `R` and `P` are never repaired,
+and the exhaustive rename sweep in the tests names the crossings this permits
+(`DRB1`/`DPB1` → `DQB1`, `DPA1` → `DQA1`, via that glyph only). Trailing
+punctuation after a label (`HLA-A*:` 513, `HLA-DQB1":` 307, `HLA-B:` 261) is
+stripped; a star is stripped only behind an HLA prefix, because `DRB1*` alone
+is as likely a value stub. The prefix itself accepts the recognizer's `ILA`,
+`IILA`, `HILA`, and `LA-` before a separator — not a bare `LA`: that variant
+made the letterhead's `LAB` an HLA-B anchor on 9,817 documents and was caught
+by the refresh comparison, not by a test, which is why the comparison is now
+part of the refresh procedure. Corpus: DQB1 resolved 10,207 → 12,618.
+
+### Over-full cells on the family rule
+On a form measured to print the locus on every value, a candidate that names
+ANOTHER locus inside this row's band is the neighbouring row drifting into it
+on a hand-held photograph. It is set aside before the candidate count; a
+candidate that names no locus or does not parse is kept, so the existing gates
+still refuse the cell. Gate 2 is unchanged for a cell with no more candidates
+than the locus can hold. Measured: 1,366 refused cells held exactly two values
+naming their own locus beside one or two naming another; 459 resolved.
+
+### The default rule's tolerance band, as a fallback
+The nearest allele-shaped box to a label whose cell read empty sits one anchor
+height off the label's centre on 1,406 of 5,302 such cells. Applied as a first
+criterion, a 1.5-height centre band resolved 949 of them but also added
+candidates to 799 cells that already resolved and refused them; applied only
+when the overlap test read nothing (or one allele with its partner unread), and
+kept only when the wider reading resolves, it adds and never subtracts: +901
+cells, 890 second alleles (180 of them a homozygous partner), 0 boxes bound to
+two loci, 0 values swapped. This amends ADR 0008's default relation.
+
+### The grouped DRB3/4/5 header, and the slot that rests on a repair
+Header v2 accepts the B slot's measured misreads (`DRR`, `DRE`, `DR$`, `DRH`,
+`DRD`) and a slash read as `1`, and a missing `4` only behind an HLA prefix with
+a slash-misread letter in its place; a 4-less token without those is a pair of
+gene names, never a header. 605 header-less documents gain one, 505 with a gene
+token then on the band (+1,056 gene calls). On the labelled pack, 7 of 10
+ABSENT calls made beside a token whose `S` had been repaired to 5 were wrong, so
+such a row now leaves the other genes REVIEW_REQUIRED (KI-026: −1,871 ABSENT
+calls corpus-wide). The DRB5 PRESENT call stands, marked repaired, and
+`confirm_pass.py --target drbx` reads every PRESENT gene box with PP-OCRv5
+(19,372 boxes: 18,481 CONFIRMED / 114 CONTRADICTED / 777 no opinion on the
+first run). The reader was then made to abstain on an `S` of its own and to
+read a pair printed in one box (`DRB3/4`) as naming both genes: of the 1,912
+repaired tokens it now confirms 1,152, contradicts 20 and renders the same
+`S` on 740 — the second engine shares the glyph confusion on 39% of them,
+which is why an `S` can never confirm the repair. A repaired call the reader
+contradicts is demoted to review by the same pass (20 cells; the two labelled
+contradictions were among them) and reinstated if a re-judging lifts the
+contradiction.
+
+The adversarial review of the diff (133 agents, 24 findings confirmed)
+closed three gaps in the band: every gate now runs under the widened
+alignment when the band is used, the grouped DRB3/4/5 header owns its row
+like any label, and an anchor box out of scale with the page's other labels
+gets no band. Re-extracted under those, 154 of the band's cells went back to
+review (A 67, B 33, DRB1 29, C 16, DQB1 9), 7 values the header now owns
+were withdrawn, and 0 values swapped — the comparison step of
+`refresh_facts.py` reported each.
+
+### A PROPOSAL becomes a fact only when a second engine reads the same
+Section 6 recorded that the decode's PROPOSAL cells are never promoted on the
+decode alone. They now can be, under one condition: `confirm_pass.py --target
+proposals` has PP-OCRv5 read the same crop and judges it against the proposal,
+and `promote_proposals.py` promotes exactly the CONFIRMED ones (1,889
+proposals corpus-wide, 1,715 of them two alleles). The cell's locus came from
+geometry and passed every gate before the parse; the value is admissible by
+construction; and two independent recognizers read the same digits from the
+same crop — the standard every RESOLVED cell meets when its confirmer agrees.
+The promoted fact carries `repaired=1`, `source=decode+ppocrv5` and a reason
+naming both engines, so the pack shows it and the golden gate can score
+promotions apart. On the labelled export the pipeline's four proposals all
+equalled the reviewer's reading. Two gates were added after the first run:
+never on a LOW-quality page (of the two such promotions the labelled one was
+wrong; LOW pages split the decode twice as often), and the confirmer's
+reading is re-judged against the proposal at promotion time, with
+admissibility re-checked, so a re-decoded cell is never promoted on a stale
+agreement. A refusal for value shape is emitted only when every other box
+in the cell passed every other gate, which is what makes the promoted boxes
+values of this locus. Corpus, 2026-09-05: 2,026 proposals judged, 778
+CONFIRMED / 885 CONTRADICTED / 363 no opinion; 775 promoted after the LOW
+gate (DRB1 380, DQB1 216, B 108, A 37, DQA1 28, C 8). The 44% contradicted
+is the measure of what promoting on the decode alone would have done.
+
+### Page geometry v3
+The projection sweep corroborates the rulings within 2° (1,231 of 1,595 pages
+refused at 1° disagreed by less), and the rulings' own agreement check — added
+by the adversarial review on a synthetic case — is calibrated on photographs:
+at 1°/80% it refused 6,772 of the 19,695 pages already measured to a MAD under
+1.5°; at 3°/70% it refuses 88 of them and 969 genuinely bimodal pages. Corpus:
+6,511 ROTATE / 14,139 STRAIGHT / 2,916 UNCERTAIN; 1,591 pages levelled at
+extraction. A third estimator from the stored boxes was measured and rejected
+(KI-025).
+
+Section 5 stands: still no accuracy claim, still nothing to Gold.

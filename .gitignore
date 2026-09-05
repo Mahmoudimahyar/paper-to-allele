@@ -63,3 +63,6 @@ mutants/
 ChatExport_*
 Telegram*Export*
 *.tgs
+
+# Agent worktrees the desktop app and subagents create; never part of the repo.
+.claude/worktrees/

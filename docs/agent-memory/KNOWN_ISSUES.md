@@ -274,10 +274,44 @@ gained 5 and lost none. The extraction therefore applies the frame from 1.5°
 from 0.5° as measurement. Revisit with the crop-level rotation (M4), which is
 where small tilts actually cost recognition.
 
-Corpus-wide (2026-09-05, 1,205 levelled pages): 1,121 cells gained, 97 lost,
+Corpus-wide (2026-09-05, 1,205 levelled pages under `rulings/v2`; 1,591 under
+v3 after the sweep bound went to 2° and the agreement check was calibrated on
+photographs): 1,121 cells gained, 97 lost,
 and 168 resolved cells changed value — every one of them a second allele gained
 (140) or dropped (28), never an allele swapped for another. The 28 drops are
 on pages tilted 2-4°; 24 of the dropped alleles belong to no other locus on the
 page, so they are most likely real second alleles the de-inflation pushed out of
 the row band on wide rows. Experiment: level the centres without de-inflating
 the hulls and count whether the 28 return without the 140 leaving.
+
+## KI-025 — A tilt estimate from the stored OCR boxes is biased; it cannot be the third estimator
+Measured 2026-09-05 on the 6,511 ROTATE pages of `rulings/v3`: the median angle
+of label-to-value lines built from the stored (axis-aligned) boxes sits 1.44°
+from the rulings' angle (p90 2.3°), and a fit through the label stack is worse
+(637 of 4,115 pages within 1°). The bias is the detector's: a value's box centre
+sits 0.5-0.75 label heights above its label's centre (`anchors.py`), which over
+a 20-height row reads as ~1.7°. Corroborating the projection sweep with it
+would unlock 106 of the 2,916 UNCERTAIN pages at 1.5° or more, so no geometry
+version was spent on it. The 1,854 UNCERTAIN pages with too few label/value
+pairs for any estimate are mostly not typing reports. A value-to-value slope
+(both boxes share a baseline) is the untried variant.
+
+## KI-026 — 1,871 DRB3/4/5 ABSENT calls moved to review by the repaired-slot rule
+On the labelled pack, 7 of 10 ABSENT calls made beside a token whose `S` was
+repaired to 5 were wrong (the reviewer found the gene printed: `DRBS DRBS` was
+`DRB3 DRB5`, `DRBS/S` was `DRB3/5`). `drbx.py` now leaves the other genes
+REVIEW_REQUIRED on such rows: DRB4 −1,258, DRB3 −613 resolved corpus-wide. The
+sample is biased (the pack over-samples repaired cells), so the true rate is
+unknown; `confirm_pass.py --target drbx` reads every PRESENT gene box with
+PP-OCRv5, and a rule that reinstates ABSENT where the confirmer CONFIRMS the
+repaired gene is the measured way to buy the cells back. Not implemented until
+the confirmer's own error on gene names is known (labelled evidence).
+
+Measured 2026-09-05 (first run, before the reader was made to abstain on an
+`S` of its own): 19,372 PRESENT gene boxes, 18,481 CONFIRMED / 114 CONTRADICTED
+/ 777 no opinion; of the 1,912 repaired tokens 1,876 confirmed, 21
+contradicted, 15 no opinion. The 21 are demoted to review by the pass (the two
+labelled contradictions were among them) and reinstated if a re-judging lifts
+the contradiction. The 1,876 confirmations are the evidence a reinstatement of
+the other genes' ABSENT could rest on — once the labels have said how often the
+second engine renders a printed 3 as 5 too.
