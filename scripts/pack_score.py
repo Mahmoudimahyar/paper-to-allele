@@ -231,6 +231,30 @@ def main() -> int:
     for pat, n in trio_patterns.most_common():
         print(f"  {n:2d}  {pat[0]:<12} {pat[1]:<12} {pat[2]:<12}")
 
+    # ---- the reviewer's notes ------------------------------------------------
+    #
+    # Counts and where they fall, never the text: a note is the reviewer's own
+    # words about a real report, and this file is written to `.artifacts/`.
+    # The text is read directly by whoever is debugging, from the export.
+    notes = {str(k): str(v) for k, v in (export.get("notes") or {}).items() if str(v).strip()}
+    if notes:
+        on_cells = {k: v for k, v in notes.items() if not k.startswith("doc:")}
+        by_outcome: Counter[str] = Counter()
+        for cell_id in on_cells:
+            label = labels.get(cell_id)
+            entry = pipeline.get(cell_id)
+            if label is None or entry is None:
+                by_outcome["note on a cell with no label or no pipeline entry"] += 1
+                continue
+            by_outcome[OUTCOME_NAMES[classify(label, entry)]] += 1
+        print(
+            f"\nNOTES: {len(notes)} ({len(on_cells)} on cells, "
+            f"{len(notes) - len(on_cells)} on whole pages)"
+        )
+        for outcome, count in by_outcome.most_common():
+            print(f"  {count:>4}  on a cell scored {outcome}")
+        print("  (the text is in the export; it is not copied into the report)")
+
     # ---- write the aggregate report ------------------------------------------
     args.out.mkdir(parents=True, exist_ok=True)
     out = args.out / f"{args.export.stem}.json"
@@ -256,6 +280,11 @@ def main() -> int:
                     "partial": report_sure.partial,
                     "missed": report_sure.missed,
                     "contradicted": len(report_sure.false_acceptances),
+                },
+                "notes": {
+                    "total": len(notes),
+                    "on_cells": sum(1 for k in notes if not k.startswith("doc:")),
+                    "on_documents": sum(1 for k in notes if k.startswith("doc:")),
                 },
                 "by_stratum": {k: dict(v) for k, v in per_tag.items()},
                 "by_quality_band": {k: dict(v) for k, v in per_band.items()},

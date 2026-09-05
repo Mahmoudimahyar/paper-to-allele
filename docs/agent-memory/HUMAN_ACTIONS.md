@@ -70,6 +70,14 @@ Never put secret values in this file.
   Enter accepts it — on 8 of 21 such rows the pipeline now reads a value
   (3 of them DRB3/4/5 rows with gene names PP-OCRv5 confirms), so a
   NOT_PRINTED accepted by Enter is a default, not a reading of the page.
+- **STATUS 2026-09-05 (evening): each answer now takes an optional note.**
+  Press `N` on a row (or click `note`), write one line, Enter or Esc saves it;
+  each page has a note of its own under the tags. The note survives changing
+  your answer, rides back in the export beside the labels, and is what says
+  WHY a cell is wrong rather than only that it is — which crop is cut, which
+  reading looked right, what made the row hard. `pack_score.py` reports how
+  many notes fell on each outcome; the text itself is read from the export by
+  whoever is debugging, and is never copied into a report or committed.
 
 ### HA-012 — May a measured empty cell be NOT_TESTED, per page?
 - **Needed by:** ~15,000 review items (the largest single class left in the

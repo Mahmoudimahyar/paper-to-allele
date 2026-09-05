@@ -208,6 +208,16 @@ body.gated main { grid-template-columns: 1fr; }
 .doclevel label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
 .doclevel select { padding: 4px 8px; }
 .pipehint { font-size: 11px; color: var(--ink-3); }
+.notebtn { font: inherit; font-size: 11px; color: var(--ink-3); background: none;
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 7px; cursor: pointer; }
+.notebtn:hover { border-color: var(--line-2); color: var(--ink); }
+.notebtn.has { color: var(--ink); border-color: var(--line-2); font-weight: 600; }
+/* A note is a sentence, not a value: it gets the row's whole width rather than
+   the narrow answer column the alleles live in. */
+.notewrap { grid-column: 1 / -1; margin-top: var(--s-2); }
+.notewrap input { width: 100%; font-size: 12px; }
+.docnote { flex: 1 1 100%; }
+.docnote input { width: 100%; }
 
 /* ---- the messages posted with the photo ------------------------------- */
 /* A caption often says what the report does not — donor or recipient, and
@@ -465,6 +475,11 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       <dt><kbd>Down</kbd> <kbd>Up</kbd></dt><dd>Move between cells</dd>
       <dt><kbd>Alt</kbd> + <kbd>1</kbd>&hellip;<kbd>9</kbd></dt><dd>Set this cell&rsquo;s state to the
         1st&hellip;9th entry of its own list, without reaching for the mouse</dd>
+      <dt><kbd>N</kbd></dt><dd>Add or edit a note on this cell &mdash; one optional line about what
+        made it hard, what the crop really shows, which reading looked right. It rides back in the
+        export beside your answer, and it is what says <i>why</i> a cell is wrong, not only that it
+        is. <kbd>Enter</kbd> or <kbd>Esc</kbd> saves and closes it &mdash; clear the field to
+        remove it &mdash; and it survives changing your answer. Each page also has a note of its own, under the tags.</dd>
       <dt><kbd>Alt</kbd> + <kbd>N</kbd></dt><dd>Jump to the next document that still has unlabelled cells</dd>
       <dt><kbd>?</kbd></dt><dd>This panel</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close</dd>
@@ -524,7 +539,11 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     } catch (e) { return false; }
   })();
 
-  let labels = { cells: {}, documents: {} };
+  // `notes` is deliberately NOT part of a cell's label: a note outlives the
+  // answer it was written beside (re-confirm a row, mark the page "not a
+  // report", change your mind twice) and may exist on a cell with no answer at
+  // all. Keyed by cell id, and by 'doc:<id>' for a whole document.
+  let labels = { cells: {}, documents: {}, notes: {} };
 
   function load() {
     if (!storageWorks) return {};
@@ -671,6 +690,55 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       html += '</ol>';
     }
     return html + '</details>';
+  }
+
+  // ---- notes -------------------------------------------------------------
+  //
+  // One optional line per answer, for what the answer cannot carry: why a row
+  // was hard, what the crop actually shows, which engine looked right. It goes
+  // back in the export beside the labels, and it is what tells the pipeline's
+  // author WHY a cell is wrong rather than only that it is.
+  function noteOf(id) { return (labels.notes && labels.notes[id]) || ''; }
+
+  function noteButtonHtml(id) {
+    const has = noteOf(id) !== '';
+    return '<button type="button" class="notebtn' + (has ? ' has' : '') + '" data-note'
+      + ' title="' + (has ? 'Edit your note (n)' : 'Add a note (n)') + '"'
+      + ' aria-label="' + (has ? 'edit note' : 'add note') + '">'
+      + (has ? 'note •' : 'note') + '</button>';
+  }
+
+  function noteFieldHtml(id) {
+    const text = noteOf(id);
+    return '<div class="notewrap"' + (text ? '' : ' hidden') + ' data-notewrap>'
+      + '<input type="text" data-notetext maxlength="500" value="' + esc(text) + '"'
+      + ' placeholder="optional note — what made this one hard?"'
+      + ' aria-label="note for this answer"></div>';
+  }
+
+  function setNote(id, text, holder) {
+    const clean = String(text || '').trim().slice(0, 500);
+    if (clean) labels.notes[id] = clean; else delete labels.notes[id];
+    if (holder) {
+      const button = holder.querySelector('[data-note]');
+      if (button) {
+        button.classList.toggle('has', clean !== '');
+        button.textContent = clean ? 'note •' : 'note';
+        button.title = clean ? 'Edit your note (n)' : 'Add a note (n)';
+      }
+    }
+    save();
+  }
+
+  function toggleNote(holder, show) {
+    const wrap = holder.querySelector('[data-notewrap]');
+    if (!wrap) return;
+    const open = show === undefined ? wrap.hidden : show;
+    wrap.hidden = !open;
+    if (open) {
+      const input = wrap.querySelector('[data-notetext]');
+      if (input) { input.focus(); input.select(); }
+    }
   }
 
   // ---- rendering ---------------------------------------------------------
@@ -974,9 +1042,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       + '</select>'
       + '<div class="genes"' + (rowState === 'GENES' ? '' : ' hidden') + '>' + genes + '</div>'
       + '<div class="row"><label><input type="checkbox" data-unsure' + (labs.some(l => l && l.unsure) ? ' checked' : '') + '> unsure</label>'
+      + noteButtonHtml(cells[0].cell_id)
       + '<button class="confirm" data-confirm title="' + (confirmed ? 'Change your answer and confirm again' : 'Record this row') + '">'
       + (confirmed ? '✓ done' : 'confirm') + '</button></div>'
-      + '</div></li>';
+      + '</div>'
+      + noteFieldHtml(cells[0].cell_id)
+      + '</li>';
   }
 
   function confirmDrbxRow(li) {
@@ -1129,6 +1200,10 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       + '<label>Rh ' + sel('rh', ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'], dl.rh)
       + '<span class="pipehint">pipeline: ' + esc(doc.rh.value || '—') + '</span></label>'
       + '<label><input type="checkbox" data-doc="not_a_report"' + (dl.not_a_report ? ' checked' : '') + '> not a lab report</label>'
+      + '<label class="docnote">Note about this page'
+      + '<input type="text" data-docnote maxlength="500" value="' + esc(noteOf('doc:' + doc.id)) + '"'
+      + ' placeholder="optional — anything about the whole page" aria-label="note about this page">'
+      + '</label>'
       + '<label><input type="checkbox" data-doc="unsure"' + (dl.unsure ? ' checked' : '') + '> unsure</label>'
       + '</div></div>' + messagesHtml(doc) + '<ul class="cells">';
 
@@ -1169,9 +1244,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + '<input type="text" data-alleles value="' + esc(text) + '" placeholder="two alleles" '
         + 'aria-label="alleles for ' + esc(cell.locus) + '"' + (state === 'VALUE' ? '' : ' disabled') + '>'
         + '<div class="row"><label><input type="checkbox" data-unsure' + (lab && lab.unsure ? ' checked' : '') + '> unsure</label>'
+        + noteButtonHtml(cell.cell_id)
         + '<button class="confirm" data-confirm title="' + (lab ? 'Change your answer and confirm again' : 'Record this reading') + '">'
         + (lab ? '✓ done' : 'confirm') + '</button></div>'
-        + '</div></li>';
+        + '</div>'
+        + noteFieldHtml(cell.cell_id)
+        + '</li>';
     }
     html += drbxRowHtml(doc, blind);
     html += '</ul></div>';
@@ -1305,9 +1383,63 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     if (cropBtn) { cropBtn.classList.toggle('big'); cropBtn.setAttribute('aria-expanded', String(cropBtn.classList.contains('big'))); }
   });
   panel.addEventListener('focusin', e => { const li = e.target.closest('.cell'); if (li) setCurrent(li); });
+  panel.addEventListener('click', e => {
+    const button = e.target.closest('[data-note]');
+    if (!button) return;
+    const holder = button.closest('.cell');
+    if (holder) { e.preventDefault(); toggleNote(holder); }
+  });
+  panel.addEventListener('change', e => {
+    if (e.target.matches('[data-docnote]')) {
+      const doc = PACK.documents[docIndex];
+      setNote('doc:' + doc.id, e.target.value, null);
+      return;
+    }
+    // Both events: `change` alone misses a note left by clicking away without
+    // editing further, and `focusout` alone misses one set programmatically.
+    if (e.target.matches('[data-notetext]')) {
+      const holder = e.target.closest('.cell');
+      if (holder) setNote(holder.dataset.cell, e.target.value, holder);
+    }
+  });
+  panel.addEventListener('focusout', e => {
+    if (!e.target.matches('[data-notetext]')) return;
+    const holder = e.target.closest('.cell');
+    if (holder) setNote(holder.dataset.cell, e.target.value, holder);
+  });
+
   panel.addEventListener('keydown', e => {
+    // A note field owns its own keys: Enter must save the note rather than
+    // confirm the row underneath it, and Escape must close it without
+    // confirming anything.
+    if (e.target.matches('[data-notetext]')) {
+      const holder = e.target.closest('.cell');
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        // Both keys SAVE. Escape-discards is the convention for a text field,
+        // but a note is a thought someone stopped labelling to write down, and
+        // this tool's rule is that it never silently loses work. Clearing the
+        // field and leaving removes the note.
+        if (holder) {
+          setNote(holder.dataset.cell, e.target.value, holder);
+          toggleNote(holder, noteOf(holder.dataset.cell) !== '');
+          holder.focus();
+        }
+      }
+      return;
+    }
+    if (e.target.matches('[data-docnote]')) return;
     const li = e.target.closest('.cell');
     if (!li) return;
+    // `n` opens this row's note without leaving the keyboard. Not while typing
+    // an allele: there `n` is a character.
+    if ((e.key === 'n' || e.key === 'N') && !e.altKey && !e.ctrlKey && !e.metaKey
+        && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+      e.preventDefault();
+      toggleNote(li, true);
+      return;
+    }
     // `e.repeat` guard: Enter is the primary control, and OS key repeat fires
     // about 30 times a second on a held key. Without this, leaning on Enter
     // approves cells across document boundaries faster than anyone can read.
@@ -1468,6 +1600,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     labels = load();
     labels.cells = labels.cells || {};
     labels.documents = labels.documents || {};
+    labels.notes = labels.notes || {};
     const hadWork = carried && Object.keys(carried.cells || {}).length;
     if (cameFromAnon && hadWork && !Object.keys(labels.cells).length) {
       labels.cells = Object.assign({}, carried.cells);
@@ -1518,13 +1651,15 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       schema: 'golden-labels/v1', tool: 'hla_review.html', pack: PACK.pack_id, annotator: name,
       exported_utc: new Date().toISOString(), anchored: true,
       n_cells: Object.keys(labels.cells).length,
-      documents: labels.documents, cells: labels.cells,
+      n_notes: Object.keys(labels.notes || {}).length,
+      documents: labels.documents, cells: labels.cells, notes: labels.notes || {},
     };
     const blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'hla_review_' + name + '_' + PACK.pack_id + '.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    toast('Exported ' + payload.n_cells.toLocaleString() + ' labelled cells.');
+    toast('Exported ' + payload.n_cells.toLocaleString() + ' labelled cells'
+      + (payload.n_notes ? ' and ' + payload.n_notes.toLocaleString() + ' notes.' : '.'));
   };
   document.getElementById('importBtn').onclick = () => document.getElementById('import').click();
   document.getElementById('import').onchange = e => {
@@ -1534,6 +1669,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       if (payload.pack !== PACK.pack_id && !confirm('This file was exported from a different pack. Import anyway?')) return;
       labels.cells = Object.assign(labels.cells, payload.cells || {});
       labels.documents = Object.assign(labels.documents, payload.documents || {});
+      labels.notes = Object.assign(labels.notes || {}, payload.notes || {});
       if (payload.annotator) {
         document.getElementById('annotator').value = payload.annotator;
         annotatorWas = payload.annotator;

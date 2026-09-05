@@ -757,3 +757,23 @@ def test_promoted_and_ink_certified_cells_are_strata_of_their_own(tmp_path: Path
     assert "ink_certified" in tags[shas[1]] and "promoted" not in tags[shas[1]]
     assert "promoted" not in tags[shas[2]] and "ink_certified" not in tags[shas[2]]
     assert {t for t, _, _ in module.STRATA} >= {"promoted", "ink_certified"}
+
+
+def test_the_page_carries_an_optional_note_on_every_answer() -> None:
+    """A note outlives the answer it was written beside, so it is stored in a
+    map of its own rather than inside a label: re-confirming a row, marking the
+    page "not a report" or answering twice must not lose it, and a cell with no
+    answer may still carry one. It rides back in the export."""
+    page = PAGE.read_text(encoding="utf-8")
+    assert "labels.notes" in page and "notes: labels.notes" in page, "stored and exported"
+    assert "labels.notes = labels.notes || {}" in page, "an older saved state gains the map"
+    # every answerable row offers one: the HLA cells and the DRB3/4/5 row
+    assert page.count("noteButtonHtml(") >= 3, "declared, on a cell row, and on the DRBX row"
+    assert page.count("noteFieldHtml(") >= 3
+    assert "data-docnote" in page, "and the document has one of its own"
+    # a note is never part of the label object, which the scorers read
+    label_write = page.split("labels.cells[cell.cell_id] = {")[1].split("};")[0]
+    assert "note" not in label_write, "a note must not ride inside a label"
+    # Enter inside a note saves it and does not confirm the row underneath
+    handler = page.split("panel.addEventListener('keydown'")[1][:900]
+    assert "data-notetext" in handler and "stopPropagation" in handler
