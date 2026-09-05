@@ -72,6 +72,12 @@ TALL_ANCHOR_RATIO = 1.5
 # Loci this relation can legitimately read.
 DEFAULT_LOCI: tuple[str, ...] = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
 
+# How much closer to another label's line a candidate must sit before that
+# label takes it from the anchor that is nearer along the reading axis, as a
+# fraction of a label height. Zero — the behaviour before this constant — makes
+# the tilt of the photograph decide the owner.
+OWNERSHIP_Y_MARGIN = 0.25
+
 # A value is one line of text. Measured, 99.7% of legitimate values are 0.5-1.6
 # label heights tall; a box several times taller is a detector blob spanning
 # rows, and it is "aligned" with every row it crosses (review W3).
@@ -443,7 +449,14 @@ def _owned_by_another_anchor(
             return locus
         if gap < ours:
             return locus
-        if abs(candidate.centre_y - other.centre_y) < ours_offset - 1e-9:
+        # Our label is nearer along the reading axis, so the other one takes
+        # the box only by being on a visibly different line — not by a
+        # fraction of a pixel. A photographed page is never level, and at
+        # 1e-9 the winner of this comparison is the page's tilt rather than
+        # its layout: on the reviewer's labels two values were handed to the
+        # locus printed above them on exactly this clause.
+        margin = OWNERSHIP_Y_MARGIN * max(anchor.height, other.height)
+        if abs(candidate.centre_y - other.centre_y) < ours_offset - margin:
             return locus
     return None
 
