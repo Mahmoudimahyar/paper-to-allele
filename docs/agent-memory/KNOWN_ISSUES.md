@@ -265,6 +265,16 @@ whichever landed last (4.14 headless today). `cv2.createLineSegmentDetector`
 lives in the main module since 4.5.1, so nothing needs contrib. Resolve to one
 wheel with a `uv lock` and an OSS-register row; no behaviour depends on it yet.
 
+Traced 2026-09-05: the project pins `opencv-python-headless` (4.14); `onnxtr`
+0.9.0 pulls `opencv-python` 5.0.0.93 and `paddlex` 3.7.2 pulls
+`opencv-contrib-python` 4.10.0.84. All three install the same `cv2` module, so
+which build loads is install-order dependent — the geometry pass checks
+`createLineSegmentDetector` at start for that reason. The fix is a
+`[tool.uv] override-dependencies` mapping both to the headless build, with the
+OSS register updated and the lockfile re-resolved; not done on the review
+workstation (KI on sustained load) — do it on a machine that can run the full
+gate twice.
+
 ## KI-024 — Below 1.5 degrees the page frame is a wash
 On the review pack's 53 ROTATE pages the levelled frame gained and lost cells
 in equal numbers under 1.5° of tilt (9 each): the row rules already tolerate
@@ -283,6 +293,11 @@ on pages tilted 2-4°; 24 of the dropped alleles belong to no other locus on the
 page, so they are most likely real second alleles the de-inflation pushed out of
 the row band on wide rows. Experiment: level the centres without de-inflating
 the hulls and count whether the 28 return without the 140 leaving.
+
+The crop-level rotation was measured 2026-09-05 (M4): on 3,727 cells of the
+levelled pages an upright crop moved the decode's unanimity from 81.4% to
+82.3%, 95 cells one way and 87 the other. Small tilts do not cost the
+recognizer what they cost the row rule; the frame is a row-assignment fix.
 
 ## KI-025 — A tilt estimate from the stored OCR boxes is biased; it cannot be the third estimator
 Measured 2026-09-05 on the 6,511 ROTATE pages of `rulings/v3`: the median angle
@@ -315,3 +330,9 @@ labelled contradictions were among them) and reinstated if a re-judging lifts
 the contradiction. The 1,876 confirmations are the evidence a reinstatement of
 the other genes' ABSENT could rest on — once the labels have said how often the
 second engine renders a printed 3 as 5 too.
+
+Measured on the labels (later the same day): on the 4 labelled rows where the
+second engine confirmed the repaired token with a clean `5`, the reviewer found
+the held gene printed on 3. The second engine shares the 3-as-5 confusion even
+when it renders a clean digit, so no reinstatement rule rests on it; the
+review cost stands until a person labels these rows.

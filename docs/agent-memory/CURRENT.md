@@ -29,9 +29,9 @@ becoming facts. The review page now shows the messages posted with each image.
   somewhere in their bundle; the review pack now shows it.
 - **Extraction (ADR 0008, 0009 §7):** `facts.sqlite` refreshed in place on
   2026-09-05 (`refresh_facts.py`, twice; snapshots beside it): HLA and
-  DRB3/4/5 cells **RESOLVED 82,480 → 86,399** (760 of them promoted
-  proposals); 15,614 cells changed or new on the first refresh, 998 on the
-  second; among cells resolved both times 890 second alleles gained, 17
+  DRB3/4/5 cells **RESOLVED 82,480 → 89,737** (760 promoted proposals, 3,338
+  absences certified by paper); 15,614 cells changed or new on the first
+  refresh, 998 on the second; among cells resolved both times 890 second alleles gained, 17
   dropped, **0 swapped**. `refresh_facts.py` now prints the per-locus
   comparison itself and names a stop signal.
   Gains: DQB1 +2,411 (the `DOBI` label), A +526, B +407, C +205, DRB1 +557,
@@ -57,32 +57,33 @@ becoming facts. The review page now shows the messages posted with each image.
   A 36, DQA1 26, C 8), each marked `source=decode+ppocrv5`. `--target drbx`
   reads every PRESENT gene box: of 1,912 repaired `DRBS` tokens PP-OCRv5
   confirms 1,152, contradicts 20 (demoted to review) and renders the same
-  `S` on 740. Tesseract has not yet read the changed cells.
-- **The DRB3/4/5 row prints gene names**: 22,017 gene tokens vs 75 bare numbers
-  corpus-wide. The review page asks one question per row; grammar v2 waits on
-  HA-011. Header v2 gains 605 documents.
+  `S` on 740. Tesseract re-read the 5,859 changed cells (1,881 confirmed /
+  949 contradicted / 3,029 no opinion). `drbx_ink_pass.py` (M5) measures the
+  grouped row's second slot: 1,669 rows paper → 3,338 genes ABSENT, 442 inked
+  but unread → 884 cells to review. The upright-crop decode ablation on the
+  levelled pages was a wash (81.4% → 82.3% unanimous); crops stay axis-aligned.
+- **The DRB3/4/5 row prints gene names** (22,017 gene tokens vs 75 bare
+  numbers); one question per row on the page; grammar v2 waits on HA-011.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci), 2,495
-  of them because a caption corroborated a weak printed field. The Persian
-  role words and the anchored ABO cell are what the reviewer asked for; both
-  were already the design (`documents/role.py`, `documents/abo.py`).
+  by a caption corroborating a weak printed field (`documents/role.py`,
+  `documents/abo.py` — the Persian words and the anchored ABO cell).
 - **Accuracy is still unvalidated (KI-012); this is the binding constraint.**
   The 187-cell export scored 78 correct / 74 correct abstentions / 29 missed /
-  4 contradicted / 2 partial at the start of this session and **83 / 71 / 27
+  4 contradicted / 2 partial at the start of this session and **87 / 71 / 23
   / 4 / 2** at its end; the four contradictions are one SPLIT-flagged B cell
   and three DRB3/4/5 rows labelled NOT_PRINTED (the page's pre-set) where
   header v2 finds gene names PP-OCRv5 confirms. The blind golden corpus waits
   on a person.
-- **Two form facts that constrain the product.** DPA1/DPB1 are printed and
-  never filled — `NOT_TESTED` (HA-009, KI-013). The dominant letterhead
-  disclaims its own blood-group field (KI-014).
+- **Two form facts constrain the product:** DPA1/DPB1 printed, never filled
+  (`NOT_TESTED`, HA-009); the dominant letterhead disclaims its own blood-group
+  field (KI-014).
 - **The zero-fact documents are mostly not reports (KI-018):** ~170 of 4,944
   recoverable. Raw inputs are immutable and never committed; HLA geometry
   determines locus, never token text alone.
 
-## Decided this session (operator delegated)
+## Decided (operator delegated)
 HA-003 resolution bands (MID provisional) · HA-005 names as a salted hash ·
-HA-006 IMGT pinned to 3.62, the release py-ard 1.5.5 loads · HA-009 the
-untested-locus policy. Details in `HUMAN_ACTIONS.md` under Closed.
+HA-006 IMGT 3.62 · HA-009 untested-locus policy (`HUMAN_ACTIONS.md`, Closed).
 
 ## Human actions open
 **HA-008 label the review pack** — 187/1,650 done; the page shows the messages
@@ -105,12 +106,12 @@ HA-001, HA-002, HA-010 (cloud keys, optional).
 1. **Human: keep labelling (HA-008)**; score each export with
    `scripts/pack_score.py`. The DRB3/4/5 rows marked "repaired" and the cells
    marked "promoted" are the two rules the labels can now confirm or refute.
-2. Agent: `confirm_pass.py --engine tesseract5` over the changed cells; the
-   `--frame` decode ablation on levelled pages (M4); M5 lattice (ink-certified
-   empty second column for the 6,100 one-token DRB3/4/5 rows); the
-   reinstate-on-confirmer rule for KI-026; M6 after HA-011; KI-023's single
-   OpenCV wheel. Build the NEXT pack (with the `tilted` stratum) only when the
-   reviewer has finished this one.
+2. Agent: M6 after HA-011; KI-023's OpenCV override on a machine that can run
+   the gate twice; the 2,178 one-token DRB3/4/5 cells without DRB1 geometry
+   (place the slot from the header instead). Build the NEXT pack (strata
+   `tilted`, `promoted`, `ink_certified`) only when the reviewer has finished
+   this one. After any refresh: decode, the three confirm targets,
+   `promote_proposals.py`, `drbx_ink_pass.py`.
 3. Agent, needs no human: MEDIA-001 and DEDUPE-001 remain the last MVP-HIST
    tasks; then ENTITY-001. Human: HA-004 before any matching beyond the ABO gate.
 

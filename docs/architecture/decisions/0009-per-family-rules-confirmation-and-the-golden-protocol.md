@@ -334,6 +334,21 @@ CONFIRMED / 885 CONTRADICTED / 363 no opinion; 775 promoted after the LOW
 gate (DRB1 380, DQB1 216, B 108, A 37, DQA1 28, C 8). The 44% contradicted
 is the measure of what promoting on the decode alone would have done.
 
+### The empty DRB3/4/5 slot, certified by paper
+A one-token grouped row left the other genes UNKNOWN (6,122 cells), because
+an unread token and an empty slot look the same to a row rule. They do not
+look the same on the page. `ocr/ink.py` places the second slot from the DRB1
+row's two resolved value boxes — the form's own columns, never a guess — cuts
+it in the level frame and measures its ink with the table rulings removed;
+`drbx_ink_pass.py` certifies ABSENT when the slot is paper (thresholds at
+least 2.5x under the least-inked of 4,904 columns holding a read token),
+sends the other genes to review when it is inked (a token no engine read), and
+leaves an unmeasurable slot alone. The certified fact carries the blank region
+as its provenance box and `source=ink-certified`. Corpus: 3,338 genes ABSENT,
+884 to review; the four labelled rows the reviewer had marked ABSENT all
+measured as paper, and no labelled PRESENT cell became ABSENT. Ink never names
+a gene.
+
 ### Page geometry v3
 The projection sweep corroborates the rulings within 2° (1,231 of 1,595 pages
 refused at 1° disagreed by less), and the rulings' own agreement check — added
