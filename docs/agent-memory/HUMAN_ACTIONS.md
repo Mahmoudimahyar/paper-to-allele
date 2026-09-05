@@ -4,6 +4,55 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-013 — Google Vision: the key is not on this machine, and the policy still forbids it
+- **Needed by:** the requested head-to-head against the reviewer's 220 labels.
+- **Why:** two things are in the way, and only a person can clear either.
+  1. **The key is absent.** `.env` holds nine variables and none of them names
+     Google, Vision, GCP or a service account, and no other `.env` file exists
+     in the repository. Nothing was sent anywhere; the benchmark simply cannot
+     run.
+  2. **The versioned decision forbids it.** `docs/ingestion/CV_RESEARCH_2026-09-05.md`
+     s6 "Do not do" ends with "any cloud OCR/VLM or sending an image off the
+     machine". That is a policy, and policy is the human's to change, so the
+     instruction to test Google Vision conflicts with a source-of-truth
+     document rather than overriding it silently.
+- **Decision required, in two parts:**
+  - name the variable and set it in the local `.env` (never in a document, a
+    commit, or this file);
+  - amend `CV_RESEARCH_2026-09-05.md` s6 to say what may leave the machine.
+    The narrow amendment the pipeline actually needs is **value crops only** —
+    a padded rectangle around one allele, carrying no name, no laboratory, no
+    date and no identifier. The broad one is **whole pages**, which is where
+    the evidence would be most useful (the largest refusal bucket in the whole
+    pipeline is 23,719 cells whose label was found and whose value box was
+    never detected) and which does send the patient's name and the laboratory's
+    letterhead to Google.
+- **Secret?** The key is. It goes in `.env` only.
+- **Blocking now?** Blocks the Google Vision comparison and nothing else. Every
+  other measurement in this round was made with the local engines.
+
+### HA-014 — Seven cells the pipeline reads and the reviewer marked NOT PRINTED
+- **Needed by:** the accuracy figure on the 220-label set; these are 7 of the
+  9 remaining contradictions.
+- **Why:** the review page showed **no crop for 50 of the 220 labelled cells**,
+  because the pipeline had found neither a label nor a value box there. The
+  reviewer therefore had to hunt the whole page for a locus whose printed label
+  our recognizer had misread, and answered NOT PRINTED on 31 of them. On the
+  seven the pipeline now resolves, the page evidence says the value is printed:
+  * one DQB1 cell whose row label reads `HLA-DOBI` and whose two value columns
+    hold two DQB1-prefixed alleles;
+  * three DRB3/4/5 cells on a 20-box low-resolution page whose grouped row
+    holds two gene names in the value columns;
+  * three DRB3/4/5 cells on a high-resolution page whose grouped row prints one
+    gene name in the first value column, the second column being blank.
+- **What to do:** the pack has been rebuilt, and those cells now show a crop.
+  Re-answer the seven. If the reading stands, the pipeline is right and the
+  earlier answers should be corrected; if it does not, these are false
+  acceptances and outrank everything else in the queue.
+- **Secret?** No.
+- **Blocking now?** Blocks calling the 220-label figure settled.
+
+
 ### HA-004 — Iranian histocompatibility practice must be confirmed
 - **Needed by:** V1-MATCH; blocks freezing the matching spec.
 - **Why:** The matching design is grounded in OPTN (US), EFI and Eurotransplant

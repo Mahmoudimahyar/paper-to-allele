@@ -313,7 +313,36 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     return [t for t, _, _ in STRATA if t in tags]
 
 
-def choose(docs: dict[str, Doc], n: int, seed: int, export: Path) -> list[Doc]:
+def pinned_shas(sources: list[Path]) -> set[str]:
+    """The 16-character document ids a labeller has already answered cells on.
+
+    A pack's sample is stratified by what the pipeline currently says about a
+    document, so a refresh moves documents between strata and the round-robin
+    picks a different 150. Measured after the 2026-09-05 refresh: 11 of 220
+    existing labels still landed on a chosen document. Labels are the scarcest
+    thing this project has, so any document a person has already answered is
+    pinned into the next pack and the sample fills up around it.
+
+    Each source is a `golden-labels/v1` export, whose cell ids are
+    `<sha256[:16]>:<locus>`.
+    """
+    shas: set[str] = set()
+    for source in sources:
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for key in ("cells", "labels"):
+            for cell_id in payload.get(key) or {}:
+                head = str(cell_id).rsplit(":", 1)[0]
+                if len(head) == 16:
+                    shas.add(head)
+    return shas
+
+
+def choose(
+    docs: dict[str, Doc], n: int, seed: int, export: Path, pin: set[str] | None = None
+) -> list[Doc]:
     """Stratified, deterministic, spread across layout families inside a stratum."""
     rng = random.Random(seed)
     pools: dict[str, list[Doc]] = defaultdict(list)
@@ -323,7 +352,15 @@ def choose(docs: dict[str, Doc], n: int, seed: int, export: Path) -> list[Doc]:
             pools[doc.tags[0]].append(doc)
     total_weight = sum(w for _, w, _ in STRATA)
     quota = {t: max(1, round(n * w / total_weight)) if pools[t] else 0 for t, w, _ in STRATA}
-    chosen: list[Doc] = []
+    # Documents someone has already labelled come first and are never dropped:
+    # their answers are the only ground truth the project has.
+    held = [doc for doc in docs.values() if doc.short in (pin or set())]
+    chosen: list[Doc] = list(held)
+    for doc in held:
+        for tag in list(pools):
+            pools[tag] = [d for d in pools[tag] if d.sha256 != doc.sha256]
+    room = max(0, n - len(chosen))
+    quota = {tag: min(count, room) for tag, count in quota.items()}
     for tag, _, _ in STRATA:
         by_family: dict[str | None, list[Doc]] = defaultdict(list)
         for doc in pools[tag]:
@@ -332,7 +369,7 @@ def choose(docs: dict[str, Doc], n: int, seed: int, export: Path) -> list[Doc]:
             rng.shuffle(group)
         families = sorted(by_family, key=lambda f: (f is None, str(f)))
         picked: list[Doc] = []
-        while len(picked) < min(quota[tag], len(pools[tag])):
+        while len(picked) < min(quota[tag], len(pools[tag])) and len(chosen) + len(picked) < n:
             for fam in families:  # round-robin across families
                 if by_family[fam] and len(picked) < quota[tag]:
                     picked.append(by_family[fam].pop())
@@ -679,11 +716,12 @@ def build_pack(
     page: Path,
     suggestions_dir: Path | None = None,
     source_db: Path | None = None,
+    pin: set[str] | None = None,
 ) -> dict[str, int]:
     con = sqlite3.connect(facts_db)
     docs = load_documents(con)
     con.close()
-    chosen = choose(docs, n, seed, export)
+    chosen = choose(docs, n, seed, export, pin)
     if len({d.short for d in chosen}) != len(chosen):
         raise ValueError("two chosen documents share a 16-character id prefix")
     out.mkdir(parents=True, exist_ok=True)
@@ -817,6 +855,14 @@ def main() -> int:
         help="directory of <engine>.json files {engine, cells:{cell_id: text}} to show as well",
     )
     parser.add_argument(
+        "--keep-labelled",
+        type=Path,
+        nargs="*",
+        default=None,
+        help="golden-labels exports whose documents must appear in the new pack; "
+        "a refresh moves documents between strata and would otherwise orphan the answers",
+    )
+    parser.add_argument(
         "--page-only",
         action="store_true",
         help="replace index.html in an existing pack and touch nothing else",
@@ -835,6 +881,9 @@ def main() -> int:
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")
         return 2
+    pin = pinned_shas(list(args.keep_labelled or []))
+    if pin:
+        print(f"pinning {len(pin)} already-labelled documents into the sample")
     counts = build_pack(
         args.facts,
         args.export,
@@ -844,6 +893,7 @@ def main() -> int:
         args.page,
         args.suggestions,
         source_db=args.source,
+        pin=pin,
     )
     print(f"packed {sum(counts.values())} documents into {args.out}")
     for tag, count in counts.items():

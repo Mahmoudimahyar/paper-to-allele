@@ -37,6 +37,12 @@ So this pass asks two more recognizers what the box says:
   declares its second allele UNREAD — a partial read, not a claim of
   completeness.
 
+A re-extraction rewrites every fact, so this pass must be re-run after one. It
+resumes the way the decode and confirm passes do: a cell whose boxes are
+byte-identical to the ones already read reuses the stored readings instead of
+running the recognizers again, and a cell whose boxes moved is read afresh
+because the stored readings were about a different crop.
+
 Nothing is invented. A reading that is inadmissible, unparsable, equal to what
 was refused, or prefixed for another locus leaves the cell exactly as the
 resolver left it, and a later run re-judges what an earlier one decided.
@@ -93,6 +99,7 @@ CREATE TABLE IF NOT EXISTS reread_refused (
     reread_version     TEXT NOT NULL,
     refusal            TEXT,
     refused            TEXT,
+    boxes              TEXT,
     readings           TEXT,
     readings_second    TEXT,
     taken              TEXT,
@@ -216,8 +223,22 @@ def run(
         if not crops:
             tally["no crop"] += 1
             continue
-        readings = read(crops)
-        seconds = read_second(crops)
+        boxes_key = json.dumps(cell["boxes"], sort_keys=True)
+        remembered = con.execute(
+            "SELECT readings, readings_second FROM reread_refused WHERE sha256=? AND field=? "
+            "AND extraction_version='facts/v1' AND reread_version=? AND boxes=?",
+            (cell["sha256"], cell["field"], REREAD_VERSION, boxes_key),
+        ).fetchone()
+        if remembered:
+            readings = json.loads(remembered[0])
+            seconds = json.loads(remembered[1])
+            tally["boxes already read; the stored readings stand"] += 1
+        else:
+            readings = read(crops)
+            seconds = read_second(crops)
+        if len(readings) != len(crops) or len(seconds) != len(crops):
+            tally["stored readings do not match the crops; read again"] += 1
+            readings, seconds = read(crops), read_second(crops)
         taken: list[str] = []
         for reading, second in zip(readings, seconds, strict=True):
             value = agreed_value(
@@ -227,7 +248,7 @@ def run(
                 taken.append(value)
         if not dry_run:
             con.execute(
-                "INSERT OR REPLACE INTO reread_refused VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO reread_refused VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     cell["sha256"],
                     cell["field"],
@@ -235,6 +256,7 @@ def run(
                     REREAD_VERSION,
                     cell["refusal"],
                     cell["refused"],
+                    boxes_key,
                     json.dumps(list(readings)),
                     json.dumps(list(seconds)),
                     json.dumps(taken),
