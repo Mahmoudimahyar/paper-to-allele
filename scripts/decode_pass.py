@@ -63,6 +63,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from kidneymatch.ocr.crops import RAW, prepare_crop  # noqa: E402
 from kidneymatch.ocr.ctc import (  # noqa: E402
     GRAMMAR_VERSION,
     build_value_grammar,
@@ -70,6 +71,7 @@ from kidneymatch.ocr.ctc import (  # noqa: E402
     digits_preserved,
     greedy,
 )
+from kidneymatch.ocr.geometry import PageFrame  # noqa: E402
 from kidneymatch.ocr.glyphs import parse_allele_value  # noqa: E402
 
 DECODER_VERSION = f"ctc-viterbi/v1+crnn_mobilenet_v3_small+{GRAMMAR_VERSION}"
@@ -114,16 +116,26 @@ def ensure_stability_column(con: sqlite3.Connection) -> None:
         con.commit()
 
 
-def crop(image, box: list[float], dx: int, dy: int):
-    height, width = image.shape[:2]
-    x0 = max(0, min(width - 2, int(box[0] * width) + dx))
-    y0 = max(0, min(height - 2, int(box[1] * height) + dy))
-    x1 = max(x0 + 2, min(width, int(box[2] * width) + dx))
-    y1 = max(y0 + 2, min(height, int(box[3] * height) + dy))
-    return image[y0:y1, x0:x1]
+def crop(image, box: list[float], dx: int, dy: int, frame: PageFrame | None = None):
+    """The stored box, cut by `ocr.crops`.
+
+    The `RAW` profile is byte for byte what this pass always cut (pinned by
+    `tests/unit/test_crops.py` against the old arithmetic). With a frame — only
+    on a page the extraction levelled, only under `--frame` — the same box is
+    cut upright through the page rotation instead of as an axis-aligned slice.
+    """
+    result = prepare_crop(image, box, frame=frame, profile=RAW, dx=dx, dy=dy)
+    return result.pixels if result is not None else image[0:0, 0:0]
 
 
-def run(facts_db: Path, export: Path, limit: int | None, batch: int, jitter: bool) -> int:
+def run(
+    facts_db: Path,
+    export: Path,
+    limit: int | None,
+    batch: int,
+    jitter: bool,
+    use_frame: bool = False,
+) -> int:
     import numpy as np
     from onnxtr.models import recognition_predictor
     from onnxtr.utils import VOCABS
@@ -134,6 +146,10 @@ def run(facts_db: Path, export: Path, limit: int | None, batch: int, jitter: boo
     grammar = build_value_grammar(vocabulary, blank, require_prefix=False)
     recognizer = recognition_predictor("crnn_mobilenet_v3_small", batch_size=64)
 
+    # Upright crops on levelled pages change what the recognizer sees, so
+    # their verdicts are keyed apart from the axis-aligned ones.
+    version = DECODER_VERSION + ("+frame" if use_frame else "")
+
     con = sqlite3.connect(facts_db)
     con.executescript(SCHEMA)
     ensure_stability_column(con)
@@ -141,22 +157,24 @@ def run(facts_db: Path, export: Path, limit: int | None, batch: int, jitter: boo
     done = {
         (sha, field)
         for sha, field in con.execute(
-            "SELECT sha256, field FROM decode WHERE decoder_version=?", (DECODER_VERSION,)
+            "SELECT sha256, field FROM decode WHERE decoder_version=?", (version,)
         )
     }
     placeholders = ",".join("?" * len(LOCI))
-    work = [
-        row
-        for row in con.execute(
-            "SELECT f.sha256, f.field, f.status, f.value, f.value_boxes, d.rel_path "
-            "FROM fact f JOIN document d ON d.sha256 = f.sha256 "
-            f"WHERE f.field IN ({placeholders}) AND f.value_boxes IS NOT NULL "
-            "AND (f.status='RESOLVED' OR f.reason LIKE '%does not parse%') "
-            "ORDER BY f.sha256, f.field",
-            LOCI,
-        )
-        if (row[0], row[1]) not in done
-    ]
+    select = (
+        "SELECT f.sha256, f.field, f.status, f.value, f.value_boxes, d.rel_path, "
+        "{frame_columns} FROM fact f JOIN document d ON d.sha256 = f.sha256 "
+        f"WHERE f.field IN ({placeholders}) AND f.value_boxes IS NOT NULL "
+        "AND (f.status='RESOLVED' OR f.reason LIKE '%does not parse%') "
+        "ORDER BY f.sha256, f.field"
+    )
+    try:
+        # The frame the extraction levelled this page in (`extract_facts.py`).
+        rows = con.execute(select.format(frame_columns="d.frame, d.tilt_deg"), LOCI).fetchall()
+    except sqlite3.OperationalError:
+        # A facts database from before the frame existed: every page identity.
+        rows = con.execute(select.format(frame_columns="NULL, NULL"), LOCI).fetchall()
+    work = [row for row in rows if (row[0], row[1]) not in done]
     if limit:
         work = work[:limit]
     offsets = OFFSETS if jitter else ((0, 0),)
@@ -175,7 +193,7 @@ def run(facts_db: Path, export: Path, limit: int | None, batch: int, jitter: boo
         crops: list = []
         index: list[tuple] = []
         cache: dict[str, object] = {}
-        for sha, field, status, value, value_boxes, rel_path in chunk:
+        for sha, field, status, value, value_boxes, rel_path, doc_frame, tilt in chunk:
             boxes = json.loads(value_boxes)
             if not boxes:
                 continue
@@ -187,12 +205,15 @@ def run(facts_db: Path, export: Path, limit: int | None, batch: int, jitter: boo
             image = cache[rel_path]
             if image is None:
                 continue
+            frame = None
+            if use_frame and doc_frame == "ROTATE" and tilt:
+                frame = PageFrame(float(tilt), int(image.shape[1]), int(image.shape[0]))
             # EVERY value box, not just the first. A heterozygous cell holds two,
             # and checking only one leaves the second allele unexamined while the
             # cell is reported stable.
             for position, box in enumerate(boxes):
                 for dx, dy in offsets:
-                    piece = crop(image, box, dx, dy)
+                    piece = crop(image, box, dx, dy, frame)
                     if piece.size and piece.shape[0] > 3 and piece.shape[1] > 3:
                         crops.append(piece)
                         index.append((sha, field, status, value, position, dx, dy))
@@ -243,7 +264,7 @@ def run(facts_db: Path, export: Path, limit: int | None, batch: int, jitter: boo
                     sha,
                     field,
                     "facts/v1",
-                    DECODER_VERSION,
+                    version,
                     verdict,
                     " ".join(centre_text),
                     json.dumps(dict(votes)),
@@ -294,11 +315,17 @@ def main() -> int:
         action="store_true",
         help="decode the stored crop only; without the nine offsets there is no stability signal",
     )
+    parser.add_argument(
+        "--frame",
+        action="store_true",
+        help="cut upright crops on pages the extraction levelled (document.frame = ROTATE); "
+        "verdicts are keyed under a '+frame' decoder version",
+    )
     args = parser.parse_args()
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")
         return 2
-    return run(args.facts, args.export, args.limit, args.batch_size, not args.no_jitter)
+    return run(args.facts, args.export, args.limit, args.batch_size, not args.no_jitter, args.frame)
 
 
 if __name__ == "__main__":
