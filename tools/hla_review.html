@@ -209,6 +209,34 @@ body.gated main { grid-template-columns: 1fr; }
 .doclevel select { padding: 4px 8px; }
 .pipehint { font-size: 11px; color: var(--ink-3); }
 
+/* ---- the messages posted with the photo ------------------------------- */
+/* A caption often says what the report does not — donor or recipient, and
+   the blood group — so it sits between the document fields and the cells.
+   Collapsed by default: it is context for the Role and ABO answers, not
+   evidence for any HLA cell, and open it would push the first crop off screen. */
+.msgs { border-bottom: 1px solid var(--line-2); }
+.msgs summary { display: flex; align-items: center; gap: var(--s-2); cursor: pointer; list-style: none;
+                padding: var(--s-2) var(--s-4); font-size: var(--fs-3); font-weight: 600; color: var(--ink-2); }
+.msgs summary::-webkit-details-marker { display: none; }
+.msgs summary::before { content: ""; flex: none; width: 0; height: 0; border: 4px solid transparent;
+                        border-left: 5px solid var(--ink-3); margin-right: 2px;
+                        transition: transform .12s var(--ease); }
+.msgs[open] summary::before { transform: rotate(90deg); }
+.msgs summary:hover { background: var(--surface-2); }
+.msgs summary .pipehint { font-weight: 400; }
+.msglist { list-style: none; margin: 0; padding: 0 var(--s-4) var(--s-3);
+           display: flex; flex-direction: column; gap: var(--s-2); }
+.msg { background: var(--surface-2); border-radius: var(--r-sm); padding: var(--s-2) var(--s-3); }
+.msgmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px;
+           font-size: var(--fs-2); color: var(--ink-3); }
+/* The poster is an 8-character hash, never a name (HA-005): the reader needs
+   only "same poster" or "a different one" across the messages. */
+.msgmeta .tag.mono { font-family: var(--mono); font-weight: 500; letter-spacing: 0; }
+.msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-4);
+         line-height: 1.5; color: var(--ink); }
+.msg p.nocap, .msgs .none { font-size: var(--fs-3); color: var(--ink-3); font-style: italic; }
+.msgs .none { margin: 0; padding: 0 var(--s-4) var(--s-3); }
+
 /* ---- the cell list ----------------------------------------------------- */
 .cells { list-style: none; margin: 0; padding: 0; }
 .cell { display: grid; grid-template-columns: 56px minmax(0,1fr) minmax(160px,196px); align-items: start;
@@ -594,6 +622,56 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     return Object.keys(by).sort().map(p => by[p].join(' ')).join(' | ');
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // ---- the messages posted with the photo --------------------------------
+  // Open or closed is remembered for the tab, not the pack: a reader who wants
+  // the captions wants them on every document, and a preference that outlived
+  // the tab would surprise the next person at the same machine. sessionStorage
+  // can be missing or refused, and the default then simply stands.
+  const MSGS_KEY = 'hla_review:messages_open';
+  function messagesOpen() {
+    try { return sessionStorage.getItem(MSGS_KEY) === '1'; } catch (e) { return false; }
+  }
+  function rememberMessagesOpen(open) {
+    try { sessionStorage.setItem(MSGS_KEY, open ? '1' : '0'); } catch (e) { /* the default stands */ }
+  }
+  function messagesHtml(doc) {
+    // A pack from before the augmentation carries no key at all. Say nothing
+    // rather than "Messages (0)", which would read as "posted without a caption".
+    if (doc.messages === undefined) return '';
+    // Built without the source database: the messages were not loaded, which
+    // is not the same as the archive holding none.
+    if (doc.messages === null) {
+      return '<details class="msgs" data-msgs><summary>Messages'
+        + '<span class="pipehint">not loaded: this pack was built without the source database</span>'
+        + '</summary></details>';
+    }
+    const msgs = doc.messages;
+    const total = (typeof doc.n_messages_total === 'number' && doc.n_messages_total > msgs.length)
+      ? msgs.length + ' of ' + doc.n_messages_total : String(msgs.length);
+    let html = '<details class="msgs" data-msgs' + (messagesOpen() ? ' open' : '') + '>'
+      + '<summary>Messages (' + total + ')'
+      + '<span class="pipehint">what was posted with this photo</span></summary>';
+    if (!msgs.length) {
+      html += '<p class="none">No message in the archive posted this image.</p>';
+    } else {
+      html += '<ol class="msglist">';
+      for (const m of msgs) {
+        // dir="auto" and pre-wrap: the captions are Persian, and a line that
+        // mixes a blood group with Persian words must keep its own direction.
+        html += '<li class="msg"><div class="msgmeta">'
+          + '<span class="tag">' + (m.on_photo ? 'on photo' : 'bundle') + '</span>'
+          + (m.forwarded ? '<span class="tag">forwarded</span>' : '')
+          + (m.sender ? '<span class="tag mono" title="the poster, hashed">' + esc(m.sender) + '</span>' : '')
+          + (m.sent_at ? '<span>' + esc(m.sent_at) + '</span>' : '')
+          + '</div>'
+          + (m.text ? '<p dir="auto">' + esc(m.text) + '</p>' : '<p class="nocap">no caption</p>')
+          + '</li>';
+      }
+      html += '</ol>';
+    }
+    return html + '</details>';
+  }
 
   // ---- rendering ---------------------------------------------------------
   const page = document.getElementById('page');
@@ -1038,14 +1116,21 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       + '<div class="doclevel">'
       + '<label>Role ' + sel('role', ['', 'DONOR', 'RECIPIENT', 'BOTH', 'UNKNOWN'], dl.role)
       + '<span class="pipehint">pipeline: ' + esc(doc.role.value || doc.role.status || '—')
-      + (doc.role.source && doc.role.source !== 'NONE' ? ' (' + esc(doc.role.source) + ')' : '') + '</span></label>'
+      + (doc.role.source && doc.role.source !== 'NONE' ? ' (' + esc(doc.role.source) + ')' : '') + '</span>'
+      // What the caption reader concluded from the posting message. Evidence
+      // the reader weighs, never a resolved role; the reason rides in the title.
+      + (doc.caption_claim
+          ? '<span class="pipehint" title="' + esc(doc.caption_claim.reason || '') + '">caption: '
+            + esc(doc.caption_claim.role) + ' (' + esc(doc.caption_claim.tier) + ')</span>'
+          : '')
+      + '</label>'
       + '<label>ABO ' + sel('abo', ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'], dl.abo)
       + '<span class="pipehint">pipeline: ' + esc(doc.abo.value || doc.abo.status || '—') + '</span></label>'
       + '<label>Rh ' + sel('rh', ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'], dl.rh)
       + '<span class="pipehint">pipeline: ' + esc(doc.rh.value || '—') + '</span></label>'
       + '<label><input type="checkbox" data-doc="not_a_report"' + (dl.not_a_report ? ' checked' : '') + '> not a lab report</label>'
       + '<label><input type="checkbox" data-doc="unsure"' + (dl.unsure ? ' checked' : '') + '> unsure</label>'
-      + '</div></div><ul class="cells">';
+      + '</div></div>' + messagesHtml(doc) + '<ul class="cells">';
 
     for (const cell of doc.cells) {
       // The three DRB3/4/5 genes are one printed row and one question; they
@@ -1091,6 +1176,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     html += drbxRowHtml(doc, blind);
     html += '</ul></div>';
     panel.innerHTML = html;
+    // `toggle` does not bubble, so it cannot ride the panel's delegated handlers.
+    const msgBlock = panel.querySelector('[data-msgs]');
+    if (msgBlock) msgBlock.addEventListener('toggle', () => rememberMessagesOpen(msgBlock.open));
     // A crop that 404s would otherwise leave a fully answerable row with no
     // evidence behind it, which is the one thing this page must never do.
     for (const img of panel.querySelectorAll('img[data-crop]')) {

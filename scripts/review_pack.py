@@ -27,13 +27,27 @@ carries is kept on the record.
     <out>/crops/<id>_<locus>.png  one crop per cell that had a box
 
 Cell ids are `<sha256[:16]>:<LOCUS>`, the golden corpus convention.
+
+## The messages posted with the photo
+
+The caption often says what the report does not: whether the person is a donor
+or a recipient, and their blood group. So each document record also carries
+the Telegram messages that posted the image (`document_message`) and the text
+sitting on their bundle siblings (`bundle_message`), read from the source
+database. Sender names never enter the pack: the page needs only "same poster
+or a different one", so a sender is an 8-character hash (HA-005).
+
+`--augment-messages` adds these to a pack already being labelled, in place;
+labels are keyed by cell id, so nothing the reviewer has done moves.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
+import re
 import shutil
 import sqlite3
 import sys
@@ -84,6 +98,13 @@ FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
 # Padding around a cell crop, as a fraction of the page.
 PAD_X, PAD_Y = 0.012, 0.008
 MIN_CROP_HEIGHT = 44  # px; smaller crops are upscaled for the eye
+# The messages shown with a document: how many, and how much of each.
+MAX_MESSAGES = 8
+MAX_MESSAGE_CHARS = 600
+SENDER_HASH_SALT = "km-sender|"
+# Telegram's title attribute: "31.08.2026 12:34:56 UTC+03:30". Sorted as a
+# string that puts the 1st of every month before the 2nd of any other.
+_RAW_TIME = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})[ T](\d{2}:\d{2}(?::\d{2})?)")
 
 
 @dataclass(slots=True)
@@ -340,6 +361,214 @@ def cell_crop_box(cell: Cell, width: int, height: int) -> tuple[int, int, int, i
     )
 
 
+def _time_key(raw: str | None) -> str:
+    """Chronological sort key for a raw Telegram timestamp; the raw text otherwise."""
+    if not raw:
+        return ""
+    m = _RAW_TIME.match(raw.strip())
+    if not m:
+        return raw
+    day, month, year, clock = m.groups()
+    return f"{year}-{month}-{day} {clock}"
+
+
+def sender_hash(name: str | None) -> str | None:
+    """HA-005: a poster is an 8-character hash, never a display name."""
+    if not name:
+        return None
+    return hashlib.sha256((SENDER_HASH_SALT + name).encode("utf-8")).hexdigest()[:8]
+
+
+def _clip(text: str | None) -> str:
+    text = (text or "").strip()
+    if len(text) > MAX_MESSAGE_CHARS:
+        return text[: MAX_MESSAGE_CHARS - 1].rstrip() + "…"
+    return text
+
+
+def _chunks(items: list[Any], size: int = 900) -> list[list[Any]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _tables(con: sqlite3.Connection) -> set[str]:
+    return {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+def load_messages(
+    source_db: Path, shas: set[str], totals: dict[str, int] | None = None
+) -> dict[str, list[dict[str, object]]]:
+    """The messages posted with each document, keyed by sha256.
+
+    Posting messages come first (`on_photo`), then the bundle siblings that
+    carry text; each group in time order. A posting message with no text is
+    kept only when none of them has any, so the reader sees "no caption"
+    rather than nothing. At most `MAX_MESSAGES` per document, each clipped to
+    `MAX_MESSAGE_CHARS`. Every document in `shas` gets a key, possibly empty;
+    a missing database or a database without the link tables yields all-empty.
+    `totals`, when given, receives the count before the cap, per document.
+    """
+    result: dict[str, list[dict[str, object]]] = {sha: [] for sha in shas}
+    if not shas or not source_db.exists():
+        return result
+    con = sqlite3.connect(f"file:{source_db.as_posix()}?mode=ro", uri=True)
+    try:
+        tables = _tables(con)
+        if not {"document_message", "source_message"} <= tables:
+            return result
+        # sha -> {(export_id, message_id)} posting it, and the bundles they sit in.
+        posting: dict[str, set[tuple[str, int]]] = defaultdict(set)
+        bundles: dict[str, set[tuple[str, str]]] = defaultdict(set)
+        for chunk in _chunks(sorted(shas)):
+            marks = ",".join("?" * len(chunk))
+            for sha, export_id, message_id, bundle_id in con.execute(
+                "SELECT sha256, export_id, telegram_message_id, bundle_id FROM document_message "
+                f"WHERE sha256 IN ({marks})",
+                chunk,
+            ):
+                posting[sha].add((export_id, int(message_id)))
+                if bundle_id:
+                    bundles[sha].add((export_id, str(bundle_id)))
+        siblings: dict[str, set[tuple[str, int]]] = defaultdict(set)
+        if "bundle_message" in tables and bundles:
+            wanted = sorted({b for group in bundles.values() for b in group})
+            members: dict[tuple[str, str], set[int]] = defaultdict(set)
+            for chunk in _chunks(wanted, 450):
+                clause = " OR ".join("(export_id = ? AND bundle_id = ?)" for _ in chunk)
+                params = [v for pair in chunk for v in pair]
+                for export_id, bundle_id, message_id in con.execute(
+                    "SELECT export_id, bundle_id, telegram_message_id FROM bundle_message "
+                    f"WHERE {clause}",
+                    params,
+                ):
+                    members[(export_id, str(bundle_id))].add(int(message_id))
+            for sha, group in bundles.items():
+                for export_id, bundle_id in group:
+                    for message_id in members.get((export_id, bundle_id), ()):
+                        if (export_id, message_id) not in posting[sha]:
+                            siblings[sha].add((export_id, message_id))
+        # One read of every message any document needs.
+        keys = sorted({k for group in posting.values() for k in group}) + sorted(
+            {k for group in siblings.values() for k in group}
+        )
+        # (sort key, record): time order first, and the id breaks ties.
+        rows: dict[tuple[str, int], tuple[tuple[str, int], dict[str, object]]] = {}
+        by_export: dict[str, list[int]] = defaultdict(list)
+        for export_id, message_id in keys:
+            by_export[export_id].append(message_id)
+        for export_id, ids in by_export.items():
+            for chunk in _chunks(sorted(set(ids))):
+                marks = ",".join("?" * len(chunk))
+                for (
+                    message_id,
+                    sent_at,
+                    sender,
+                    forwarded_from,
+                    is_joined,
+                    raw_text,
+                ) in con.execute(
+                    "SELECT telegram_message_id, sent_at_raw, sender_display_name, "
+                    "forwarded_from_display_name, is_joined, raw_text FROM source_message "
+                    f"WHERE export_id = ? AND telegram_message_id IN ({marks})",
+                    [export_id, *chunk],
+                ):
+                    key = (export_id, int(message_id))
+                    if key in rows:
+                        continue
+                    record: dict[str, object] = {
+                        "message_id": int(message_id),
+                        "sent_at": sent_at or None,
+                        "text": _clip(raw_text),
+                        "forwarded": bool(forwarded_from),
+                        "joined": bool(int(is_joined or 0)),
+                        "sender": sender_hash(sender),
+                    }
+                    rows[key] = ((_time_key(sent_at), int(message_id)), record)
+    finally:
+        con.close()
+
+    def ordered(keys: set[tuple[str, int]], on_photo: bool) -> list[dict[str, object]]:
+        # Sorted on the key alone: two exports can share a message id, and
+        # Python cannot order the dicts that would then break the tie.
+        found = sorted((rows[k] for k in keys if k in rows), key=lambda item: item[0])
+        return [{**record, "on_photo": on_photo} for _, record in found]
+
+    for sha in shas:
+        posted = ordered(posting.get(sha, set()), True)
+        with_text = [m for m in posted if m["text"]]
+        kept = with_text if with_text else posted[:1]
+        kept += [m for m in ordered(siblings.get(sha, set()), False) if m["text"]]
+        # A chat exported twice is two export_ids holding the same messages;
+        # the same post must not appear twice or spend the cap on itself.
+        seen: set[tuple[int, str]] = set()
+        unique = []
+        for message in kept:
+            key = (int(message["message_id"]), str(message["text"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(message)
+        result[sha] = unique[:MAX_MESSAGES]
+        if totals is not None:
+            # The page says "8 of 12" rather than passing eight posts off as all.
+            totals[sha] = len(unique)
+    return result
+
+
+def load_caption_claims(source_db: Path, shas: set[str]) -> dict[str, dict[str, str | None] | None]:
+    """What `read_caption_role` concluded from the posting caption, per sha256.
+
+    None when there is no claim (the common case: refusal is by design), no
+    database, or no claim table.
+    """
+    result: dict[str, dict[str, str | None] | None] = {sha: None for sha in shas}
+    if not shas or not source_db.exists():
+        return result
+    con = sqlite3.connect(f"file:{source_db.as_posix()}?mode=ro", uri=True)
+    try:
+        if "document_caption_claim" not in _tables(con):
+            return result
+        for chunk in _chunks(sorted(shas)):
+            marks = ",".join("?" * len(chunk))
+            for sha, role, tier, reason in con.execute(
+                "SELECT sha256, role, tier, reason FROM document_caption_claim "
+                f"WHERE sha256 IN ({marks}) ORDER BY sha256, export_id",
+                chunk,
+            ):
+                if result.get(sha) is None:
+                    result[sha] = {"role": role, "tier": tier, "reason": reason or None}
+    finally:
+        con.close()
+    return result
+
+
+def attach_messages(records: list[dict[str, object]], source_db: Path | None) -> dict[str, int]:
+    """Set `messages`, `n_messages_total` and `caption_claim` on every record;
+    replaces any present. Without a source database the messages are None —
+    "not loaded" — never an empty list, which the page would render as "no
+    message posted this image", a statement about the archive."""
+    shas = {str(r["sha256"]) for r in records}
+    loaded = bool(source_db and source_db.exists())
+    totals: dict[str, int] = {}
+    messages = load_messages(source_db, shas, totals) if loaded else {}
+    claims = load_caption_claims(source_db, shas) if loaded else {s: None for s in shas}
+    for record in records:
+        sha = str(record["sha256"])
+        record["messages"] = messages.get(sha, []) if loaded else None
+        record["n_messages_total"] = totals.get(sha, 0) if loaded else None
+        record["caption_claim"] = claims.get(sha)
+    return {
+        "with_messages": sum(1 for r in records if r["messages"]),
+        "with_caption_claim": sum(1 for r in records if r["caption_claim"]),
+    }
+
+
+def write_pack_files(out: Path, pack: dict[str, object]) -> None:
+    """`pack.json` and `pack.js` are the same bytes two ways; the page loads the latter."""
+    text = json.dumps(pack, ensure_ascii=False)
+    (out / "pack.json").write_text(text, encoding="utf-8")
+    (out / "pack.js").write_text("window.PACK = " + text + ";\n", encoding="utf-8")
+
+
 def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object], dict[str, object]]:
     """Copy the image, cut the crops, and return (record, pipeline_cells)."""
     from PIL import Image
@@ -423,6 +652,9 @@ def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object],
         "role": doc.role,
         "abo": doc.abo,
         "rh": doc.rh,
+        # Filled by `attach_messages` when a source database is at hand.
+        "messages": [],
+        "caption_claim": None,
         "cells": cells,
     }
     return record, pipeline
@@ -436,6 +668,7 @@ def build_pack(
     seed: int,
     page: Path,
     suggestions_dir: Path | None = None,
+    source_db: Path | None = None,
 ) -> dict[str, int]:
     con = sqlite3.connect(facts_db)
     docs = load_documents(con)
@@ -452,6 +685,7 @@ def build_pack(
         record, cells = pack_document(doc, export, out)
         records.append(record)
         pipeline.update(cells)
+    attach_messages(records, source_db)
     extra: dict[str, dict[str, str]] = {}
     if suggestions_dir and suggestions_dir.exists():
         for path in sorted(suggestions_dir.glob("*.json")):
@@ -472,10 +706,7 @@ def build_pack(
         "suggestions": extra,
         "documents": records,
     }
-    (out / "pack.json").write_text(json.dumps(pack, ensure_ascii=False), encoding="utf-8")
-    (out / "pack.js").write_text(
-        "window.PACK = " + json.dumps(pack, ensure_ascii=False) + ";\n", encoding="utf-8"
-    )
+    write_pack_files(out, pack)
     (out / "pipeline.json").write_text(
         json.dumps({"schema": "golden-hidden/v1", "cells": pipeline}, ensure_ascii=False, indent=1),
         encoding="utf-8",
@@ -527,9 +758,43 @@ def refresh_page(out: Path, page: Path) -> int:
     return 0
 
 
+def augment_messages(out: Path, source_db: Path) -> int:
+    """Add the posting messages and caption claim to a pack already in progress.
+
+    Only `pack.json` and `pack.js` are rewritten. The crops, the images,
+    `pipeline.json` and the page are not touched, and labels are keyed by
+    cell id, so a reviewer's stored progress survives. Running it twice
+    replaces the two keys with the same values.
+    """
+    pack_path = out / "pack.json"
+    if not pack_path.exists():
+        print(f"no pack at {out}; build one first")
+        return 2
+    if not source_db.exists():
+        print(f"missing {source_db}; run scripts/ingest_export.py and link_documents.py first")
+        return 2
+    pack = json.loads(pack_path.read_text(encoding="utf-8"))
+    records = list(pack.get("documents", []))
+    counts = attach_messages(records, source_db)
+    pack["documents"] = records
+    write_pack_files(out, pack)
+    print(
+        f"augmented {len(records)} documents in {out}: "
+        f"{counts['with_messages']} with messages, "
+        f"{counts['with_caption_claim']} with a caption claim; reload the browser (Ctrl+F5)"
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=ROOT / "data/derived/source.sqlite",
+        help="the source database; when present, each document carries its posting messages",
+    )
     parser.add_argument("--export", type=Path, default=ROOT / "data/raw/ChatExport_2026-08-31")
     parser.add_argument("--out", type=Path, default=ROOT / "data/review/hla_pack")
     parser.add_argument("--n", type=int, default=150)
@@ -546,14 +811,29 @@ def main() -> int:
         action="store_true",
         help="replace index.html in an existing pack and touch nothing else",
     )
+    parser.add_argument(
+        "--augment-messages",
+        action="store_true",
+        help="add the posting messages and caption claim to an existing pack; "
+        "rewrites pack.json and pack.js only",
+    )
     args = parser.parse_args()
     if args.page_only:
         return refresh_page(args.out, args.page)
+    if args.augment_messages:
+        return augment_messages(args.out, args.source)
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")
         return 2
     counts = build_pack(
-        args.facts, args.export, args.out, args.n, args.seed, args.page, args.suggestions
+        args.facts,
+        args.export,
+        args.out,
+        args.n,
+        args.seed,
+        args.page,
+        args.suggestions,
+        source_db=args.source,
     )
     print(f"packed {sum(counts.values())} documents into {args.out}")
     for tag, count in counts.items():

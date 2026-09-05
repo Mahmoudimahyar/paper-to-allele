@@ -162,6 +162,282 @@ def synthetic_corpus(tmp_path: Path, n_docs: int = 40) -> tuple[Path, Path]:
     return db, export
 
 
+def sha_of(i: int) -> str:
+    return hashlib.sha256(f"synthetic report {i}".encode()).hexdigest()
+
+
+SOURCE_MESSAGE_COLUMNS = (
+    "export_id, source_file, telegram_message_id, dom_id, content_hash, parser_version, "
+    "sent_at_raw, sender_display_name, sender_is_inherited, forwarded_from_display_name, "
+    "forwarded_original_at_raw, reply_to_message_id, reply_to_file, is_joined, raw_text, media, "
+    "contact_evidence, unparsed, first_seen_utc, last_seen_utc"
+)
+# Synthetic captions, typed for this test; nothing here is from the corpus.
+DONOR_CAPTION = "اهدا کننده کلیه گروه خونی O+"
+RECIPIENT_CAPTION = "گیرنده کلیه گروه خونی B مثبت"
+LONG_CAPTION = "متن " * 300  # 1,200 characters, to be clipped
+
+
+def synthetic_source(tmp_path: Path) -> Path:
+    """A source database with the three link tables, for the first four reports.
+
+    report 0: posted three times, out of id order in the link table, one
+              forwarded, one over the clip length, one spanning a month
+              boundary so a raw-string date sort would misorder it.
+    report 1: the photo message is empty; the caption sits on a bundle sibling,
+              and a second sibling is empty (must not appear).
+    report 2: never posted.
+    report 3: posted ten times, all captioned, so the cap has something to cut.
+    """
+    db = tmp_path / "source.sqlite"
+    con = sqlite3.connect(db)
+    con.executescript(
+        f"""
+        CREATE TABLE source_message ({SOURCE_MESSAGE_COLUMNS});
+        CREATE TABLE document_message (sha256, export_id, source_file, telegram_message_id,
+            bundle_id, rel_path);
+        CREATE TABLE bundle_message (export_id, bundle_id, telegram_message_id, relation);
+        CREATE TABLE document_caption_claim (sha256, export_id, role, tier, reason,
+            reader_version);
+        """
+    )
+
+    def message(
+        message_id: int,
+        sent: str | None,
+        sender: str | None,
+        text: str,
+        *,
+        forwarded: str | None = None,
+        joined: bool = False,
+    ) -> None:
+        con.execute(
+            f"INSERT INTO source_message ({SOURCE_MESSAGE_COLUMNS}) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "exp1",
+                "messages.html",
+                message_id,
+                f"message{message_id}",
+                f"h{message_id}",
+                "telegram-html/v1",
+                sent,
+                sender,
+                int(sender is None),
+                forwarded,
+                None,
+                None,
+                None,
+                int(joined),
+                text,
+                "[]",
+                "[]",
+                "[]",
+                "t",
+                "t",
+            ),
+        )
+
+    def posted(sha: str, message_id: int, bundle_id: str | None = None) -> None:
+        con.execute(
+            "INSERT INTO document_message VALUES (?,?,?,?,?,?)",
+            (sha, "exp1", "messages.html", message_id, bundle_id, "photos/x.jpg"),
+        )
+
+    message(90, "28.08.2026 09:00:00 UTC+03:30", "Poster One", LONG_CAPTION)
+    message(100, "02.09.2026 10:00:00 UTC+03:30", "Poster One", DONOR_CAPTION)
+    message(250, "03.09.2026 08:00:00 UTC+03:30", "Poster Two", "forwarded copy", forwarded="Other")
+    for message_id in (250, 90, 100):
+        posted(sha_of(0), message_id)
+    con.execute(
+        "INSERT INTO document_caption_claim VALUES (?,?,?,?,?,?)",
+        (sha_of(0), "exp1", "DONOR", "STATEMENT", "first-person statement", "caption-role/v1"),
+    )
+
+    message(300, "04.09.2026 12:00:00 UTC+03:30", "Poster One", "")
+    message(301, "04.09.2026 12:00:01 UTC+03:30", None, RECIPIENT_CAPTION, joined=True)
+    message(302, "04.09.2026 12:00:02 UTC+03:30", None, "", joined=True)
+    posted(sha_of(1), 300, "b1")
+    for message_id, relation in ((300, "PRIMARY"), (301, "JOINED"), (302, "JOINED")):
+        con.execute(
+            "INSERT INTO bundle_message VALUES (?,?,?,?)", ("exp1", "b1", message_id, relation)
+        )
+
+    for i in range(10):
+        message(400 + i, f"05.09.2026 08:00:{i:02d} UTC+03:30", "Poster Two", f"copy {i}")
+        posted(sha_of(3), 400 + i)
+    con.commit()
+    con.close()
+    return db
+
+
+def test_load_messages_orders_clips_and_hashes_the_poster(tmp_path: Path) -> None:
+    """A caption often says what the report does not — donor or recipient, and
+    the blood group — so the pack carries the posting messages. In time order,
+    clipped, and with the poster as a hash: the page needs only "same poster
+    or a different one" (HA-005)."""
+    module = load()
+    source = synthetic_source(tmp_path)
+    found = module.load_messages(source, {sha_of(0), sha_of(2)})
+    assert set(found) == {sha_of(0), sha_of(2)}
+    assert found[sha_of(2)] == []
+    msgs = found[sha_of(0)]
+    assert [m["message_id"] for m in msgs] == [90, 100, 250], (
+        "time order across a month boundary; a raw-string sort puts 02.09 before 28.08"
+    )
+    assert all(m["on_photo"] for m in msgs)
+    assert [m["forwarded"] for m in msgs] == [False, False, True]
+    assert msgs[1]["text"] == DONOR_CAPTION
+    assert len(msgs[0]["text"]) == 600 and msgs[0]["text"].endswith("…")
+    expected = hashlib.sha256(b"km-sender|Poster One").hexdigest()[:8]
+    assert msgs[0]["sender"] == msgs[1]["sender"] == expected
+    assert msgs[2]["sender"] != expected
+    assert "Poster" not in json.dumps(found, ensure_ascii=False)
+    assert set(msgs[0]) == {
+        "message_id",
+        "sent_at",
+        "text",
+        "on_photo",
+        "forwarded",
+        "joined",
+        "sender",
+    }
+
+
+def test_load_messages_reads_the_caption_off_a_bundle_sibling(tmp_path: Path) -> None:
+    """18,799 documents have text somewhere in their bundle against 16,858 on
+    the posting message itself: the caption often sits one message over."""
+    module = load()
+    source = synthetic_source(tmp_path)
+    msgs = module.load_messages(source, {sha_of(1)})[sha_of(1)]
+    assert [(m["message_id"], m["on_photo"]) for m in msgs] == [(300, True), (301, False)]
+    assert msgs[0]["text"] == "", "the empty photo message stays so the reader sees 'no caption'"
+    assert msgs[1]["text"] == RECIPIENT_CAPTION
+    assert msgs[1]["joined"] is True and msgs[1]["sender"] is None
+
+
+def test_load_messages_caps_at_eight_and_reads_the_claim(tmp_path: Path) -> None:
+    module = load()
+    source = synthetic_source(tmp_path)
+    msgs = module.load_messages(source, {sha_of(3)})[sha_of(3)]
+    assert [m["message_id"] for m in msgs] == list(range(400, 408))
+    claims = module.load_caption_claims(source, {sha_of(0), sha_of(1)})
+    assert claims[sha_of(0)] == {
+        "role": "DONOR",
+        "tier": "STATEMENT",
+        "reason": "first-person statement",
+    }
+    assert claims[sha_of(1)] is None
+
+
+def test_augment_messages_adds_the_keys_and_touches_nothing_else(tmp_path: Path) -> None:
+    """The pack in progress must not be rebuilt: labels are keyed by cell id
+    and the crops are what the reviewer has been looking at. Only pack.json
+    and pack.js change, and running it twice changes nothing."""
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=4)
+    source = synthetic_source(tmp_path)
+    pack_dir = tmp_path / "pack"
+    module.build_pack(db, export, pack_dir, 4, 1, PAGE)
+    before = {
+        p.relative_to(pack_dir).as_posix(): p.read_bytes()
+        for p in pack_dir.rglob("*")
+        if p.is_file() and p.name not in {"pack.json", "pack.js"}
+    }
+    assert any(name.startswith("crops/") for name in before)
+    assert any(name.startswith("images/") for name in before)
+
+    def augment() -> str:
+        result = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--augment-messages",
+                "--out",
+                str(pack_dir),
+                "--source",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            encoding="utf-8",
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    stdout = augment()
+    assert "Poster" not in stdout and DONOR_CAPTION not in stdout, "counts only, never a caption"
+    after = {
+        p.relative_to(pack_dir).as_posix(): p.read_bytes()
+        for p in pack_dir.rglob("*")
+        if p.is_file() and p.name not in {"pack.json", "pack.js"}
+    }
+    assert after == before, "crops, images, pipeline.json and the page are untouched"
+
+    pack = json.loads((pack_dir / "pack.json").read_text(encoding="utf-8"))
+    by_sha = {d["sha256"]: d for d in pack["documents"]}
+    assert set(by_sha) == {sha_of(i) for i in range(4)}
+    for doc in pack["documents"]:
+        assert "messages" in doc and "caption_claim" in doc
+    assert [m["message_id"] for m in by_sha[sha_of(0)]["messages"]] == [90, 100, 250]
+    assert by_sha[sha_of(0)]["caption_claim"]["role"] == "DONOR"
+    assert by_sha[sha_of(2)]["messages"] == [] and by_sha[sha_of(2)]["caption_claim"] is None
+    js = (pack_dir / "pack.js").read_text(encoding="utf-8")
+    assert js.startswith("window.PACK = ") and js.endswith(";\n")
+    assert json.loads(js[len("window.PACK = ") : -2]) == pack
+    pipeline = json.loads((pack_dir / "pipeline.json").read_text(encoding="utf-8"))
+    assert all("messages" not in entry for entry in pipeline["cells"].values())
+
+    first = (pack_dir / "pack.json").read_bytes()
+    augment()
+    assert (pack_dir / "pack.json").read_bytes() == first, "idempotent"
+
+
+def test_a_fresh_pack_carries_messages_only_when_the_source_database_exists(
+    tmp_path: Path,
+) -> None:
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=4)
+    module.build_pack(
+        db, export, tmp_path / "without", 4, 1, PAGE, source_db=tmp_path / "absent.sqlite"
+    )
+    pack = json.loads((tmp_path / "without/pack.json").read_text(encoding="utf-8"))
+    # not loaded is None, never an empty list: the page must not say "no
+    # message posted this image" about an archive it never opened
+    assert all(
+        d["messages"] is None and d["n_messages_total"] is None and d["caption_claim"] is None
+        for d in pack["documents"]
+    )
+    source = synthetic_source(tmp_path)
+    module.build_pack(db, export, tmp_path / "with", 4, 1, PAGE, source_db=source)
+    pack = json.loads((tmp_path / "with/pack.json").read_text(encoding="utf-8"))
+    by_sha = {d["sha256"]: d for d in pack["documents"]}
+    assert by_sha[sha_of(1)]["messages"][1]["text"] == RECIPIENT_CAPTION
+    assert by_sha[sha_of(0)]["caption_claim"]["tier"] == "STATEMENT"
+
+
+def test_the_page_shows_the_messages_and_the_caption_claim() -> None:
+    """Rendered inside a native <details>, so the keyboard opens it; the text in
+    a dir="auto" paragraph, so Persian runs right to left; the poster never a
+    name. The open state is remembered for the tab, and only if the browser
+    allows it."""
+    page = PAGE.read_text(encoding="utf-8")
+    assert "function messagesHtml(doc)" in page
+    body = page.split("function messagesHtml(doc)")[1].split("\n  }\n")[0]
+    assert "<details" in body and "<summary>Messages (" in body
+    assert '<p dir="auto">' in body
+    assert "esc(m.text)" in body and "esc(m.sender)" in body
+    assert "m.name" not in body and "display_name" not in body
+    assert "white-space: pre-wrap" in page
+    assert "caption: '" in page and "doc.caption_claim.tier" in page
+    assert "sessionStorage." in page
+    for accessor in page.split("sessionStorage.")[1:]:
+        assert "catch" in accessor[:160], (
+            "storage access is wrapped; a private window must not throw"
+        )
+
+
 def test_every_failure_signal_fills_its_own_stratum(tmp_path: Path) -> None:
     """A random sample would be nearly all easy cells; the pack draws from
     each signal the pipeline already emits, rarest first."""
@@ -403,3 +679,56 @@ def test_the_page_preselects_the_state_the_refusal_reason_implies() -> None:
         assert state in page.split("function defaultStateFor(cell)")[1].split("}")[0] or True
     body = page.split("function defaultStateFor(cell)")[1][:900]
     assert "'NOT_PRINTED'" in body and "'BLANK'" in body and "'VALUE'" in body
+
+
+def test_a_chat_exported_twice_does_not_repeat_its_messages(tmp_path: Path) -> None:
+    """A re-export is a new export_id holding the same posts. The same caption
+    must not appear twice, spend the cap on itself, or inflate the total."""
+    module = load()
+    source = synthetic_source(tmp_path)
+    con = sqlite3.connect(source)
+    for message_id, sent, text in (
+        (90, "28.08.2026 09:00:00 UTC+03:30", LONG_CAPTION),
+        (100, "02.09.2026 10:00:00 UTC+03:30", DONOR_CAPTION),
+    ):
+        con.execute(
+            f"INSERT INTO source_message ({SOURCE_MESSAGE_COLUMNS}) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "exp2",
+                "messages.html",
+                message_id,
+                f"message{message_id}",
+                f"h{message_id}",
+                "telegram-html/v1",
+                sent,
+                "Poster One",
+                0,
+                None,
+                None,
+                None,
+                None,
+                0,
+                text,
+                "[]",
+                "[]",
+                "[]",
+                "t",
+                "t",
+            ),
+        )
+        con.execute(
+            "INSERT INTO document_message VALUES (?,?,?,?,?,?)",
+            (sha_of(0), "exp2", "messages.html", message_id, None, "photos/x.jpg"),
+        )
+    con.commit()
+    con.close()
+    totals: dict[str, int] = {}
+    found = module.load_messages(source, {sha_of(0), sha_of(3)}, totals)
+    assert [m["message_id"] for m in found[sha_of(0)]] == [90, 100, 250]
+    assert totals[sha_of(0)] == 3
+    assert len(found[sha_of(3)]) == module.MAX_MESSAGES
+    assert totals[sha_of(3)] == 10, "the total counts what the cap cut"
+    records = [{"sha256": sha_of(3)}]
+    module.attach_messages(records, source)
+    assert records[0]["n_messages_total"] == 10 and len(records[0]["messages"]) == 8
