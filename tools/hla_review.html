@@ -290,6 +290,16 @@ body.gated main { grid-template-columns: 1fr; }
 .rd .note { font-size: var(--fs-2); color: var(--ink-3); white-space: normal; }
 .rd .why  { font-size: var(--fs-2); color: var(--edit-on); white-space: normal; }
 
+/* ---- the DRB3/4/5 row: three genes, one question ---------------------- */
+.genes { display: flex; flex-direction: column; gap: 4px; }
+.gene { display: flex; align-items: center; gap: 6px; font-size: var(--fs-4); font-weight: 600;
+        color: var(--ink-2); padding: 2px 4px; border-radius: var(--r-sm); }
+.gene.on { color: var(--ink); background: var(--ok-soft); }
+.gene input[type=text] { flex: 1 1 4rem; min-width: 4rem; font-family: var(--mono); font-size: var(--fs-4);
+                         font-weight: 600; padding: 3px 6px; }
+.gene input[type=text]:disabled { background: var(--surface-2); color: var(--ink-3); }
+.gene input[type=text]::placeholder { font-family: system-ui, sans-serif; font-weight: 400; font-style: italic; }
+
 /* ---- the answer -------------------------------------------------------- */
 .answer { display: flex; flex-direction: column; gap: 6px; }
 .answer select { width: 100%; }
@@ -431,6 +441,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       <dt><kbd>?</kbd></dt><dd>This panel</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close</dd>
     </dl>
+    <p><b>The DRB3/4/5 row</b> is one question: tick the genes the form prints on that
+       row. It prints gene <i>names</i> (DRB3, DRB4, DRB5), so leave the allele box empty
+       unless a number is printed beside a name. Do not type 03, 04 or 05 for a name.</p>
     <p>Click a row to highlight it on the report; click a crop to enlarge it.
        Your work saves as you go, and <b>Export</b> writes the file to hand back.</p>
     <button id="helpClose" class="primary">Got it</button>
@@ -758,6 +771,188 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     return rows.join('');
   }
 
+  // ---- the DRB3/4/5 row --------------------------------------------------
+  // `HLA_VALIDATION_SPEC.md` s7: DRB3, DRB4 and DRB5 are three genes STORED
+  // separately, and the form prints them on one row as presence typing — gene
+  // NAMES, not numbers. The first 165 labels showed what three separate
+  // "type two alleles" questions do to that: every 'value' entered was 03, 04
+  // or 05, the digit of the gene name, copied into two or three cells. So the
+  // row is one question — which genes are printed on it — and the three labels
+  // the export needs are derived from the one answer.
+  const DRBX_GENES = ['DRB3', 'DRB4', 'DRB5'];
+  const ROW_STATES = ['GENES', 'NOT_PRINTED', 'BLANK', 'UNREADABLE'];
+  const ROW_STATE_TEXT = { GENES: 'read the genes printed', NOT_PRINTED: 'no DRB3/4/5 row on this form',
+                           BLANK: 'row printed, cell empty', UNREADABLE: 'unreadable' };
+  const GENE_DIGIT = /^0?[345]$/;
+
+  function drbxCells(doc) {
+    return DRBX_GENES.map(g => doc.cells.find(c => c.kind === 'DRBX' && c.locus === g)).filter(Boolean);
+  }
+  function isLegacyDrbxLabel(lab) {
+    // Labelled under the old per-gene question: a 'value' that is a gene digit.
+    return lab && !lab.row && lab.state === 'VALUE' && lab.alleles.length > 0
+      && lab.alleles.every(a => GENE_DIGIT.test(a));
+  }
+  function defaultRowState(cells) {
+    if (cells.some(c => c.status === 'RESOLVED')) return 'GENES';
+    const why = ((cells[0].suggestions || {}).pipeline || {}).reason || '';
+    if (/no grouped DRB3\/4\/5 header/.test(why)) return 'NOT_PRINTED';
+    return 'GENES';
+  }
+  function drbxRowHtml(doc, blind) {
+    const cells = drbxCells(doc);
+    if (!cells.length) return '';
+    const labs = cells.map(c => labels.cells[c.cell_id]);
+    const allLabelled = labs.every(Boolean);
+    const legacy = labs.some(isLegacyDrbxLabel) || (allLabelled && labs.some(l => !l.row));
+    const confirmed = allLabelled && !legacy;
+
+    // Row state: from the labels when they exist, otherwise from the pipeline.
+    let rowState;
+    if (allLabelled) {
+      const states = labs.map(l => l.state);
+      rowState = ['NOT_PRINTED', 'BLANK', 'UNREADABLE', 'NOT_A_REPORT'].find(st => states.every(x => x === st)) || 'GENES';
+      if (rowState === 'NOT_A_REPORT') rowState = 'UNREADABLE';
+    } else {
+      rowState = defaultRowState(cells);
+    }
+    // Which genes are ticked: labels first; otherwise the pipeline's PRESENT
+    // calls — unless the reader asked to be blind, in which case nothing is.
+    const ticked = {}, typed = {};
+    for (const [i, c] of cells.entries()) {
+      const lab = labs[i];
+      if (lab) {
+        ticked[c.locus] = lab.state === 'VALUE' || lab.state === 'PRESENT_ONLY';
+        typed[c.locus] = (lab.state === 'VALUE' && !isLegacyDrbxLabel(lab)) ? lab.alleles.join(' ') : '';
+      } else {
+        ticked[c.locus] = !blind && c.status === 'RESOLVED' && c.value !== 'ABSENT';
+        typed[c.locus] = '';
+      }
+    }
+    // One crop for the row: the widest the pack cut for any of the three.
+    const withCrop = cells.filter(c => c.crop);
+    const span = c => (c.value_boxes && c.value_boxes.length)
+      ? Math.max(...c.value_boxes.map(b => b[2])) - Math.min(...[c.anchor_box ? c.anchor_box[0] : 1].concat(c.value_boxes.map(b => b[0])))
+      : (c.anchor_box ? 0.45 : 0);
+    const cropCell = withCrop.sort((a, b) => span(b) - span(a))[0];
+    const anyStatus = cells.some(c => c.status === 'RESOLVED') ? 'RESOLVED' : cells[0].status;
+
+    // What the pipeline said, gene by gene, on one line.
+    const p0 = (cells[0].suggestions || {}).pipeline || {};
+    const pipeLine = cells.map(c => {
+      const v = c.status === 'RESOLVED' ? (c.value === 'ABSENT' ? 'absent' : 'present') : (c.status || 'unknown').toLowerCase().replace(/_/g, ' ');
+      return esc(c.locus) + ' ' + esc(v);
+    }).join(' · ');
+    const raws = cells.map(c => ((c.suggestions || {}).pipeline || {}).raw).filter(Boolean);
+    let readings = '<div class="rd rd-pipe"><span class="who">pipeline</span><span class="val">' + pipeLine + '</span></div>';
+    if (raws.length) readings += '<div class="rd"><span class="who">raw ocr</span><span class="val dim">' + esc(raws.join(' · ')) + '</span></div>';
+    if (anyStatus !== 'RESOLVED' && p0.reason) readings += '<div class="rd"><span class="who">refused</span><span class="why">' + esc(p0.reason) + '</span></div>';
+
+    let dec = null;
+    if (confirmed) {
+      const decs = labs.map(l => l.decision);
+      dec = decs.indexOf('EDITED') !== -1 ? 'EDITED' : decs.indexOf('ADDED') !== -1 ? 'ADDED' : 'APPROVED';
+    }
+    const genes = DRBX_GENES.map(g => {
+      const c = cells.find(x => x.locus === g);
+      if (!c) return '';
+      return '<label class="gene' + (ticked[g] ? ' on' : '') + '">'
+        + '<input type="checkbox" data-gene="' + g + '"' + (ticked[g] ? ' checked' : '') + '> ' + g
+        + '<input type="text" data-gene-alleles="' + g + '" value="' + esc(typed[g]) + '" placeholder="allele, if printed"'
+        + ' aria-label="allele printed beside ' + g + '"' + (ticked[g] ? '' : ' disabled') + '></label>';
+    }).join('');
+
+    return '<li class="cell drbx-row ' + (dec || (legacy ? 'dirty' : '')) + '" data-cell="' + cells[0].cell_id + '"'
+      + ' data-cells="' + cells.map(c => c.cell_id).join(',') + '" tabindex="-1">'
+      + '<div class="locus">DRB3/4/5'
+      + '<span class="state">' + esc(String(anyStatus || '').replace(/_/g, ' ')) + '</span>'
+      + (dec ? '<span class="verdict ' + dec + '">' + dec.toLowerCase() + '</span>' : '')
+      + (legacy ? '<span class="verdict EDITED">re-confirm</span>' : '')
+      + '</div>'
+      + '<div class="evid"><div class="crop">'
+      + (cropCell
+          ? '<button type="button" class="cropbtn" aria-label="enlarge the DRB3/4/5 row">'
+            + '<img src="' + esc(cropCell.crop) + '" alt="the DRB3/4/5 row as printed" decoding="async" data-crop></button>'
+          : '<span class="nobox">no box on this row</span>')
+      + '</div><div class="readings' + (blind && !allLabelled ? ' veiled' : '') + '">' + readings
+      + (legacy ? '<div class="rd"><span class="who">note</span><span class="why">labelled under the old per-gene question — please answer it again as one row</span></div>' : '')
+      + '</div></div>'
+      + '<div class="answer">'
+      + '<select data-state data-row-state aria-label="what the DRB3/4/5 row shows">'
+      + ROW_STATES.map(st => '<option value="' + st + '"' + (st === rowState ? ' selected' : '') + '>' + ROW_STATE_TEXT[st] + '</option>').join('')
+      + '</select>'
+      + '<div class="genes"' + (rowState === 'GENES' ? '' : ' hidden') + '>' + genes + '</div>'
+      + '<div class="row"><label><input type="checkbox" data-unsure' + (labs.some(l => l && l.unsure) ? ' checked' : '') + '> unsure</label>'
+      + '<button class="confirm" data-confirm title="' + (confirmed ? 'Change your answer and confirm again' : 'Record this row') + '">'
+      + (confirmed ? '✓ done' : 'confirm') + '</button></div>'
+      + '</div></li>';
+  }
+
+  function confirmDrbxRow(li) {
+    const doc = PACK.documents[docIndex];
+    const cells = drbxCells(doc);
+    const rowState = li.querySelector('[data-row-state]').value;
+    const unsure = li.querySelector('[data-unsure]').checked;
+    const perGene = {};
+    if (rowState === 'GENES') {
+      let anyTicked = false;
+      for (const c of cells) {
+        const on = li.querySelector('[data-gene="' + c.locus + '"]').checked;
+        const input = li.querySelector('[data-gene-alleles="' + c.locus + '"]');
+        let alleles = [];
+        if (on) {
+          anyTicked = true;
+          alleles = normaliseInput(input.value);
+          if (alleles === null || alleles.length > 2) {
+            input.classList.add('bad'); input.focus();
+            toast(alleles && alleles.length > 2 ? 'A gene carries at most two alleles.' : 'That is not an allele. Leave it empty if only the gene name is printed.');
+            return false;
+          }
+          if (alleles.some(a => GENE_DIGIT.test(a))) {
+            // 03/04/05 beside DRB3/4/5 is the gene name again, not an allele.
+            input.classList.add('bad'); input.focus();
+            toast('That is the gene\u2019s own digit. Tick the gene; type an allele only if one is printed beside it.');
+            return false;
+          }
+        }
+        input.classList.remove('bad');
+        perGene[c.locus] = { state: on ? (alleles.length ? 'VALUE' : 'PRESENT_ONLY') : 'ABSENT', alleles: alleles };
+      }
+      if (!anyTicked) {
+        toast('Tick the genes printed on the row \u2014 or say the row is blank, unreadable, or not printed.');
+        li.querySelector('[data-gene]').focus();
+        return false;
+      }
+    } else {
+      for (const c of cells) perGene[c.locus] = { state: rowState, alleles: [] };
+    }
+    const decs = [];
+    for (const c of cells) {
+      const g = perGene[c.locus];
+      const dec = decision(c, g.state, g.alleles);
+      decs.push(dec);
+      labels.cells[c.cell_id] = {
+        locus: c.locus, state: g.state, alleles: g.alleles,
+        resolution: g.state === 'VALUE' ? (g.alleles.some(a => a.indexOf(':') !== -1) ? 'TWO_FIELD' : 'FIRST_FIELD') : null,
+        unsure: unsure, decision: dec, pipeline_value: c.value, pipeline_status: c.status,
+        row: 'DRB3/4/5', row_state: rowState,
+        labelled_utc: new Date().toISOString(),
+      };
+    }
+    const dec = decs.indexOf('EDITED') !== -1 ? 'EDITED' : decs.indexOf('ADDED') !== -1 ? 'ADDED' : 'APPROVED';
+    li.className = 'cell drbx-row ' + dec + ' current flash';
+    setTimeout(() => li.classList.remove('flash'), 560);
+    const locusCell = li.querySelector('.locus');
+    for (const v of locusCell.querySelectorAll('.verdict')) v.remove();
+    const verdict = document.createElement('span');
+    verdict.className = 'verdict ' + dec; verdict.textContent = dec.toLowerCase();
+    locusCell.appendChild(verdict);
+    li.querySelector('[data-confirm]').textContent = '\u2713 done';
+    li.querySelector('.readings').classList.remove('veiled');
+    save();
+    return true;
+  }
+
   function renderDoc() {
     // The golden protocol needs two INDEPENDENT labellers, and labels are keyed
     // by annotator. Without a name they all land in one 'anon' bucket, so the
@@ -829,8 +1024,11 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       + '</div></div><ul class="cells">';
 
     for (const cell of doc.cells) {
+      // The three DRB3/4/5 genes are one printed row and one question; they
+      // render together after the loop (see drbxRowHtml).
+      if (cell.kind === 'DRBX') continue;
       const lab = labels.cells[cell.cell_id];
-      const states = cell.kind === 'DRBX' ? STATES_DRBX : STATES_HLA;
+      const states = STATES_HLA;
       const state = lab ? lab.state : defaultStateFor(cell);
       // Blind means blind. Veiling 12.5px grey readings while leaving the
       // pipeline's answer typed into a focused, selected input is not blind at
@@ -866,6 +1064,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + (lab ? '✓ done' : 'confirm') + '</button></div>'
         + '</div></li>';
     }
+    html += drbxRowHtml(doc, blind);
     html += '</ul></div>';
     panel.innerHTML = html;
     // A crop that 404s would otherwise leave a fully answerable row with no
@@ -909,10 +1108,19 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     const all = panel.querySelectorAll('.cell');
     for (const r of all) r.classList.toggle('current', r === li);
     const doc = PACK.documents[docIndex];
-    if (doc) highlight(doc.cells.find(c => c.cell_id === li.dataset.cell));
+    if (!doc) return;
+    if (li.classList.contains('drbx-row')) {
+      const cells = drbxCells(doc);
+      const boxes = [].concat(...cells.map(c => c.value_boxes || []));
+      const anchor = (cells.find(c => c.anchor_box) || {}).anchor_box || null;
+      highlight({ anchor_box: anchor, value_boxes: boxes });
+      return;
+    }
+    highlight(doc.cells.find(c => c.cell_id === li.dataset.cell));
   }
 
   function confirmRow(li) {
+    if (li.classList.contains('drbx-row')) return confirmDrbxRow(li);
     const doc = PACK.documents[docIndex];
     const cell = doc.cells.find(c => c.cell_id === li.dataset.cell);
     const state = li.querySelector('[data-state]').value;
@@ -1031,7 +1239,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     // until it is confirmed again — otherwise the stored label silently
     // disagrees with what the reviewer is looking at.
     if (!/APPROVED|EDITED|ADDED/.test(li.className)) return;
-    li.className = 'cell current dirty';
+    li.className = 'cell current dirty' + (li.classList.contains('drbx-row') ? ' drbx-row' : '');
     const verdict = li.querySelector('.locus .verdict');
     if (verdict) verdict.remove();
     const button = li.querySelector('[data-confirm]');
@@ -1041,13 +1249,27 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
 
   panel.addEventListener('change', e => {
     const doc = PACK.documents[docIndex];
-    if (e.target.matches('[data-state]') || e.target.matches('[data-unsure]')) {
+    if (e.target.matches('[data-state], [data-unsure], [data-gene]')) {
       markUnconfirmed(e.target.closest('.cell'));
     }
-    if (e.target.matches('[data-state]')) {
+    if (e.target.matches('[data-row-state]')) {
+      const li = e.target.closest('.cell');
+      const genes = li.querySelector('.genes');
+      genes.hidden = e.target.value !== 'GENES';
+      if (!genes.hidden) { const first = genes.querySelector('[data-gene]'); if (first) first.focus(); }
+    } else if (e.target.matches('[data-state]')) {
       const li = e.target.closest('.cell'); const input = li.querySelector('[data-alleles]');
-      input.disabled = e.target.value !== 'VALUE';
-      if (!input.disabled) input.focus();
+      if (input) {
+        input.disabled = e.target.value !== 'VALUE';
+        if (!input.disabled) input.focus();
+      }
+    }
+    if (e.target.matches('[data-gene]')) {
+      const label = e.target.closest('.gene');
+      const input = label.querySelector('[data-gene-alleles]');
+      label.classList.toggle('on', e.target.checked);
+      input.disabled = !e.target.checked;
+      if (!e.target.checked) { input.value = ''; input.classList.remove('bad'); }
     }
     if (e.target.matches('[data-doc]')) {
       const d = labels.documents[doc.id] = labels.documents[doc.id] || {};
@@ -1086,7 +1308,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
   });
   panel.addEventListener('input', e => {
-    if (e.target.matches('[data-alleles]')) {
+    if (e.target.matches('[data-alleles], [data-gene-alleles]')) {
       e.target.classList.remove('bad');
       const li = e.target.closest('.cell');
       li.querySelector('.readings').classList.remove('veiled');

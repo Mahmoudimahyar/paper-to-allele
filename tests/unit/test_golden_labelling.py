@@ -164,6 +164,58 @@ def test_a_partial_read_of_a_two_allele_cell_is_a_false_acceptance() -> None:
     assert report.false_acceptances == ["c1"]
 
 
+def test_a_partial_read_that_declares_itself_is_a_partial_not_a_false_acceptance() -> None:
+    """KI-015's fix made `second_allele` explicit: one value in a cell means one
+    value was READ, and the record says so. A reading that is right as far as it
+    goes, and declares that it stopped, is an incomplete record — a cost — not a
+    wrong one. Measured on the first 165 anchored labels, both non-DRBX
+    'contradictions' were exactly this: `B*NN` with the second allele UNREAD
+    against a human pair containing that allele.
+
+    Without the declaration the rule above stands unchanged.
+    """
+    report = score_against_pipeline(
+        truth(c1=label(VALUE, ("44", "52"))),
+        pipeline={"c1": ("RESOLVED", "B", ("44",), "UNREAD")},
+    )
+    assert report.partial == 1
+    assert report.false_acceptances == []
+    assert report.per_locus["B"].partial == 1
+    assert report.passed is True
+    assert report.scored == 1
+
+
+def test_a_declared_partial_read_with_the_wrong_allele_is_a_false_acceptance() -> None:
+    """Declaring the second allele unread excuses incompleteness, never error."""
+    report = score_against_pipeline(
+        truth(c1=label(VALUE, ("44", "52"))),
+        pipeline={"c1": ("RESOLVED", "B", ("45",), "UNREAD")},
+    )
+    assert report.false_acceptances == ["c1"]
+    assert report.partial == 0
+
+
+def test_a_single_allele_claimed_complete_against_a_pair_is_a_false_acceptance() -> None:
+    """`READ` means the pipeline claims both alleles were seen; one value with
+    that claim against a printed pair is the KI-015 failure exactly."""
+    report = score_against_pipeline(
+        truth(c1=label(VALUE, ("44", "52"))),
+        pipeline={"c1": ("RESOLVED", "B", ("44",), "READ")},
+    )
+    assert report.false_acceptances == ["c1"]
+
+
+def test_a_declared_partial_read_against_a_single_printed_allele_is_correct() -> None:
+    """The form printed one allele and the pipeline read it: complete agreement,
+    whatever the pipeline believes about a second column it could not see."""
+    report = score_against_pipeline(
+        truth(c1=label(VALUE, ("44",))),
+        pipeline={"c1": ("RESOLVED", "B", ("44",), "UNREAD")},
+    )
+    assert report.correct == 1
+    assert report.partial == 0
+
+
 def test_a_disputed_cell_is_never_scored() -> None:
     """An unresolved disagreement is not ground truth."""
     result = Adjudication(agreed={}, disputed={"c1": (label(VALUE, ("11",)), label(BLANK))})

@@ -49,15 +49,23 @@ def read_labels(path: Path) -> dict[str, CellLabel]:
     return out
 
 
-def read_pipeline(path: Path) -> dict[str, tuple[str, str, tuple[str, ...]]]:
+def read_pipeline(path: Path) -> dict[str, tuple[str, ...]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    out = {}
+    out: dict[str, tuple[str, ...]] = {}
     for cell_id, entry in payload["cells"].items():
         raw = entry.get("value") or ""
         # A locus value is stored as the space-separated alleles it resolved to;
         # the locus prefix is provenance, not part of the reading being judged.
         values = tuple(part.split("*")[-1] for part in raw.split() if part)
-        out[cell_id] = (entry["status"], entry["locus"], values)
+        # The pipeline's own declaration of whether it read the second allele
+        # (KI-015). Older hidden files lack it, and then a single value against a
+        # printed pair stays a false acceptance, as before.
+        second = entry.get("second_allele")
+        out[cell_id] = (
+            (entry["status"], entry["locus"], values, str(second))
+            if second
+            else (entry["status"], entry["locus"], values)
+        )
     return out
 
 
@@ -88,6 +96,7 @@ def main() -> int:
     print(f"  correct           : {report.correct:,}")
     print(f"  correct abstention: {report.correct_abstentions:,}")
     print(f"  missed (recall)   : {report.missed:,}")
+    print(f"  partial (2nd unread, declared): {report.partial:,}")
     print(f"  FALSE ACCEPTANCE  : {len(report.false_acceptances):,}")
     if report.per_locus:
         print(f"\n{'locus':<8}{'correct':>9}{'false':>8}{'missed':>8}{'abstained':>11}")

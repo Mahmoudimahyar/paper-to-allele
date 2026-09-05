@@ -64,8 +64,8 @@ def build(facts_db: Path, golden: Path, export: Path, out_dir: Path) -> int:
     con = sqlite3.connect(facts_db)
     rows = list(
         con.execute(
-            "SELECT sha256, field, status, value, anchor_box, value_boxes, rule_id "
-            "FROM fact WHERE extraction_version='facts/v1'"
+            "SELECT sha256, field, status, value, anchor_box, value_boxes, rule_id, "
+            "second_allele FROM fact WHERE extraction_version='facts/v1'"
         )
     )
     paths = dict(con.execute("SELECT sha256, rel_path FROM document"))
@@ -77,10 +77,10 @@ def build(facts_db: Path, golden: Path, export: Path, out_dir: Path) -> int:
     tasks: list[dict] = []
     hidden: dict[str, dict] = {}
     by_document: dict[str, list[tuple]] = {}
-    for sha, field, status, value, anchor_box, value_boxes, rule_id in rows:
+    for sha, field, status, value, anchor_box, value_boxes, rule_id, second in rows:
         if sha in wanted and field in (*LOCI, *GENES):
             by_document.setdefault(sha, []).append(
-                (field, status, value, anchor_box, value_boxes, rule_id)
+                (field, status, value, anchor_box, value_boxes, rule_id, second)
             )
 
     tally: Counter[str] = Counter()
@@ -100,7 +100,9 @@ def build(facts_db: Path, golden: Path, export: Path, out_dir: Path) -> int:
             page.thumbnail((PAGE_MAX_EDGE, PAGE_MAX_EDGE))
             page.save(crops_dir / page_name, quality=85)
 
-        for field, status, value, anchor_box, value_boxes, rule_id in sorted(cells):
+        for field, status, value, anchor_box, value_boxes, rule_id, second in sorted(
+            cells, key=lambda c: c[0]
+        ):
             cell_id = f"{sha[:16]}:{field}"
             anchor = json.loads(anchor_box) if anchor_box else None
             values = json.loads(value_boxes) if value_boxes else []
@@ -143,7 +145,16 @@ def build(facts_db: Path, golden: Path, export: Path, out_dir: Path) -> int:
                     "picklist": sorted(vocabulary.first_fields(field))[:60] if not is_gene else [],
                 }
             )
-            hidden[cell_id] = {"status": status, "locus": field, "value": value, "rule": rule_id}
+            # The pipeline's own declaration of whether it read a second allele
+            # (KI-015) rides along so the scorer can tell an honest partial read
+            # from a value claimed complete. Still never loaded by the page.
+            hidden[cell_id] = {
+                "status": status,
+                "locus": field,
+                "value": value,
+                "rule": rule_id,
+                "second_allele": second,
+            }
             tally[status] += 1
 
     (out_dir / "tasks.json").write_text(

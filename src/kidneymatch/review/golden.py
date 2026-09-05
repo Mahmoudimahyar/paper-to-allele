@@ -97,6 +97,9 @@ class LocusTally:
     false_acceptances: int = 0
     missed: int = 0
     correct_abstentions: int = 0
+    # Resolved to one allele, declared the second unread, and that one allele is
+    # in the printed pair. Right as far as it goes; the record is incomplete.
+    partial: int = 0
 
 
 @dataclass(slots=True)
@@ -107,17 +110,28 @@ class ScoreReport:
     missed: int = 0
     correct_abstentions: int = 0
     unadjudicated: int = 0
+    partial: int = 0
     false_acceptances: list[str] = field(default_factory=list)
     per_locus: dict[str, LocusTally] = field(default_factory=dict)
 
     @property
     def accepted(self) -> int:
-        """Cells the pipeline resolved and the golden corpus could judge."""
-        return self.correct + len(self.false_acceptances)
+        """Cells the pipeline resolved and the golden corpus could judge.
+
+        A declared partial read was resolved and not contradicted, so it counts
+        toward the trials the rule-of-three bound is taken over.
+        """
+        return self.correct + self.partial + len(self.false_acceptances)
 
     @property
     def scored(self) -> int:
-        return self.correct + self.missed + self.correct_abstentions + len(self.false_acceptances)
+        return (
+            self.correct
+            + self.partial
+            + self.missed
+            + self.correct_abstentions
+            + len(self.false_acceptances)
+        )
 
     @property
     def false_acceptance_upper_bound(self) -> float | None:
@@ -165,13 +179,20 @@ def adjudicate(
 
 def score_against_pipeline(
     truth: Adjudication,
-    pipeline: dict[str, tuple[str, str, tuple[str, ...]]],
+    pipeline: dict[str, tuple[str, ...]],
 ) -> ScoreReport:
     """Judge the pipeline against the golden corpus.
 
-    `pipeline` maps a cell id to its (status, locus, values). Only cells whose
-    reading two people agreed on, or a third settled, are scored: an unresolved
-    disagreement is not ground truth.
+    `pipeline` maps a cell id to `(status, locus, values)`, optionally followed
+    by the pipeline's own `second_allele` declaration (`READ` or `UNREAD`,
+    KI-015). Only cells whose reading two people agreed on, or a third settled,
+    are scored: an unresolved disagreement is not ground truth.
+
+    A resolved single value declared `UNREAD` that sits inside the printed pair
+    is a **partial** read: right as far as it goes, and honest about stopping.
+    It is neither correct nor a false acceptance. Without the declaration a
+    single value against a pair remains a false acceptance — the pipeline then
+    claimed a complete reading it did not have.
     """
     report = ScoreReport(unadjudicated=len(truth.disputed))
 
@@ -179,7 +200,9 @@ def score_against_pipeline(
         entry = pipeline.get(cell_id)
         if entry is None:
             continue
-        status, locus, values = entry
+        status, locus, raw_values = entry[0], entry[1], entry[2]
+        values = tuple(raw_values)
+        second_allele = entry[3] if len(entry) > 3 else None
         tally = report.per_locus.setdefault(locus, LocusTally())
 
         if status == "RESOLVED":
@@ -197,6 +220,15 @@ def score_against_pipeline(
             ):
                 report.correct += 1
                 tally.correct += 1
+            elif (
+                label.state is LabelState.VALUE
+                and second_allele == "UNREAD"
+                and len(values) == 1
+                and len(label.alleles) == 2
+                and values[0] in label.alleles
+            ):
+                report.partial += 1
+                tally.partial += 1
             else:
                 # The pipeline asserted something the human did not read: either
                 # a different value, or a value where there is none. This is the
