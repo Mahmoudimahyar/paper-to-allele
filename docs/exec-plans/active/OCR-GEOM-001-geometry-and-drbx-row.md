@@ -70,6 +70,7 @@ python scripts/verify_repo.py
 ## Progress log
 - 2026-09-05: 165-label export scored; DRB3/4/5 diagnosis; one-row question shipped to the live pack (`--page-only`); partial-read scoring; research workflow (6 lenses, 6 skeptics, 3 code maps) synthesised.
 - 2026-09-05: `rulings.py` (24 tests) and `geometry_pass.py` (4 contract tests); pass over the 150-document pack; decision rule calibrated on real photographs (scatter bound 0.5→1.5 deg refused 79/150 pages; verticals demoted to a flag). Of the 21 misses only 1 sits on a ROTATE page — the misses are glued label+digit tokens, so the star-less parser shipped first and recovered 5 of them; tilt handling continues for the corpus (35% of pack pages rotate ≥0.5 deg).
+- 2026-09-05 (later): page frame wired (`--geometry`, from 1.5 deg); `ocr/crops.py` with the decode pass on it; `tilted` stratum for the next pack; corpus geometry pass complete (5,486 ROTATE / 14,209 STRAIGHT / 3,871 UNCERTAIN). Adversarial review (3 lenses, 19 refuters) confirmed 18 findings; the behavioural ones fixed and pinned: star-less digits must be literal digits (`ALL` was A*11), star-less values resolve only under the family rule (557 held for review elsewhere), a printed allele beside a present DRB3/4/5 gene is not a contradiction, one `classify()` for both scorers, bimodal rulings and sideways pages refused, calibrated constants pinned, `run()` tested. Main `facts.sqlite` refreshed in place via `refresh_facts.py`: 95,991 resolved (was 93,202), 1,205 levelled pages, 3,959 cells changed or new and sent back through the decode/confirm passes.
 
 ## Decision log
 - Rulings angle via `cv2.createLineSegmentDetector`, not morphological kernels: the kernels return 0 segments at 7.3°; LSD measured 9.4 ms/img, <0.01° on synthetic.
@@ -88,7 +89,7 @@ python scripts/verify_repo.py
 - Crops: profile `raw`.
 
 ## Handoff / next actions
-1. When `geometry_pass.py --status` covers the corpus: re-extract `facts.sqlite` in place with `--geometry`, then `decode_pass.py` and `confirm_pass.py` for the new cells (both resumable; the delta is ~2,400 cells).
+1. Done 2026-09-05: corpus geometry complete, `facts.sqlite` refreshed in place (`refresh_facts.py`), 3,959 changed cells sent through `decode_pass.py` and both confirmers. Confirm the passes finished (`--status`-style counts: decode rows and confirmation rows for the changed cells).
 2. Reviewer re-confirms the DRB3/4/5 rows on the 15 labelled documents with the new question, then keeps labelling; score every export with `pack_score.py`.
 3. M4 remainder: switch `confirm_pass.py` to `ocr.crops` and run the ablation (raw vs upright vs glyph-height) on the labelled cells; M5 lattice; M6 after HA-011.
 4. The NEXT review pack (never rebuild the one in progress) gains a `tilted` stratum keyed on `document.tilt_deg` and a `frame_used` tag, so the frame's effect is labelled directly.

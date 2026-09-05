@@ -25,16 +25,20 @@ is real (35% of pack pages) but explained one miss. Research record:
 - **Documents are linked to the messages that posted them.** 23,565 of 23,566,
   on 110,050 message rows: the same image posted a mean of 4.7 times, which is
   the reposting signal ENTITY-001 needs.
-- **Extraction (ADR 0008, 0009):** 93,202 resolved facts with provenance,
-  63,233 review items, 24,663 `NOT_TESTED` in `facts.sqlite` (v1). Re-extracted
-  into `facts_v2.sqlite` with the star-less parser and the page frame:
-  **95,581 resolved / 60,855 review**, 0 changed values, 46 cells moved to
-  review by the KI-015 guard. The main database is re-extracted in place once
-  the corpus geometry pass finishes; decode/confirm passes then cover the delta.
+- **Extraction (ADR 0008, 0009):** `facts.sqlite` refreshed in place on
+  2026-09-05 (`refresh_facts.py`, snapshot kept beside it): **95,991 resolved /
+  60,438 review / 24,662 NOT_TESTED**, up from 93,202 resolved. The gains are
+  the star the recognizer never read (accepted only on forms measured to print
+  the locus on their values; 557 held for review elsewhere) and the page frame
+  on 1,205 levelled pages. 3,959 cells changed or new went back through the
+  decode/confirm passes; the rest kept their checks. A snapshot of the old
+  database sits beside it.
 - **Page geometry (OCR-GEOM-001):** `geometry_pass.py` measures tilt from the
-  printed rulings (LSD + projection sweep, never one estimator). Pack: 53
-  ROTATE / 71 STRAIGHT / 26 UNCERTAIN at ~60 ms/img. The extraction levels the
-  stored boxes from 1.5° of tilt (below that the frame is a wash, KI-024).
+  printed rulings (LSD + projection sweep, never one estimator). Corpus: 5,486
+  ROTATE (23%) / 14,209 STRAIGHT / 3,871 UNCERTAIN at ~80 ms/img. The extraction
+  levels the stored boxes from 1.5° of tilt (below that the frame is a wash,
+  KI-024); 168 resolved cells changed value under it, every one a second
+  allele gained (140) or dropped (28), none swapped.
 - **The DRB3/4/5 row prints gene names**: 22,017 gene tokens vs 75 bare numbers
   corpus-wide. The review page asks one question per row; grammar v2 waits on
   HA-011.
@@ -86,10 +90,12 @@ HA-002, HA-010 (cloud keys, optional).
 1. **Human: re-confirm the DRB3/4/5 rows, keep labelling (HA-008).** Score each
    export with `scripts/pack_score.py`; the clean-control rate decides whether
    anything may be published.
-2. Agent: when `geometry_pass.py --status` covers the corpus, re-extract
-   `facts.sqlite` in place with `--geometry`, then run `decode_pass.py` and
-   `confirm_pass.py` for the new cells. Then OCR-GEOM-001 M4 (crop discipline,
-   ablated on the labelled cells) and M5 (ruled-cell lattice); M6 after HA-011.
+2. Agent: confirm the decode/confirm passes finished over the 3,959 changed
+   cells (`decode_pass.py`, `confirm_pass.py --engine tesseract5|ppocrv5` are
+   resumable). Then OCR-GEOM-001 M4's remainder (`confirm_pass.py` on
+   `ocr/crops.py`; the raw/upright/glyph-height ablation on the labelled
+   cells), M5 (ruled-cell lattice), M6 after HA-011; KI-024's de-inflation
+   experiment; KI-023's single OpenCV wheel.
 3. Agent, needs no human: MEDIA-001 and DEDUPE-001 remain the last MVP-HIST
    tasks; then ENTITY-001. Human: HA-004 before any matching beyond the ABO gate.
 
