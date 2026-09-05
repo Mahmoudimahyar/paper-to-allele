@@ -88,6 +88,8 @@ python scripts/verify_repo.py
 - Crops: profile `raw`.
 
 ## Handoff / next actions
-1. M2–M3, measure on the labelled documents (the 21 misses are the target; false acceptances must stay 0).
-2. Reviewer re-confirms the DRB3/4/5 rows on the 15 labelled documents with the new question.
-3. M4–M6 in order; each gated by the same measurement.
+1. When `geometry_pass.py --status` covers the corpus: re-extract `facts.sqlite` in place with `--geometry`, then `decode_pass.py` and `confirm_pass.py` for the new cells (both resumable; the delta is ~2,400 cells).
+2. Reviewer re-confirms the DRB3/4/5 rows on the 15 labelled documents with the new question, then keeps labelling; score every export with `pack_score.py`.
+3. M4 remainder: switch `confirm_pass.py` to `ocr.crops` and run the ablation (raw vs upright vs glyph-height) on the labelled cells; M5 lattice; M6 after HA-011.
+4. The NEXT review pack (never rebuild the one in progress) gains a `tilted` stratum keyed on `document.tilt_deg` and a `frame_used` tag, so the frame's effect is labelled directly.
+5. Hygiene: one OpenCV wheel in the lockfile (KI-023).
