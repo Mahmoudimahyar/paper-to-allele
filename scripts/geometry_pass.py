@@ -82,6 +82,10 @@ CREATE TABLE IF NOT EXISTS page_geometry (
 CREATE INDEX IF NOT EXISTS idx_geometry_decision ON page_geometry(geometry_version, decision);
 """
 
+# One unreadable JPEG among thousands is a row; every image failing is the
+# environment. Below this many images the difference cannot be told.
+MIN_ERRORS_TO_FAIL = 5
+
 COLUMNS = (
     "sha256, geometry_version, rel_path, width, height, decision, theta_deg, n_horizontal, "
     "n_vertical, mad_horizontal, mad_vertical, theta_rulings, theta_vertical, perspective_flag, "
@@ -186,7 +190,14 @@ def run(
     batch_size: int,
     only: set[str] | None = None,
 ) -> int:
+    import cv2  # noqa: PLC0415 - checked once, here, before any image is opened
     from ocr_pass import unique_originals  # noqa: PLC0415 - sibling script, not a package
+
+    if not hasattr(cv2, "createLineSegmentDetector"):
+        # Some OpenCV builds ship without it (3.4.6-4.5.0). Every image would
+        # then be recorded UNCERTAIN with the same error, which is not a pass.
+        print(f"OpenCV {cv2.__version__} has no LineSegmentDetector; the geometry pass cannot run")
+        return 3
 
     conn = connect(db_path)
     print(f"indexing unique originals under {export.name} ...", flush=True)
@@ -258,6 +269,19 @@ def run(
     conn.close()
     elapsed = time.perf_counter() - started
     print(f"analysed {len(todo):,} in {elapsed:.0f}s: {dict(tally)}")
+    errors = tally["ERROR"]
+    if errors:
+        # An error row is UNCERTAIN plus its message, which is the right thing
+        # for one bad JPEG among thousands and the wrong thing for a broken
+        # OpenCV: a pass that could not analyse anything must not exit 0.
+        print(
+            f"WARNING: {errors:,} of {len(todo):,} images could not be analysed "
+            f"({errors / max(len(todo), 1):.0%}); they are recorded UNCERTAIN with the error",
+            flush=True,
+        )
+        if errors == len(todo) and errors >= MIN_ERRORS_TO_FAIL:
+            print("every image failed; the environment, not the images, is broken")
+            return 3
     return 0
 
 

@@ -99,10 +99,12 @@ def main() -> int:
     print(f"  partial (2nd unread, declared): {report.partial:,}")
     print(f"  FALSE ACCEPTANCE  : {len(report.false_acceptances):,}")
     if report.per_locus:
-        print(f"\n{'locus':<8}{'correct':>9}{'false':>8}{'missed':>8}{'abstained':>11}")
+        print(
+            f"\n{'locus':<8}{'correct':>9}{'partial':>9}{'false':>8}{'missed':>8}{'abstained':>11}"
+        )
         for locus, tally in sorted(report.per_locus.items()):
             print(
-                f"{locus:<8}{tally.correct:>9,}{tally.false_acceptances:>8,}"
+                f"{locus:<8}{tally.correct:>9,}{tally.partial:>9,}{tally.false_acceptances:>8,}"
                 f"{tally.missed:>8,}{tally.correct_abstentions:>11,}"
             )
 

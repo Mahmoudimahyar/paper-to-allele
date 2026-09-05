@@ -36,12 +36,23 @@ from kidneymatch.review.golden import (  # noqa: E402
     Adjudication,
     CellLabel,
     LabelState,
+    Outcome,
     Resolution,
+    classify,
     score_against_pipeline,
 )
 
 DRBX = ("DRB3", "DRB4", "DRB5")
 GENE_DIGITS = {"03", "04", "05"}
+
+# The column names this diagnostic prints, per outcome of the shared rule.
+OUTCOME_NAMES = {
+    Outcome.CORRECT: "correct",
+    Outcome.PARTIAL: "partial",
+    Outcome.FALSE_ACCEPTANCE: "contradicted",
+    Outcome.MISSED: "missed",
+    Outcome.CORRECT_ABSTENTION: "abstained",
+}
 
 
 def read_export(path: Path) -> tuple[dict[str, CellLabel], dict]:
@@ -89,10 +100,10 @@ def mask(text: str | None) -> str:
 
 
 def scored_table(report) -> list[str]:
-    lines = [f"{'locus':<8}{'correct':>9}{'false':>8}{'missed':>8}{'abstained':>11}"]
+    lines = [f"{'locus':<8}{'correct':>9}{'partial':>9}{'false':>8}{'missed':>8}{'abstained':>11}"]
     for locus, tally in sorted(report.per_locus.items()):
         lines.append(
-            f"{locus:<8}{tally.correct:>9,}{tally.false_acceptances:>8,}"
+            f"{locus:<8}{tally.correct:>9,}{tally.partial:>9,}{tally.false_acceptances:>8,}"
             f"{tally.missed:>8,}{tally.correct_abstentions:>11,}"
         )
     return lines
@@ -153,31 +164,13 @@ def main() -> int:
     print("== by stratum (primary tag of the document) ==")
     per_tag: dict[str, Counter] = defaultdict(Counter)
     per_band: dict[str, Counter] = defaultdict(Counter)
-    contradicted = set(report_all.false_acceptances)
     for cell_id, label in labels.items():
         doc = docs.get(cell_id.split(":")[0], {})
         tag = str(doc.get("primary_tag"))
         band = str(doc.get("quality_band"))
         entry = pipeline.get(cell_id)
-        if entry is None:
-            outcome = "not in pipeline"
-        elif cell_id in contradicted:
-            outcome = "contradicted"
-        elif (
-            entry[0] == "RESOLVED"
-            and len(entry) > 3
-            and entry[3] == "UNREAD"
-            and len(entry[2]) == 1
-            and label.state is LabelState.VALUE
-            and len(label.alleles) == 2
-        ):
-            outcome = "partial"
-        elif entry[0] == "RESOLVED":
-            outcome = "correct"
-        elif label.state in (LabelState.VALUE, LabelState.PRESENT_ONLY, LabelState.ABSENT):
-            outcome = "missed"
-        else:
-            outcome = "abstained"
+        # The one rule, shared with the golden gate; never re-implemented here.
+        outcome = "not in pipeline" if entry is None else OUTCOME_NAMES[classify(label, entry)]
         per_tag[tag][outcome] += 1
         per_band[band][outcome] += 1
     cols = ("correct", "partial", "contradicted", "missed", "abstained")

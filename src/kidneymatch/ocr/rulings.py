@@ -82,6 +82,14 @@ MIN_RULINGS = 6
 MAX_MAD_DEG = 1.5
 STRAIGHT_BELOW_DEG = 0.5
 AGREEMENT_DEG = 1.0
+# At least this share of the horizontal rulings must sit within AGREEMENT_DEG
+# of their median: the MAD is zero whenever one grid holds a majority, and a
+# frame edge or a second form holding the other 40% must not be rotated by
+# the majority's angle.
+MIN_AGREEMENT = 0.8
+# A page whose vertical family outnumbers its horizontal one this many times
+# over (with at least a dozen of them) has its rows standing up: sideways.
+SIDEWAYS_RATIO = 3
 
 # Leptonica's confidence floor for the projection sweep: the best angle must
 # score at least this many times the worst.
@@ -149,6 +157,11 @@ class RulingEstimate:
     horizontal: tuple[Segment, ...]
     vertical: tuple[Segment, ...]
     scale: float
+    # The share of horizontal rulings within AGREEMENT_DEG of the median. A
+    # median absolute deviation is zero whenever one grid holds a majority, so
+    # it cannot see a second grid or a frame edge holding the other 40%; this
+    # can.
+    agreement_fraction: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +290,7 @@ def detect_rulings(image: Image, *, analysis_width: int = ANALYSIS_WIDTH) -> Rul
     v_angles = [a for _, a in vertical]
     theta = statistics.median(h_angles)
     mad_h = _mad(h_angles, theta)
+    agreement = sum(1 for a in h_angles if abs(a - theta) <= AGREEMENT_DEG) / len(h_angles)
     theta_v = statistics.median(v_angles) if v_angles else None
     mad_v = _mad(v_angles, theta_v) if theta_v is not None else None
 
@@ -300,6 +314,7 @@ def detect_rulings(image: Image, *, analysis_width: int = ANALYSIS_WIDTH) -> Rul
         horizontal=tuple(source(s) for s, _ in horizontal),
         vertical=tuple(source(s) for s, _ in vertical),
         scale=scale,
+        agreement_fraction=agreement,
     )
 
 
@@ -465,6 +480,31 @@ def decide(rulings: RulingEstimate, sweep: SweepEstimate | None) -> PageGeometry
             sweep,
             f"horizontal rulings scatter by {rulings.mad_horizontal_deg:.2f} deg; "
             "not one printed grid",
+        )
+    if rulings.agreement_fraction is not None and rulings.agreement_fraction < MIN_AGREEMENT:
+        # The MAD is blind to a second grid holding up to half the rulings —
+        # a frame edge, a stamp, a second form in the photograph. Rotating
+        # every box on the page by the majority's angle would mis-row the
+        # minority's cells silently.
+        return PageGeometry(
+            GeometryDecision.UNCERTAIN,
+            0.0,
+            rulings,
+            sweep,
+            f"only {rulings.agreement_fraction:.0%} of the horizontal rulings agree with the "
+            "median; two grids or a frame edge are mixed in",
+        )
+    if rulings.n_vertical >= SIDEWAYS_RATIO * rulings.n_horizontal and rulings.n_vertical >= 12:
+        # A form photographed sideways puts its many ROWS in the vertical
+        # family and its few columns in the horizontal one. Its rows are
+        # vertical; no angle from the columns levels them.
+        return PageGeometry(
+            GeometryDecision.UNCERTAIN,
+            0.0,
+            rulings,
+            sweep,
+            f"{rulings.n_vertical} vertical rulings against {rulings.n_horizontal} horizontal; "
+            "the page may be sideways",
         )
     # The vertical family is deliberately not a veto. On a hand-held photograph
     # the verticals converge (measured median 2.6 degrees of drift across the

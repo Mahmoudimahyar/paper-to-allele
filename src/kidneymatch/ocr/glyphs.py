@@ -155,6 +155,11 @@ class AlleleValue:
     second_field: str | None
     expression: str | None
     repaired: bool
+    # A locus prefix with no `*` at all between it and the digits. The
+    # resolver admits this only on a form measured to print the locus on its
+    # values; elsewhere `B35` may be a serological spelling
+    # (HLA_VALIDATION_SPEC s4), and it goes to review.
+    separator_missing: bool = False
     """True when ANY glyph had to be repaired to read this token.
 
     Digits, the `*` separator and the locus prefix all count. A reviewer
@@ -242,6 +247,18 @@ def parse_allele_value(token: str) -> AlleleValue | None:
     if not match:
         return None
 
+    prefix = match.group("prefix")
+    star_missing = bool(prefix) and match.group("star") is None
+    if star_missing and not (
+        match.group("first").isdigit() and (match.group("second") or "0").isdigit()
+    ):
+        # Without the star, the digit-slot repairs would turn a WORD into a
+        # value: `ALL` is A + `LL`, `BIS` is B + `IS`, `COS` is C + `OS` —
+        # measured, 74 resolved cells carried a letters-only token under the
+        # first version of this rule. The star is what licenses reading a
+        # letter as a damaged digit; absent it, the digits must be digits.
+        return None
+
     first, first_repaired = _repair_digits(match.group("first"))
     if not first.isdigit():
         return None
@@ -260,7 +277,6 @@ def parse_allele_value(token: str) -> AlleleValue | None:
         # field, and 33 of them reached an anchored cell.
         return None
 
-    prefix = match.group("prefix")
     # A bare `A` cannot ANCHOR a locus — a lone letter is a table header or an
     # ABO group far more often than a gene. But `A*02` has no such competition:
     # the star and the digits disambiguate it. Requiring `HLA-` here silently
@@ -281,7 +297,6 @@ def parse_allele_value(token: str) -> AlleleValue | None:
     separator_repaired = any(ch in stripped for ch in _STAR_VARIANTS.replace("*", ""))
     # A prefix with no star at all is the separator missing, which is a repair
     # like any other rendering of it: the reviewer must see the raw text differed.
-    star_missing = bool(prefix) and match.group("star") is None
     prefix_repaired = bool(prefix) and (prefix != canonical_prefix or eight_repaired)
 
     return AlleleValue(
@@ -297,4 +312,5 @@ def parse_allele_value(token: str) -> AlleleValue | None:
             or star_missing
             or prefix_repaired
         ),
+        separator_missing=star_missing,
     )

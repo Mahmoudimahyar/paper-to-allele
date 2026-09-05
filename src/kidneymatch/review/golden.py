@@ -200,44 +200,19 @@ def score_against_pipeline(
         entry = pipeline.get(cell_id)
         if entry is None:
             continue
-        status, locus, raw_values = entry[0], entry[1], entry[2]
-        values = tuple(raw_values)
-        second_allele = entry[3] if len(entry) > 3 else None
+        locus = entry[1]
         tally = report.per_locus.setdefault(locus, LocusTally())
-
-        if status == "RESOLVED":
-            # A presence-typed gene (DRB3/4/5) resolves to PRESENT or ABSENT
-            # rather than to alleles; ABSENT is a reading in its own right.
-            absent = values == ("ABSENT",)
-            if (
-                label.state is LabelState.VALUE
-                and sorted(values) == sorted(label.alleles)
-                or label.state is LabelState.PRESENT_ONLY
-                and values
-                and not absent
-                or label.state is LabelState.ABSENT
-                and absent
-            ):
-                report.correct += 1
-                tally.correct += 1
-            elif (
-                label.state is LabelState.VALUE
-                and second_allele == "UNREAD"
-                and len(values) == 1
-                and len(label.alleles) == 2
-                and values[0] in label.alleles
-            ):
-                report.partial += 1
-                tally.partial += 1
-            else:
-                # The pipeline asserted something the human did not read: either
-                # a different value, or a value where there is none. This is the
-                # failure the project exists to prevent.
-                report.false_acceptances.append(cell_id)
-                tally.false_acceptances += 1
-        elif label.state in (LabelState.VALUE, LabelState.PRESENT_ONLY, LabelState.ABSENT):
-            # A real value the pipeline declined to read. The record stays
-            # incomplete, which is a cost rather than a harm.
+        outcome = classify(label, entry)
+        if outcome is Outcome.CORRECT:
+            report.correct += 1
+            tally.correct += 1
+        elif outcome is Outcome.PARTIAL:
+            report.partial += 1
+            tally.partial += 1
+        elif outcome is Outcome.FALSE_ACCEPTANCE:
+            report.false_acceptances.append(cell_id)
+            tally.false_acceptances += 1
+        elif outcome is Outcome.MISSED:
             report.missed += 1
             tally.missed += 1
         else:
@@ -246,3 +221,59 @@ def score_against_pipeline(
 
     report.false_acceptances.sort()
     return report
+
+
+class Outcome(StrEnum):
+    """What one golden cell says about the pipeline's reading of it."""
+
+    CORRECT = "correct"
+    PARTIAL = "partial"
+    FALSE_ACCEPTANCE = "false_acceptance"
+    MISSED = "missed"
+    CORRECT_ABSTENTION = "correct_abstention"
+
+
+def classify(label: CellLabel, entry: tuple[str, ...]) -> Outcome:
+    """The one rule, shared by the golden gate and the review-pack diagnostic.
+
+    `entry` is `(status, locus, values[, second_allele])` as the pipeline
+    recorded it. Only two outcomes are failures, and both mean the pipeline
+    asserted something untrue.
+    """
+    status, values = entry[0], tuple(entry[2])
+    second_allele = entry[3] if len(entry) > 3 else None
+
+    if status != "RESOLVED":
+        if label.state in (LabelState.VALUE, LabelState.PRESENT_ONLY, LabelState.ABSENT):
+            # A real value the pipeline declined to read. The record stays
+            # incomplete, which is a cost rather than a harm.
+            return Outcome.MISSED
+        return Outcome.CORRECT_ABSTENTION
+
+    # A presence-typed gene (DRB3/4/5) resolves to PRESENT or ABSENT rather
+    # than to alleles; ABSENT is a reading in its own right. A PRESENT call is
+    # right whenever the human saw the gene printed — whether they recorded
+    # only the name or also an allele beside it. The allele is not judged
+    # here: the pipeline made no claim about it.
+    present = values == ("PRESENT",)
+    absent = values == ("ABSENT",)
+    if present and label.state in (LabelState.VALUE, LabelState.PRESENT_ONLY):
+        return Outcome.CORRECT
+    if label.state is LabelState.PRESENT_ONLY and values and not absent:
+        return Outcome.CORRECT
+    if label.state is LabelState.ABSENT and absent:
+        return Outcome.CORRECT
+    if label.state is LabelState.VALUE and not present and sorted(values) == sorted(label.alleles):
+        return Outcome.CORRECT
+    if (
+        label.state is LabelState.VALUE
+        and second_allele == "UNREAD"
+        and len(values) == 1
+        and len(label.alleles) == 2
+        and values[0] in label.alleles
+    ):
+        return Outcome.PARTIAL
+    # The pipeline asserted something the human did not read: either a
+    # different value, or a value where there is none. This is the failure
+    # the project exists to prevent.
+    return Outcome.FALSE_ACCEPTANCE

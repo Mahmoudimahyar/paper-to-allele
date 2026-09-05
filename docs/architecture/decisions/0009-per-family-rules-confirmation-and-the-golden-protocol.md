@@ -93,6 +93,20 @@ is a harm. `scripts/golden_score.py` exits non-zero on a single failure, and
 also on an empty corpus, so an unlabelled set cannot read as a clean bill of
 health.
 
+*Amended 2026-09-05.* A third non-failure outcome, **partial**: the pipeline
+resolved ONE allele, declared the second `UNREAD` (KI-015), and that allele is
+inside the pair the human read. It is right as far as it goes and honest about
+stopping — an incomplete record, scored beside `missed`. Without the
+declaration a single value against a printed pair stays a false acceptance.
+Partial reads count toward the cells the rule-of-three bound is taken over:
+they were resolved and not contradicted, and a pipeline that stopped early on
+every pair would be caught by the `partial` column, not hidden by the bound.
+Measured on the first 165 anchored labels, 1 of the 2 non-DRB3/4/5
+"contradictions" was exactly this. A PRESENT call on a DRB3/4/5 gene is
+correct whenever the human saw the gene printed, whether they recorded only
+its name or also an allele beside it; the pipeline made no claim about the
+allele.
+
 ## 4. Confirmation by an independent engine
 
 ADR 0006 requires unanimity across architecturally independent recognizers,

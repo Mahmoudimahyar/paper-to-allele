@@ -25,6 +25,7 @@ The angle convention is pinned by `test_rotating_by_the_estimate_straightens_the
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import pytest
 
@@ -254,6 +255,71 @@ def test_converging_verticals_do_not_veto_a_rotation_the_sweep_corroborates() ->
 
 def test_a_low_confidence_sweep_does_not_corroborate() -> None:
     assert decide(rulings(5.0), sweep(5.0, ratio=1.5)).decision is GeometryDecision.UNCERTAIN
+
+
+def test_the_calibrated_constants_are_pinned_at_their_boundaries() -> None:
+    """Each threshold was measured on real photographs; a change by an order
+    of magnitude must fail a test, not only rewrite a comment."""
+    # scatter bound 1.5 deg
+    assert decide(rulings(5.0, mad=1.4), sweep(5.0)).decision is GeometryDecision.ROTATE
+    assert decide(rulings(5.0, mad=1.6), sweep(5.0)).decision is GeometryDecision.UNCERTAIN
+    # straight below 0.5 deg
+    assert decide(rulings(0.4), sweep(0.4)).decision is GeometryDecision.STRAIGHT
+    assert decide(rulings(0.6), sweep(0.6)).decision is GeometryDecision.ROTATE
+    # the two estimators within 1 deg
+    assert decide(rulings(5.0), sweep(5.9)).decision is GeometryDecision.ROTATE
+    assert decide(rulings(5.0), sweep(6.2)).decision is GeometryDecision.UNCERTAIN
+    # the sweep's confidence floor of 3
+    assert decide(rulings(5.0), sweep(5.0, ratio=3.0)).decision is GeometryDecision.ROTATE
+    assert decide(rulings(5.0), sweep(5.0, ratio=2.9)).decision is GeometryDecision.UNCERTAIN
+
+
+def test_the_perspective_flag_itself_never_vetoes() -> None:
+    """A mutant that refuses every flagged page passed the suite before this."""
+    result = decide(rulings(5.0, perspective=True), sweep(5.0))
+    assert result.decision is GeometryDecision.ROTATE
+    assert result.rulings.perspective_flag is True
+
+
+def test_a_second_grid_the_median_cannot_see_is_uncertain() -> None:
+    """Six rulings at 5 degrees and four at 0: the MAD of that set is zero, so
+    the scatter bound passes it, and rotating every box by 5 would mis-row the
+    minority's cells. The agreement fraction sees what the MAD cannot."""
+    mixed = RulingEstimate(
+        theta_deg=5.0,
+        n_horizontal=10,
+        n_vertical=4,
+        mad_horizontal_deg=0.0,
+        mad_vertical_deg=0.1,
+        theta_vertical_deg=5.0,
+        perspective_flag=False,
+        horizontal=(),
+        vertical=(),
+        scale=1.0,
+        agreement_fraction=0.6,
+    )
+    result = decide(mixed, sweep(5.0))
+    assert result.decision is GeometryDecision.UNCERTAIN
+    assert "two grids" in result.reason
+    fine = replace(mixed, agreement_fraction=0.9)
+    assert decide(fine, sweep(5.0)).decision is GeometryDecision.ROTATE
+
+
+def test_detect_rulings_reports_how_many_rulings_agree() -> None:
+    estimate = detect_rulings(gray(tilted(ruled_table(), 7.3)))
+    assert estimate.agreement_fraction is not None
+    assert estimate.agreement_fraction >= 0.9
+
+
+def test_a_sideways_page_is_not_levelled_by_its_columns() -> None:
+    """Rotated a quarter turn, a form's many rows land in the vertical family
+    and its few columns in the horizontal one; no angle from the columns
+    levels the rows."""
+    sideways = decide(rulings(0.2, n=6, n_v=20), sweep(0.2))
+    assert sideways.decision is GeometryDecision.UNCERTAIN
+    assert "sideways" in sideways.reason
+    upright = decide(rulings(0.2, n=13, n_v=5), sweep(0.2))
+    assert upright.decision is GeometryDecision.STRAIGHT
 
 
 def test_a_blank_page_is_uncertain_end_to_end() -> None:

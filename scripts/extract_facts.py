@@ -482,6 +482,15 @@ def run(
             f"page geometry known for {len(geometry):,} documents, {rotate:,} of them ROTATE",
             flush=True,
         )
+    else:
+        # Said out loud: an identity frame everywhere is a valid way to run,
+        # but it must never pass for a run that used the geometry. A stale
+        # version or a wrong file looks identical from the facts alone.
+        print(
+            f"no page geometry for {GEOMETRY_VERSION} at {geometry_db}; "
+            "every page keeps the identity frame",
+            flush=True,
+        )
     print(
         "loci this laboratory does not test: "
         + ", ".join(

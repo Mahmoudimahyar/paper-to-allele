@@ -462,6 +462,24 @@ def resolve_locus(
                 reason=f"candidate {text!r} does not parse as an allele value",
             )
 
+        if value.separator_missing and not rule.require_prefix:
+            # `B35` with no star. On a form measured to print `LOCUS*NN` on
+            # 99.8-99.9% of its values (the family rule), that is the star the
+            # recognizer did not read — 1,958 cells corpus-wide. On a form
+            # nobody has measured, it may be a serological spelling, which
+            # HLA_VALIDATION_SPEC s4 keeps apart from allele notation; a
+            # human decides which it is.
+            return LocusResolution(
+                locus,
+                ResolutionStatus.REVIEW_REQUIRED,
+                anchor_box=anchor,
+                value_boxes=found,
+                reason=(
+                    f"candidate {text!r} names its locus without a star, and this form is not "
+                    "measured to print the locus on its values"
+                ),
+            )
+
         if rule.require_prefix and value.locus_prefix is None:
             # This family prints the locus on every value, so a bare number on
             # the row band is not one of its values. Without the distance cap

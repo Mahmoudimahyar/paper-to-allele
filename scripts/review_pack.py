@@ -400,6 +400,10 @@ def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object],
             "locus": locus,
             "value": cell.value,
             "rule": cell.rule_id,
+            # The pipeline's own declaration of whether it read a second
+            # allele (KI-015), so `golden_score.py` and `pack_score.py` score
+            # a declared partial read the same way.
+            "second_allele": cell.second_allele,
         }
     record: dict[str, object] = {
         "id": doc.short,

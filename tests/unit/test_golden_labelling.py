@@ -28,8 +28,10 @@ from kidneymatch.review.golden import (
     Adjudication,
     CellLabel,
     LabelState,
+    Outcome,
     ScoreReport,
     adjudicate,
+    classify,
     score_against_pipeline,
 )
 
@@ -282,3 +284,34 @@ def test_absent_is_a_reading_of_its_own_for_a_presence_typed_gene() -> None:
 
     declined = score_against_pipeline(truth, {"d:DRB3": ("REVIEW_REQUIRED", "DRB3", ())})
     assert declined.missed == 1
+
+
+def test_an_allele_printed_beside_a_present_gene_does_not_contradict_the_presence_call() -> None:
+    """The review page lets a reviewer record an allele beside a ticked gene
+    (`VALUE` with alleles on a DRB3/4/5 cell). The pipeline's call is
+    PRESENT; it made no claim about the allele. Scoring that as a false
+    acceptance would fail OCR-001 on a cell the pipeline got right.
+    """
+    for alleles, second in ((("01",), None), (("01:03",), "UNREAD"), (("01", "01"), "READ")):
+        entry = ("RESOLVED", "DRB4", ("PRESENT",)) + ((second,) if second else ())
+        report = score_against_pipeline(truth(g=label(VALUE, alleles)), pipeline={"g": entry})
+        assert report.correct == 1, (alleles, second)
+        assert report.false_acceptances == []
+
+    # ABSENT against a printed gene is still the failure it always was.
+    report = score_against_pipeline(
+        truth(g=label(VALUE, ("01",))), pipeline={"g": ("RESOLVED", "DRB4", ("ABSENT",))}
+    )
+    assert report.false_acceptances == ["g"]
+
+
+def test_one_classifier_serves_the_gate_and_the_diagnostic() -> None:
+    """`pack_score.py` must not re-implement the rule and drift from it."""
+    assert classify(label(VALUE, ("11", "15")), ("RESOLVED", "B", ("11",), "UNREAD")) is (
+        Outcome.PARTIAL
+    )
+    assert classify(label(VALUE, ("11", "15")), ("RESOLVED", "B", ("11",))) is (
+        Outcome.FALSE_ACCEPTANCE
+    )
+    assert classify(label(BLANK), ("UNKNOWN", "B", ())) is Outcome.CORRECT_ABSTENTION
+    assert classify(label(VALUE, ("11",)), ("REVIEW_REQUIRED", "B", ())) is Outcome.MISSED

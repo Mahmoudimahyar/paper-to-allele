@@ -336,6 +336,26 @@ def test_a_value_that_lost_its_star_still_parses_with_its_prefix(
     assert value.repaired is True
 
 
+@pytest.mark.parametrize("token", ["ALL", "BIS", "COS", "Ali", "BSS", "AO2", "DQBIOS", "CII"])
+def test_without_a_star_the_digits_must_be_digits(token: str) -> None:
+    """The digit-slot repairs turn letters into digits because the star says a
+    number follows. Without the star, `ALL` would be A + `LL` = A*11 and `BIS`
+    B*15 — measured, 74 resolved cells carried a letters-only token under the
+    first version of the star-less rule. A word on a row is not a value."""
+    assert parse_allele_value(token) is None
+
+
+def test_a_star_less_value_says_so_and_a_starred_one_does_not() -> None:
+    """The resolver admits a star-less value only on a form measured to print
+    the locus on its values; it needs to know which case it is looking at."""
+    starless = parse_allele_value("A02")
+    starred = parse_allele_value("A*02")
+    assert starless is not None and starless.separator_missing is True
+    assert starred is not None and starred.separator_missing is False
+    apostrophe = parse_allele_value("A'02")
+    assert apostrophe is not None and apostrophe.separator_missing is False
+
+
 @pytest.mark.parametrize("token", ["DRB11", "DR15", "CW4", "A2", "B5", "N1", "DRB13", "DRB1"])
 def test_a_star_less_token_is_refused_unless_its_prefix_names_a_locus(token: str) -> None:
     """`DR15` and `CW4` are serology, not a locus prefix plus digits; `DRB11`

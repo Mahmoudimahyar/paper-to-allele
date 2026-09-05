@@ -146,3 +146,19 @@ def test_an_unreadable_image_is_recorded_not_fatal(tmp_path: Path) -> None:
     conn.close()
     assert decision == "UNCERTAIN"
     assert error
+
+
+def test_a_pass_that_could_analyse_nothing_does_not_exit_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One bad JPEG is a row; every image failing is a broken environment,
+    and a pass of 100% UNCERTAIN-with-error rows must not read as success."""
+    mod = load()
+    export = tmp_path / "export"
+    (export / "photos").mkdir(parents=True)
+    for i in range(mod.MIN_ERRORS_TO_FAIL + 1):
+        (export / "photos" / f"photo_bad_{i}.jpg").write_bytes(b"not an image %d" % i)
+    rc = mod.run(export, tmp_path / "geometry.sqlite", None, 10)
+    out = capsys.readouterr().out
+    assert rc != 0
+    assert "WARNING" in out and "could not be analysed" in out

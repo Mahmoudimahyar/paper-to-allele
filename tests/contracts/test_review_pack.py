@@ -217,7 +217,9 @@ def test_cell_ids_and_the_pipeline_file_match_the_golden_conventions(tmp_path: P
         for cell in doc["cells"]:
             assert cell["cell_id"] == f"{doc['sha256'][:16]}:{cell['locus']}"
             entry = pipeline["cells"][cell["cell_id"]]
-            assert set(entry) == {"status", "locus", "value", "rule"}
+            # `second_allele` rides along so a declared partial read scores the
+            # same through golden_score.py and pack_score.py (KI-015).
+            assert set(entry) == {"status", "locus", "value", "rule", "second_allele"}
             assert entry["status"] == cell["status"]
 
 

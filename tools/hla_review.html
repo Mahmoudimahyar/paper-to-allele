@@ -784,13 +784,24 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   const ROW_STATE_TEXT = { GENES: 'read the genes printed', NOT_PRINTED: 'no DRB3/4/5 row on this form',
                            BLANK: 'row printed, cell empty', UNREADABLE: 'unreadable' };
   const GENE_DIGIT = /^0?[345]$/;
+  // The allele families each gene can carry, from config/hla_first_fields.json
+  // (IMGT 3620). 04 and 05 are never alleles of any of the three; 03 is a real
+  // family of DRB3 and DRB4 as well as DRB3's own digit, so it is admitted
+  // with a warning rather than refused.
+  const DRBX_FIRST_FIELDS = { DRB3: ['01', '02', '03'], DRB4: ['01', '02', '03'], DRB5: ['01', '02'] };
 
   function drbxCells(doc) {
     return DRBX_GENES.map(g => doc.cells.find(c => c.kind === 'DRBX' && c.locus === g)).filter(Boolean);
   }
   function isLegacyDrbxLabel(lab) {
-    // Labelled under the old per-gene question: a 'value' that is a gene digit.
-    return lab && !lab.row && lab.state === 'VALUE' && lab.alleles.length > 0
+    // Labelled under the old per-gene question, which never wrote `row`.
+    // Every such label is re-confirmed, whatever it holds: one or two old
+    // labels on a row are as unreliable as three.
+    return !!lab && !lab.row;
+  }
+  function isGeneDigitValue(lab) {
+    // The old question's characteristic answer: the gene's digit as a 'value'.
+    return !!lab && lab.state === 'VALUE' && lab.alleles.length > 0
       && lab.alleles.every(a => GENE_DIGIT.test(a));
   }
   function defaultRowState(cells) {
@@ -804,7 +815,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     if (!cells.length) return '';
     const labs = cells.map(c => labels.cells[c.cell_id]);
     const allLabelled = labs.every(Boolean);
-    const legacy = labs.some(isLegacyDrbxLabel) || (allLabelled && labs.some(l => !l.row));
+    const legacy = labs.some(isLegacyDrbxLabel);
     const confirmed = allLabelled && !legacy;
 
     // Row state: from the labels when they exist, otherwise from the pipeline.
@@ -823,7 +834,9 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       const lab = labs[i];
       if (lab) {
         ticked[c.locus] = lab.state === 'VALUE' || lab.state === 'PRESENT_ONLY';
-        typed[c.locus] = (lab.state === 'VALUE' && !isLegacyDrbxLabel(lab)) ? lab.alleles.join(' ') : '';
+        // A legacy 'value' that is the gene's digit is not an allele and is
+        // cleared; a legacy label holding a real allele keeps it for re-confirmation.
+        typed[c.locus] = (lab.state === 'VALUE' && !isGeneDigitValue(lab)) ? lab.alleles.join(' ') : '';
       } else {
         ticked[c.locus] = !blind && c.status === 'RESOLVED' && c.value !== 'ABSENT';
         typed[c.locus] = '';
@@ -908,11 +921,22 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
             toast(alleles && alleles.length > 2 ? 'A gene carries at most two alleles.' : 'That is not an allele. Leave it empty if only the gene name is printed.');
             return false;
           }
-          if (alleles.some(a => GENE_DIGIT.test(a))) {
-            // 03/04/05 beside DRB3/4/5 is the gene name again, not an allele.
+          // An allele beside a gene must be one of that gene's families
+          // (IMGT 3620): 04 and 05 are never alleles of DRB3/4/5, they are
+          // the names' digits typed as numbers \u2014 the old question's artefact.
+          const families = DRBX_FIRST_FIELDS[c.locus] || [];
+          const foreign = alleles.filter(a => families.indexOf(a.split(':')[0]) === -1);
+          if (foreign.length) {
             input.classList.add('bad'); input.focus();
-            toast('That is the gene\u2019s own digit. Tick the gene; type an allele only if one is printed beside it.');
+            toast(foreign[0] + ' is not an allele family of ' + c.locus + '. Tick the gene; type an allele only if a number is printed beside its name.');
             return false;
+          }
+          if (c.locus === 'DRB3' && alleles.some(a => a.split(':')[0] === '03')) {
+            // DRB3*03 exists, and 03 is also DRB3's own digit: admitted, with a
+            // reminder, because a printed "DRB3" alone means presence only.
+            // Deferred a tick: the row advance that follows a confirm posts its
+            // own toast, and this one must be the one left standing.
+            setTimeout(() => toast('03 is also DRB3\u2019s own digit \u2014 keep it only if a number is printed beside the name.'), 80);
           }
         }
         input.classList.remove('bad');
