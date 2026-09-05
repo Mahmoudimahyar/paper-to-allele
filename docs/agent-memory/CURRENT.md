@@ -18,15 +18,12 @@ becoming facts. The review page now shows the messages posted with each image.
   `data/raw/ChatExport_2026-08-31`: 23,566 unique original images, 90% above
   900 px (KI-009 corrected the earlier "median 520 px").
 - **The source layer is parsed (HIST-001, HIST-002).** 180,441 messages and
-  3,456 service events — exactly the 183,897 the archive characterization
-  counted — with **zero unparsed fragments**, into `data/derived/source.sqlite`.
-  Re-import is a no-op. 167,012 bundles, 17,357 reply links, 6,593 adjacency
-  suggestions for a human. A joined message carries no sender and inherits one;
-  measured, inherited senders equal the joined count exactly.
-- **Documents are linked to the messages that posted them.** 23,565 of 23,566,
-  on 110,050 message rows: the same image posted a mean of 4.7 times, which is
-  the reposting signal ENTITY-001 needs. 18,799 documents have caption text
-  somewhere in their bundle; the review pack now shows it.
+  3,456 service events — the 183,897 the archive characterization counted —
+  with **zero unparsed fragments**, into `source.sqlite`. Re-import is a no-op.
+  167,012 bundles, 17,357 reply links, 6,593 adjacency suggestions for a human.
+- **Documents are linked to the messages that posted them:** 23,565 of 23,566,
+  on 110,050 rows — a mean of 4.7 postings each, the signal ENTITY-001 needs.
+  18,799 have caption text in their bundle; the review pack shows it.
 - **Extraction (ADR 0008, 0009 §7):** `facts.sqlite` refreshed in place on
   2026-09-05 (`refresh_facts.py`, twice; snapshots beside it): HLA and
   DRB3/4/5 cells **RESOLVED 82,480 → 89,737** (760 promoted proposals, 3,338
@@ -46,24 +43,28 @@ becoming facts. The review page now shows the messages posted with each image.
   ROTATE (27.6%) / 14,139 STRAIGHT / 2,916 UNCERTAIN; 1,591 pages levelled at
   extraction (from 1.5°, KI-024). A tilt estimate from the stored boxes is
   biased 1.44° and was rejected (KI-025).
-- **The decode and the confirmers:** the changed cells re-decoded (7,041:
-  4,716 UNANIMOUS / 990 PROPOSAL / 612 SPLIT / 585 DIGITS_LOST / 138
-  ILLEGIBLE) and re-confirmed by PP-OCRv5 (`--target resolved`). Two new
-  targets: `--target proposals` judges PP-OCRv5 against the decode's proposal
-  (2,008 judged: 763 CONFIRMED / 882 CONTRADICTED / 363 no opinion — the 44%
-  is what promoting on the decode alone would have done) and
-  `promote_proposals.py` promotes the CONFIRMED ones, never on a LOW page,
-  re-judged with admissibility: **760 promoted** (DRB1 373, DQB1 211, B 106,
-  A 36, DQA1 26, C 8), each marked `source=decode+ppocrv5`. `--target drbx`
-  reads every PRESENT gene box: of 1,912 repaired `DRBS` tokens PP-OCRv5
-  confirms 1,152, contradicts 20 (demoted to review) and renders the same
-  `S` on 740. Tesseract re-read the 5,859 changed cells (1,881 confirmed /
-  949 contradicted / 3,029 no opinion). `drbx_ink_pass.py` (M5) measures the
-  grouped row's second slot: 1,669 rows paper → 3,338 genes ABSENT, 442 inked
-  but unread → 884 cells to review. The upright-crop decode ablation on the
-  levelled pages was a wash (81.4% → 82.3% unanimous); crops stay axis-aligned.
+- **The decode and the confirmers.** `confirm_pass.py` gained two targets:
+  `--target proposals` judges PP-OCRv5 against the decode's proposal (2,008
+  judged, 44% CONTRADICTED — what promoting on the decode alone would have
+  done) and `promote_proposals.py` promotes the CONFIRMED ones, never on a LOW
+  page, re-judged with admissibility: **760 promoted**, marked
+  `source=decode+ppocrv5`. `--target drbx` reads every PRESENT gene box: of
+  1,912 repaired `DRBS` tokens PP-OCRv5 confirms 1,152, contradicts 20
+  (demoted) and renders the same `S` on 740. Tesseract re-read the 5,859
+  changed cells (1,881 / 949 / 3,029). The upright-crop decode ablation on the
+  levelled pages was a wash; crops stay axis-aligned.
 - **The DRB3/4/5 row prints gene names** (22,017 gene tokens vs 75 bare
   numbers); one question per row on the page; grammar v2 waits on HA-011.
+- **The printed table is read as a grid (`ocr/lattice.py`).** The rulings the
+  geometry pass already stored place a label the recognizer could not read
+  (the form's template says where; **+2,272 cells**, 0 values swapped) and the
+  second DRB3/4/5 slot. Ink measured in that slot with the rulings removed
+  certifies ABSENT when it is paper (`drbx_ink_pass.py`: 1,826 rows → **4,540
+  genes**; 287 rows refused because their only token rests on the S-for-5
+  repair). `cell_ink_pass.py` measures the ~24,000 empty labelled cells and
+  **writes no fact**: 14.7k read as paper, but `NOT_TESTED` is HA-009's
+  per-laboratory verdict, so HA-012 asks the human. On the reviewer's labels
+  the ink measure has never called a cell paper where a value was read.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci), 2,495
   by a caption corroborating a weak printed field (`documents/role.py`,
   `documents/abo.py` — the Persian words and the anchored ABO cell).
@@ -78,8 +79,7 @@ becoming facts. The review page now shows the messages posted with each image.
   (`NOT_TESTED`, HA-009); the dominant letterhead disclaims its own blood-group
   field (KI-014).
 - **The zero-fact documents are mostly not reports (KI-018):** ~170 of 4,944
-  recoverable. Raw inputs are immutable and never committed; HLA geometry
-  determines locus, never token text alone.
+  recoverable. Raw inputs are immutable; geometry determines locus, not text.
 
 ## Decided (operator delegated)
 HA-003 resolution bands (MID provisional) · HA-005 names as a salted hash ·
@@ -107,11 +107,11 @@ HA-001, HA-002, HA-010 (cloud keys, optional).
    `scripts/pack_score.py`. The DRB3/4/5 rows marked "repaired" and the cells
    marked "promoted" are the two rules the labels can now confirm or refute.
 2. Agent: M6 after HA-011; KI-023's OpenCV override on a machine that can run
-   the gate twice; the 2,178 one-token DRB3/4/5 cells without DRB1 geometry
-   (place the slot from the header instead). Build the NEXT pack (strata
-   `tilted`, `promoted`, `ink_certified`) only when the reviewer has finished
-   this one. After any refresh: decode, the three confirm targets,
-   `promote_proposals.py`, `drbx_ink_pass.py`.
+   the gate twice; KI-027 (a grid from merged, gap-bridged rulings — 5,581
+   empty cells have no ruled row today). Build the NEXT pack (strata `tilted`,
+   `promoted`, `ink_certified`) only when the reviewer has finished this one.
+   After any refresh: decode, the three confirm targets,
+   `promote_proposals.py`, `drbx_ink_pass.py`, `cell_ink_pass.py`.
 3. Agent, needs no human: MEDIA-001 and DEDUPE-001 remain the last MVP-HIST
    tasks; then ENTITY-001. Human: HA-004 before any matching beyond the ABO gate.
 

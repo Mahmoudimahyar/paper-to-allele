@@ -336,3 +336,19 @@ second engine confirmed the repaired token with a clean `5`, the reviewer found
 the held gene printed on 3. The second engine shares the 3-as-5 confusion even
 when it renders a clean digit, so no reinstatement rule rests on it; the
 review cost stands until a person labels these rows.
+
+## KI-027 — The ruled grid is only as good as the rulings the detector found
+`ocr/lattice.py` reads the stored LSD segments as a table. The adversarial
+review of 2026-09-05 (35 confirmed findings) shows what that costs when the
+rulings are incomplete, and each is now refused rather than guessed: a row
+whose bounding ruling is broken over the label (a band containing another
+ruling is refused), a vertical from the block above ending on the row's
+boundary (a divider must cross 60% of the row), a ruling collapsed to its mean
+y on a tilted page (read at the x asked about instead). What remains is
+recall, not safety: 5,581 of 23,719 empty labelled cells have no ruled row the
+detector can offer, and the DRB3/4/5 lattice fallback places only 26 of the
+1,089 rows without a DRB1 pair, because it now requires the row to show
+exactly two value cells with the token in one of them. A lattice built from
+merged, extended rulings (bridging the gaps the detector leaves) is the
+untried variant; it would need the same adversarial pass before it certified
+anything.

@@ -71,6 +71,28 @@ Never put secret values in this file.
   (3 of them DRB3/4/5 rows with gene names PP-OCRv5 confirms), so a
   NOT_PRINTED accepted by Enter is a default, not a reading of the page.
 
+### HA-012 — May a measured empty cell be NOT_TESTED, per page?
+- **Needed by:** ~15,000 review items (the largest single class left in the
+  queue); nothing else is blocked.
+- **Why:** `scripts/cell_ink_pass.py` measures the ruled cell of every printed
+  locus label the row rules found empty, on the page itself: 14,719 measured as
+  paper, 3,831 hold ink no engine boxed, 793 could not be measured. HA-009
+  already retires a (family, locus) pair a laboratory measurably never fills —
+  a per-LABORATORY verdict from a committed statistic. This would extend the
+  same status to a per-PAGE measurement, which is a different claim: "this
+  page's row is empty", not "this laboratory does not run this test".
+- **What to do:** decide whether a cell whose ruled row measures as paper may
+  be `NOT_TESTED`. Two things to weigh, both measurable: on the reviewer's
+  labels the measure has never yet called a cell paper where a value was read
+  (19 cells the reviewer marked BLANK, 4 NOT_PRINTED, 0 with a value), and the
+  adversarial review of 2026-09-05 lists the ways a row-wide region can read
+  as paper when it is not (a value stacked under its label, a shadow removed
+  as a ruling, a band spanning two printed rows). A middle answer is available:
+  order the review queue by the measurement — paper first, cheap to confirm —
+  without changing any status.
+- **Secret?** No.
+- **Blocking now?** No. The measurement is recorded in `cell_ink` either way.
+
 ### HA-011 — Codify the DRB3/4/5 row's grammar in the spec, and decide two semantics
 - **Needed by:** the row grammar v2 (`GROUPED_DRBX/v2`: bare numbers on the
   row → review with candidate genes; a prefixed allele → presence plus a

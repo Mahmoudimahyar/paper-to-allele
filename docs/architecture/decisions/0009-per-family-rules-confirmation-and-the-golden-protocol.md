@@ -349,6 +349,58 @@ as its provenance box and `source=ink-certified`. Corpus: 3,338 genes ABSENT,
 measured as paper, and no labelled PRESENT cell became ABSENT. Ink never names
 a gene.
 
+### The printed table, read as a grid
+The geometry pass stores every long ruling of every page to measure the tilt;
+nothing had read them as what they are on a form — the lines that box each
+value. Measured from the stored rulings alone (`ocr/lattice.py`): on the three
+known forms, 4,541 cells had no readable locus label, and for 3,223 of them a
+ruled row sat exactly where the form's template puts that label, 2,271 of
+those rows holding one or two allele-shaped boxes; 24,187 cells had a readable
+label and no box the overlap test could reach, and 20,517 of those rows held no
+box at all while 774 held values. So `extract_facts.bind_in_lattice` runs after
+the row rules: a label the recognizer could not read is placed by the form's
+template — a VIRTUAL anchor box where the template prints it, only on a page
+that fits the template (residual ≤ 0.04) and only under the family rule, where
+every value prints its locus, so a value from a wrong row names another locus
+and refuses itself (gate 2) — and a label with an empty overlap test is retried
+in the ruled row around it. Both bind through `anchors.resolve_in_row` under
+every existing gate, then `enforce_exclusivity` again; a grid reading replaces
+the row rule's only when it resolves. Re-extracted: +2,264 cells (A +610,
+B +682, DRB1 +535, DQB1 +298, C +139), 0 values swapped, provenance to the
+real value boxes and the (virtual) anchor recorded with `rule_id …+lattice`
+and a reason that says which template placed it.
+
+The same grid places the second DRB3/4/5 slot on the rows without a DRB1 pair
+(`drbx_ink_pass.py`), and lets `cell_ink_pass.py` measure the empty labelled
+cells. That pass **writes no fact**: `NOT_TESTED` is HA-009's per-(family,
+locus) verdict about a laboratory, decided by a person from a committed
+statistic, and a per-page measurement is evidence for that decision rather
+than the decision (HA-012). It fills `cell_ink` — the region, its ink, and
+BLANK / INKED / UNMEASURABLE — which is what a person needs to extend HA-009
+and what the review queue can order by. Ink never creates a value, and here it
+does not retire a review item either.
+
+**What counts as ink, and the control.** A first pass counted every dark pixel
+and called 17,221 of 23,719 empty cells INKED — most under 1% ink, in runs
+10-30 px wide with no height: JPEG noise, a printed dash, a ruling the tilt
+spread over several rows. Ink is now counted only in connected components
+shaped like a glyph (at least 4 px or a fifth of the region tall, under 8:1
+wide), and a slot is called paper only when the same measure sees the ink the
+page is KNOWN to hold — the read gene token, or the locus label itself — at
+0.005 or more; below that the page's print is beyond the measure and every
+slot on it is UNMEASURABLE. The adversarial review's remaining ink findings
+(the absolute contrast floor, a shadow removed as a ruling, a value stacked
+under its label) all bear on regions this measure no longer certifies from:
+only the DRB3/4/5 slot, whose width the calibration was measured on. Re-measured on 2,806 read-token columns: 2,740 at
+0.05 ink or more, one under 0.001, which is what the control exists for.
+Corpus: 14,719 cells NOT_TESTED, 3,831 kept in review, 793 unmeasurable;
+2,269 DRB3/4/5 rows paper (4,538 genes ABSENT), 262 inked, 127 unmeasurable.
+On the reviewer's labels the certified cells are 19 the human marked BLANK,
+4 DRB3/4/5 marked ABSENT and 4 NOT_PRINTED — **no cell where a value was
+read** — and the 4 held as inked the human called blank, the abstaining
+direction. Every pass re-judges its own earlier decisions and withdraws one
+it can no longer measure, so the fact follows the evidence in both directions.
+
 ### Page geometry v3
 The projection sweep corroborates the rulings within 2° (1,231 of 1,595 pages
 refused at 1° disagreed by less), and the rulings' own agreement check — added
