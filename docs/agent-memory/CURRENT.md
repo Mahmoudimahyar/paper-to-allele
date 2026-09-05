@@ -31,8 +31,9 @@ is real (35% of pack pages) but explained one miss. Research record:
   the star the recognizer never read (accepted only on forms measured to print
   the locus on their values; 557 held for review elsewhere) and the page frame
   on 1,205 levelled pages. 3,959 cells changed or new went back through the
-  decode/confirm passes; the rest kept their checks. A snapshot of the old
-  database sits beside it.
+  decode/confirm passes (done: 64% unanimous, PP-OCRv5 confirms 82% of them,
+  about a third route to review; no resolved HLA cell is NOT_CHECKED); the rest
+  kept their checks. A snapshot of the old database sits beside it.
 - **Page geometry (OCR-GEOM-001):** `geometry_pass.py` measures tilt from the
   printed rulings (LSD + projection sweep, never one estimator). Corpus: 5,486
   ROTATE (23%) / 14,209 STRAIGHT / 3,871 UNCERTAIN at ~80 ms/img. The extraction
@@ -90,12 +91,11 @@ HA-002, HA-010 (cloud keys, optional).
 1. **Human: re-confirm the DRB3/4/5 rows, keep labelling (HA-008).** Score each
    export with `scripts/pack_score.py`; the clean-control rate decides whether
    anything may be published.
-2. Agent: confirm the decode/confirm passes finished over the 3,959 changed
-   cells (`decode_pass.py`, `confirm_pass.py --engine tesseract5|ppocrv5` are
-   resumable). Then OCR-GEOM-001 M4's remainder (`confirm_pass.py` on
-   `ocr/crops.py`; the raw/upright/glyph-height ablation on the labelled
-   cells), M5 (ruled-cell lattice), M6 after HA-011; KI-024's de-inflation
-   experiment; KI-023's single OpenCV wheel.
+2. Agent: OCR-GEOM-001 M4's remainder (`confirm_pass.py` on `ocr/crops.py`;
+   the raw/upright/glyph-height ablation on the labelled cells), M5
+   (ruled-cell lattice, for the "no anchor" misses), M6 after HA-011;
+   KI-024's de-inflation experiment; KI-023's single OpenCV wheel. Rebuild
+   the review queue from the refreshed facts before the next pack.
 3. Agent, needs no human: MEDIA-001 and DEDUPE-001 remain the last MVP-HIST
    tasks; then ENTITY-001. Human: HA-004 before any matching beyond the ABO gate.
 

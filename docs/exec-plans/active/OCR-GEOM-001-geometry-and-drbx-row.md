@@ -89,7 +89,7 @@ python scripts/verify_repo.py
 - Crops: profile `raw`.
 
 ## Handoff / next actions
-1. Done 2026-09-05: corpus geometry complete, `facts.sqlite` refreshed in place (`refresh_facts.py`), 3,959 changed cells sent through `decode_pass.py` and both confirmers. Confirm the passes finished (`--status`-style counts: decode rows and confirmation rows for the changed cells).
+1. Done 2026-09-05: corpus geometry complete, `facts.sqlite` refreshed in place (`refresh_facts.py`), 3,959 changed cells sent through `decode_pass.py` and both confirmers — finished: 3,212 decoded (2,045 UNANIMOUS / 610 SPLIT / 465 DIGITS_LOST / 75 PROPOSAL / 17 ILLEGIBLE), 3,052 confirmed against PP-OCRv5 (2,490 CONFIRMED / 373 CONTRADICTED / 189 no opinion) and Tesseract (410 / 454 / 2,188). The recovered cells are harder than the corpus average (64% unanimous against 94%), and about a third of them route to review; no resolved HLA cell is left NOT_CHECKED.
 2. Reviewer re-confirms the DRB3/4/5 rows on the 15 labelled documents with the new question, then keeps labelling; score every export with `pack_score.py`.
 3. M4 remainder: switch `confirm_pass.py` to `ocr.crops` and run the ablation (raw vs upright vs glyph-height) on the labelled cells; M5 lattice; M6 after HA-011.
 4. The NEXT review pack (never rebuild the one in progress) gains a `tilted` stratum keyed on `document.tilt_deg` and a `frame_used` tag, so the frame's effect is labelled directly.
