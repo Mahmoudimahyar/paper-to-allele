@@ -64,6 +64,11 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ("decode_split", 20, "the reading changes under one-pixel jitter"),
     ("confirmer_contradicted", 20, "an independent reader read different digits"),
     ("repaired_glyph", 15, "the accepted value went through glyph repair"),
+    (
+        "tilted",
+        10,
+        "the rulings measured the page tilted 1.5 deg or more and the extraction levelled it",
+    ),
     ("comparison_sheet", 5, "donor and recipient on one sheet"),
     ("mid_res", 10, "quality band MID"),
     ("default_rule", 10, "no layout family; the generic rule bound the values"),
@@ -112,6 +117,11 @@ class Doc:
     abo: dict[str, str | None] = field(default_factory=dict)
     rh: dict[str, str | None] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
+    # The frame the extraction ran the row rules in (`extract_facts.py`):
+    # "ROTATE" with the levelling angle, or "identity". None for a facts
+    # database from before the geometry pass existed.
+    tilt_deg: float | None = None
+    frame: str | None = None
 
     @property
     def short(self) -> str:
@@ -131,11 +141,24 @@ def _boxes(text: str | None) -> list[list[float]]:
 
 def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
     docs: dict[str, Doc] = {}
+    columns = {row[1] for row in con.execute("PRAGMA table_info(document)")}
+    framed = {"tilt_deg", "frame"} <= columns
+    frame_columns = ", tilt_deg, frame" if framed else ", NULL, NULL"
     for row in con.execute(
         "SELECT sha256, rel_path, quality_band, family, comparison_sheet, consistency, "
-        "consistency_reason FROM document"
+        f"consistency_reason{frame_columns} FROM document"
     ):
-        docs[row[0]] = Doc(row[0], row[1], row[2], row[3], bool(row[4]), row[5], row[6])
+        docs[row[0]] = Doc(
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            bool(row[4]),
+            row[5],
+            row[6],
+            tilt_deg=row[7],
+            frame=row[8],
+        )
     for (
         sha,
         fld,
@@ -237,6 +260,10 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("confirmer_contradicted")
     if any(c.repaired for c in resolved):
         tags.add("repaired_glyph")
+    if doc.frame == "ROTATE":
+        # The extraction levelled this page before binding its rows; whether
+        # that helped or hurt is exactly what a labelled sample must say.
+        tags.add("tilted")
     if doc.comparison_sheet:
         tags.add("comparison_sheet")
     if doc.family is None and resolved:
@@ -383,6 +410,8 @@ def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object],
         "quality_band": doc.quality_band,
         "family": doc.family,
         "comparison_sheet": doc.comparison_sheet,
+        "tilt_deg": doc.tilt_deg,
+        "frame": doc.frame,
         "consistency": doc.consistency,
         "consistency_reason": doc.consistency_reason,
         "tags": doc.tags,
