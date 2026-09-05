@@ -116,9 +116,16 @@ _DIGIT_SLOT = "0-9" + "".join(sorted(set(_DIGIT_REPAIRS)))
 # greedy digit group cannot eat it. `A*02S` is a secreted allele, not `A*025` —
 # and `S` is in the digit-repair table, so a naive grammar invents a different
 # allele silently.
+# The star after a prefix is optional. Measured corpus-wide, 3,153 cells were
+# refused only because the recognizer read `A02` for `A*02` — the star lost
+# entirely rather than rendered as one of the variants above — 45% of every
+# shape refusal. A prefix that names a locus and two or three digits that face
+# the admissibility gate carry the same information; the absence is recorded
+# as a repair. A bare number never gains a prefix by this route: the prefix
+# must be letters that `canonical_locus_label` accepts.
 _VALUE = re.compile(
     rf"""^
-    (?:(?P<prefix>[A-Za-z]{{1,4}}[0-9A-Za-z|!]?)\s*[{re.escape(_STAR_VARIANTS)}]\s*
+    (?:(?P<prefix>[A-Za-z]{{1,4}}[0-9A-Za-z|!]?)\s*(?P<star>[{re.escape(_STAR_VARIANTS)}])?\s*
       |[{re.escape(_STAR_VARIANTS)}]\s*)?
     (?P<first>[{_DIGIT_SLOT}]{{2,3}}?)
     (?::(?P<second>[{_DIGIT_SLOT}]{{2,3}}?))?
@@ -126,6 +133,11 @@ _VALUE = re.compile(
     $""",
     re.VERBOSE,
 )
+
+# The recognizer's B/8 confusion in the PREFIX slot: `8*44` for `B*44`,
+# 56 cells corpus-wide. Repaired only when a star follows; a bare `844` is a
+# number, and which locus a number belongs to is never decided from its text.
+_EIGHT_FOR_B = re.compile(rf"^8(?=\s*[{re.escape(_STAR_VARIANTS)}])")
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +235,9 @@ def parse_allele_value(token: str) -> AlleleValue | None:
 
     # `HLA-DRB1*15` is a value like any other. 44 boxes carry the prefix.
     body = _HLA_PREFIX.sub("", stripped).strip() or stripped
+    eight_repaired = bool(_EIGHT_FOR_B.match(body))
+    if eight_repaired:
+        body = "B" + body[1:]
     match = _VALUE.match(body)
     if not match:
         return None
@@ -257,9 +272,17 @@ def parse_allele_value(token: str) -> AlleleValue | None:
         # A prefix we cannot name is not a licence to ignore it: it may be a
         # different locus, and binding the value would guess which.
         return None
+    if canonical_prefix == "Cw":
+        # `Cw07` is the serological spelling of the C locus's value, and the
+        # confirmer already reads its digits as C's (KI-019). As a value prefix
+        # it names C; the spelling is recorded as a repair.
+        canonical_prefix = "C"
 
     separator_repaired = any(ch in stripped for ch in _STAR_VARIANTS.replace("*", ""))
-    prefix_repaired = bool(prefix) and prefix != canonical_prefix
+    # A prefix with no star at all is the separator missing, which is a repair
+    # like any other rendering of it: the reviewer must see the raw text differed.
+    star_missing = bool(prefix) and match.group("star") is None
+    prefix_repaired = bool(prefix) and (prefix != canonical_prefix or eight_repaired)
 
     return AlleleValue(
         raw=stripped,
@@ -267,5 +290,11 @@ def parse_allele_value(token: str) -> AlleleValue | None:
         first_field=first,
         second_field=second,
         expression=(match.group("expression") or None),
-        repaired=first_repaired or second_repaired or separator_repaired or prefix_repaired,
+        repaired=(
+            first_repaired
+            or second_repaired
+            or separator_repaired
+            or star_missing
+            or prefix_repaired
+        ),
     )

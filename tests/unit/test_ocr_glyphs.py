@@ -298,12 +298,78 @@ def test_expression_suffixes_are_kept() -> None:
     assert value.text() == "DRB4*01:03N"
 
 
+# --- the star that was not read ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("token", "prefix", "first"),
+    [
+        ("A02", "A", "02"),
+        ("B44", "B", "44"),
+        ("C04", "C", "04"),
+        ("DQB102", "DQB1", "02"),
+        ("DQBI02", "DQB1", "02"),  # the label's final 1 read as I, as anchors repair it
+        ("DRB115", "DRB1", "15"),
+        ("HLA-A02", "A", "02"),
+        ("DPB1104", "DPB1", "104"),
+        ("Cw07", "C", "07"),  # the serological spelling of the C locus, as the confirmer reads it
+        ("Cw*07", "C", "07"),
+    ],
+)
+def test_a_value_that_lost_its_star_still_parses_with_its_prefix(
+    token: str, prefix: str, first: str
+) -> None:
+    """Measured corpus-wide: 3,153 cells were refused only because the `*`
+    between the locus prefix and the digits was not read at all — 45% of every
+    shape refusal, and 6 of the reviewer's 21 misses on the first 165 labels,
+    where the constrained decode had read the same cells as `A*## A*##`.
+
+    The prefix still names a locus, the digits still face the admissibility
+    gate, and the anchor check still refuses a prefix that names another gene.
+    So the missing star is a repair — the token is marked repaired — never a
+    licence: nothing about WHICH locus is decided here.
+    """
+    value = parse_allele_value(token)
+    assert value is not None, token
+    assert value.locus_prefix == prefix
+    assert value.first_field == first
+    assert value.repaired is True
+
+
+@pytest.mark.parametrize("token", ["DRB11", "DR15", "CW4", "A2", "B5", "N1", "DRB13", "DRB1"])
+def test_a_star_less_token_is_refused_unless_its_prefix_names_a_locus(token: str) -> None:
+    """`DR15` and `CW4` are serology, not a locus prefix plus digits; `DRB11`
+    cannot say where the label ends and the value begins; a single digit is
+    not a first field. None of these may become a value by losing a star."""
+    assert parse_allele_value(token) is None
+
+
+def test_a_B_read_as_8_before_the_star_is_repaired_and_marked() -> None:
+    """`8*44`: the recognizer's measured B/8 confusion in the prefix slot,
+    56 cells corpus-wide. Only with a star following — a bare `844` stays a
+    bare number, which no locus admits and the family rule refuses."""
+    value = parse_allele_value("8*44")
+    assert value is not None
+    assert value.locus_prefix == "B"
+    assert value.first_field == "44"
+    assert value.repaired is True
+    bare = parse_allele_value("844")
+    assert bare is not None and bare.locus_prefix is None and bare.first_field == "844"
+
+
 # --- class I values, and the bugs a second reading found ------------------
 
 
 @pytest.mark.parametrize(
     ("token", "prefix", "first"),
-    [("A*02", "A", "02"), ("B*35", "B", "35"), ("C*07", "C", "07"), ("Cw*07", "Cw", "07")],
+    [
+        ("A*02", "A", "02"),
+        ("B*35", "B", "35"),
+        ("C*07", "C", "07"),
+        # `Cw` is the serological spelling of the C locus; as a value prefix it
+        # names C, exactly as the confirmer already reads `Cw07`'s digits as C's.
+        ("Cw*07", "C", "07"),
+    ],
 )
 def test_a_class_I_value_carries_its_locus_without_an_HLA_prefix(
     token: str, prefix: str, first: str

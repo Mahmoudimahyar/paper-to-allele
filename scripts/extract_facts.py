@@ -506,7 +506,9 @@ def run(
     print(f"  comparison sheets {tally['comparison_sheets']:>9,}")
     print(f"  by family rule    {tally['family_rule']:>9,}")
     print(f"  by default rule   {tally['default_rule']:>9,}")
-    print(f"written to {out.relative_to(ROOT)}")
+    resolved = out.resolve()
+    shown = resolved.relative_to(ROOT) if resolved.is_relative_to(ROOT) else resolved
+    print(f"written to {shown}")
     return 0
 
 

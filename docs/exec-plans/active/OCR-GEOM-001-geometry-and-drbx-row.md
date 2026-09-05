@@ -52,7 +52,8 @@ What the 165 labels said (`scripts/pack_score.py`, counts only):
 
 - [x] M0 `pack_score.py`: score an anchored export per locus and stratum; DRB3/4/5 shape diagnostics; declared partial reads are `partial`, not false acceptances (`golden.py`, `golden_score.py`, `golden_tasks.py`).
 - [x] M1 Review page: the DRB3/4/5 row is one question (tick the printed genes; allele only if printed); per-gene labels derived; legacy per-gene numbers shown as "re-confirm".
-- [ ] M2 `ocr/rulings.py` + `scripts/geometry_pass.py`: page angle from printed rulings (LSD) cross-checked by a projection sweep; STRAIGHT / ROTATE / UNCERTAIN; perspective flag; `data/derived/geometry.sqlite`, resumable.
+- [x] M2 `ocr/rulings.py` + `scripts/geometry_pass.py`: page angle from printed rulings (LSD) cross-checked by a projection sweep; STRAIGHT / ROTATE / UNCERTAIN; perspective flag; `data/derived/geometry.sqlite`, resumable. Calibrated on the pack (v2): 53 ROTATE / 71 STRAIGHT / 26 UNCERTAIN; ~60 ms per image.
+- [x] M2b The star the recognizer did not read: `A02` for `A*02` parses with its prefix (marked repaired), `8*44` repairs the B/8 prefix confusion, `Cw` names C. Corpus: +2,368 cells REVIEW→RESOLVED, 46 the other way (all the KI-015 second-allele guard), 0 changed values; 5 of the 21 misses on the labelled documents now RESOLVED and equal to the human, 0 contradictions.
 - [ ] M3 `ocr/geometry.py`: rectify stored boxes into the page frame (rotate the geometry, not the pixels); `extract_facts.py` facts/v2 gated on a confident angle; measured on the 15 labelled documents.
 - [ ] M4 `ocr/crops.py`: rotated-ROI, glyph-height-disciplined crops for decode/confirm/pack, per-engine profiles, `raw` profile byte-identical to today; ablation on the labelled cells.
 - [ ] M5 `ocr/rulings.py` lattice: cells from the rulings; empty cells certified by ink; DRB3/4/5 slot identity by column; used only when the lattice agrees with the label stack.
@@ -68,6 +69,7 @@ python scripts/verify_repo.py
 
 ## Progress log
 - 2026-09-05: 165-label export scored; DRB3/4/5 diagnosis; one-row question shipped to the live pack (`--page-only`); partial-read scoring; research workflow (6 lenses, 6 skeptics, 3 code maps) synthesised.
+- 2026-09-05: `rulings.py` (24 tests) and `geometry_pass.py` (4 contract tests); pass over the 150-document pack; decision rule calibrated on real photographs (scatter bound 0.5→1.5 deg refused 79/150 pages; verticals demoted to a flag). Of the 21 misses only 1 sits on a ROTATE page — the misses are glued label+digit tokens, so the star-less parser shipped first and recovered 5 of them; tilt handling continues for the corpus (35% of pack pages rotate ≥0.5 deg).
 
 ## Decision log
 - Rulings angle via `cv2.createLineSegmentDetector`, not morphological kernels: the kernels return 0 segments at 7.3°; LSD measured 9.4 ms/img, <0.01° on synthetic.
