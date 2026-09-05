@@ -135,6 +135,7 @@ def run(
     batch: int,
     jitter: bool,
     use_frame: bool = False,
+    only_levelled: bool = False,
 ) -> int:
     import numpy as np
     from onnxtr.models import recognition_predictor
@@ -175,6 +176,11 @@ def run(
         # A facts database from before the frame existed: every page identity.
         rows = con.execute(select.format(frame_columns="NULL, NULL"), LOCI).fetchall()
     work = [row for row in rows if (row[0], row[1]) not in done]
+    if only_levelled:
+        # The ablation: only the pages the extraction levelled, where an
+        # upright crop differs from the stored one. Everywhere else the two
+        # crops are the same pixels and the verdicts would only be copies.
+        work = [row for row in work if row[6] == "ROTATE" and row[7]]
     if limit:
         work = work[:limit]
     offsets = OFFSETS if jitter else ((0, 0),)
@@ -316,6 +322,11 @@ def main() -> int:
         help="decode the stored crop only; without the nine offsets there is no stability signal",
     )
     parser.add_argument(
+        "--only-levelled",
+        action="store_true",
+        help="with --frame: decode only the cells of pages the extraction levelled",
+    )
+    parser.add_argument(
         "--frame",
         action="store_true",
         help="cut upright crops on pages the extraction levelled (document.frame = ROTATE); "
@@ -325,7 +336,15 @@ def main() -> int:
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")
         return 2
-    return run(args.facts, args.export, args.limit, args.batch_size, not args.no_jitter, args.frame)
+    return run(
+        args.facts,
+        args.export,
+        args.limit,
+        args.batch_size,
+        not args.no_jitter,
+        args.frame,
+        args.only_levelled,
+    )
 
 
 if __name__ == "__main__":

@@ -732,3 +732,28 @@ def test_a_chat_exported_twice_does_not_repeat_its_messages(tmp_path: Path) -> N
     records = [{"sha256": sha_of(3)}]
     module.attach_messages(records, source)
     assert records[0]["n_messages_total"] == 10 and len(records[0]["messages"]) == 8
+
+
+def test_promoted_and_ink_certified_cells_are_strata_of_their_own(tmp_path: Path) -> None:
+    """The two rules the next labels must test: a value two engines agreed on
+    where the primary text did not parse, and an absence certified by paper."""
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=3)
+    con = sqlite3.connect(db)
+    shas = [row[0] for row in con.execute("SELECT DISTINCT sha256 FROM fact ORDER BY sha256")]
+    con.execute(
+        "UPDATE fact SET source='decode+ppocrv5', repaired=1 WHERE sha256=? AND field='DQB1'",
+        (shas[0],),
+    )
+    con.execute(
+        "UPDATE fact SET source='ink-certified', value='ABSENT' WHERE sha256=? AND field='DRB5'",
+        (shas[1],),
+    )
+    con.commit()
+    docs = module.load_documents(con)
+    con.close()
+    tags = {sha: module.tag_document(docs[sha], export) for sha in shas}
+    assert "promoted" in tags[shas[0]] and "ink_certified" not in tags[shas[0]]
+    assert "ink_certified" in tags[shas[1]] and "promoted" not in tags[shas[1]]
+    assert "promoted" not in tags[shas[2]] and "ink_certified" not in tags[shas[2]]
+    assert {t for t, _, _ in module.STRATA} >= {"promoted", "ink_certified"}

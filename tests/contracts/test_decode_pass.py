@@ -129,3 +129,13 @@ def test_grammar_cost_is_not_used_as_a_label_detector() -> None:
     module = load()
     assert module.MAX_GRAMMAR_COST >= 25.0
     assert "legibility" in source()
+
+
+def test_the_frame_ablation_can_be_limited_to_the_levelled_pages() -> None:
+    """`--only-levelled` keeps the `+frame` pass to pages the extraction
+    levelled: everywhere else the upright crop is the stored crop, and a
+    verdict there would be a copy keyed under another decoder version."""
+    body = source()
+    assert "only_levelled" in body and '"--only-levelled"' in body
+    assert 'row[6] == "ROTATE" and row[7]' in body, "the filter reads document.frame and tilt"
+    assert "args.only_levelled" in body, "the flag must reach run()"

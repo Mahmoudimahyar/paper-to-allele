@@ -78,6 +78,8 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ("decode_split", 20, "the reading changes under one-pixel jitter"),
     ("confirmer_contradicted", 20, "an independent reader read different digits"),
     ("repaired_glyph", 15, "the accepted value went through glyph repair"),
+    ("promoted", 10, "the decode's proposal became a fact because PP-OCRv5 read the same"),
+    ("ink_certified", 10, "a DRB3/4/5 gene called ABSENT because its slot measured as paper"),
     (
         "tilted",
         10,
@@ -118,6 +120,7 @@ class Cell:
     reason: str | None
     rule_id: str | None
     stability: str | None
+    source: str | None
     anchor_box: list[float] | None
     value_boxes: list[list[float]]
     confirmations: dict[str, dict[str, str | None]] = field(default_factory=dict)
@@ -212,6 +215,7 @@ def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
                 reason,
                 rule,
                 stab,
+                src,
                 _loads(abox),
                 _boxes(vboxes),
             )
@@ -281,6 +285,12 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("confirmer_contradicted")
     if any(c.repaired for c in resolved):
         tags.add("repaired_glyph")
+    if any(c.source == "decode+ppocrv5" for c in resolved):
+        # Two engines agreed on a value the primary text did not parse; the
+        # labels are the only thing that can say how often both were wrong.
+        tags.add("promoted")
+    if any(c.source == "ink-certified" for c in doc.cells.values() if c.locus in DRBX_LOCI):
+        tags.add("ink_certified")
     if doc.frame == "ROTATE":
         # The extraction levelled this page before binding its rows; whether
         # that helped or hurt is exactly what a labelled sample must say.
