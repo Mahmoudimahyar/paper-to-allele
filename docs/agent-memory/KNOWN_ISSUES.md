@@ -273,3 +273,11 @@ gained 5 and lost none. The extraction therefore applies the frame from 1.5°
 (`extract_facts.MIN_FRAME_TILT_DEG`); the geometry pass still records ROTATE
 from 0.5° as measurement. Revisit with the crop-level rotation (M4), which is
 where small tilts actually cost recognition.
+
+Corpus-wide (2026-09-05, 1,205 levelled pages): 1,121 cells gained, 97 lost,
+and 168 resolved cells changed value — every one of them a second allele gained
+(140) or dropped (28), never an allele swapped for another. The 28 drops are
+on pages tilted 2-4°; 24 of the dropped alleles belong to no other locus on the
+page, so they are most likely real second alleles the de-inflation pushed out of
+the row band on wide rows. Experiment: level the centres without de-inflating
+the hulls and count whether the 28 return without the 140 leaving.
