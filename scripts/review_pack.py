@@ -60,6 +60,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from kidneymatch.ocr.lattice import load_rulings as load_stored_rulings  # noqa: E402
+from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
+from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
+
 PACK_SCHEMA = "hla-review-pack/v1"
 HLA_LOCI = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
 DRBX_LOCI = ("DRB3", "DRB4", "DRB5")
@@ -69,6 +73,51 @@ DOC_FIELDS = ("ROLE", "ABO", "RH")
 # (tag, weight, what it means). Order = priority when a document carries
 # several tags. Weights are relative quotas; `--n` scales them.
 STRATA: tuple[tuple[str, int, str], ...] = (
+    # FIRST, because they assert a value NO PERSON HAS EVER CHECKED. Each is a
+    # pass added after the first labelling round, and each is a way the pipeline
+    # could now be confidently wrong, which is the worst thing it can be. A
+    # document is pooled by its FIRST matching tag, so putting them here is what
+    # aims a second round at them.
+    #
+    # The strata BELOW keep the order they had in the first round. That order is
+    # load-bearing: a document usually carries several tags, and moving one
+    # above another silently empties the lower pool.
+    (
+        "template_band",
+        22,
+        "the label was unreadable and the form's template placed it where the page "
+        "prints no ruling; the band came from the label's own height",
+    ),
+    (
+        "second_reading",
+        18,
+        "our own recognizer could not read the cell, and PP-OCRv6 re-reading the same "
+        "boxes settled it",
+    ),
+    (
+        "whole_page",
+        18,
+        "our detector drew no usable box; the value came from a second detector "
+        "reading the whole page",
+    ),
+    (
+        "two_engine_reread",
+        18,
+        "the resolver refused the reading and two independent engines then agreed on "
+        "a different one",
+    ),
+    (
+        "drbx_reread",
+        16,
+        "a DRB3/4/5 gene rested on the S-for-5 repair and a second engine re-read the "
+        "printed gene box",
+    ),
+    (
+        "sloped_row",
+        14,
+        "the page's rulings slope enough that the row test follows them; the binding "
+        "depends on that slope being right",
+    ),
     ("consistency_flag", 10, "DRB1 and the DRB3/4/5 row contradict each other"),
     ("low_res", 5, "quality band LOW"),
     ("digits_lost", 15, "the constrained decode dropped a digit the recognizer saw"),
@@ -94,9 +143,19 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "no locus label anchored anywhere; measured, most of these are not reports",
     ),
     ("zero_fact_refused", 10, "labels anchored but every cell refused; nothing extracted"),
+    (
+        "blank_paper",
+        6,
+        "several printed cells are empty and the ink measure calls them paper; whether "
+        "that means the laboratory did not test them is HA-012, and only a person can say",
+    ),
     ("clean_control", 20, "every signal agrees; measures how often 'clean' is still wrong"),
 )
 FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
+# Nearly every report leaves SOME printed cell empty, so one is no signal at
+# all. Three is a form the laboratory filled in only partly, which is the
+# case HA-012 has to decide.
+MIN_BLANK_CELLS = 3
 # Padding around a cell crop, as a fraction of the page.
 PAD_X, PAD_Y = 0.012, 0.008
 MIN_CROP_HEIGHT = 44  # px; smaller crops are upscaled for the eye
@@ -146,6 +205,14 @@ class Doc:
     # database from before the geometry pass existed.
     tilt_deg: float | None = None
     frame: str | None = None
+    # Printed cells this page leaves empty that the ink measure calls paper
+    # (`cell_ink_pass.py`). Whether an empty printed cell means the laboratory
+    # did not test the locus is HA-012, a per-laboratory decision no measure
+    # can make, and these are the cells a person has to look at to make it.
+    blank_cells: int = 0
+    # How far this page's printed rows fall per unit of width, from its own
+    # rulings (`ocr/rows.py`). Non-zero means the row test followed the slope.
+    row_slope: float = 0.0
 
     @property
     def short(self) -> str:
@@ -161,6 +228,36 @@ def _boxes(text: str | None) -> list[list[float]]:
     if not raw:
         return []
     return [raw] if isinstance(raw[0], (int, float)) else list(raw)
+
+
+def attach_signals(docs: dict[str, Doc], con: sqlite3.Connection, geometry: Path | None) -> None:
+    """The two signals a stratum needs that the `fact` table does not carry.
+
+    How many printed cells a page leaves empty that measured as paper, and how
+    far its own rulings slope. Both are the subject of a stratum, and both come
+    from passes that write no fact, so nothing in `fact` records them.
+    """
+    try:
+        for sha, blanks in con.execute(
+            "SELECT sha256, COUNT(*) FROM cell_ink WHERE verdict='BLANK' GROUP BY sha256"
+        ):
+            if sha in docs:
+                docs[sha].blank_cells = int(blanks)
+    except sqlite3.OperationalError:
+        pass  # a facts database from before the ink pass
+    if geometry is None or not geometry.exists():
+        return
+    stored = load_stored_rulings(geometry, GEOMETRY_VERSION)
+    for sha, doc in docs.items():
+        found = stored.get(sha)
+        if found is None:
+            continue
+        width, height, horizontal, _ = found
+        try:
+            segments = json.loads(horizontal or "[]")
+        except ValueError:
+            continue
+        doc.row_slope = measure_row_slope(segments, width, height) or 0.0
 
 
 def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
@@ -302,6 +399,20 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     if not resolved:
         anchored = any(c.status == "REVIEW_REQUIRED" for c in hla)
         tags.add("zero_fact_refused" if anchored else "zero_fact_no_anchor")
+    if any((c.reason or "").find("and its own label height") >= 0 for c in resolved):
+        tags.add("template_band")
+    if any(c.source == "rerecognised+ppocrv6" for c in resolved):
+        tags.add("second_reading")
+    if any(c.source == "page-ocr+wholepage" for c in resolved):
+        tags.add("whole_page")
+    if any(c.source == "reread-refused+two-engine-agreement" for c in resolved):
+        tags.add("two_engine_reread")
+    if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
+        tags.add("drbx_reread")
+    if doc.blank_cells >= MIN_BLANK_CELLS:
+        tags.add("blank_paper")
+    if doc.row_slope:
+        tags.add("sloped_row")
     if (
         not tags
         and len(resolved) >= 3
@@ -350,8 +461,6 @@ def choose(
         doc.tags = tag_document(doc, export)
         if doc.tags and (export / doc.rel_path).exists():
             pools[doc.tags[0]].append(doc)
-    total_weight = sum(w for _, w, _ in STRATA)
-    quota = {t: max(1, round(n * w / total_weight)) if pools[t] else 0 for t, w, _ in STRATA}
     # Documents someone has already labelled come first and are never dropped:
     # their answers are the only ground truth the project has.
     held = [doc for doc in docs.values() if doc.short in (pin or set())]
@@ -359,21 +468,39 @@ def choose(
     for doc in held:
         for tag in list(pools):
             pools[tag] = [d for d in pools[tag] if d.sha256 != doc.sha256]
-    room = max(0, n - len(chosen))
-    quota = {tag: min(count, room) for tag, count in quota.items()}
+
+    by_family: dict[str, dict[str | None, list[Doc]]] = {}
     for tag, _, _ in STRATA:
-        by_family: dict[str | None, list[Doc]] = defaultdict(list)
+        grouped: dict[str | None, list[Doc]] = defaultdict(list)
         for doc in pools[tag]:
-            by_family[doc.family].append(doc)
-        for group in by_family.values():
+            grouped[doc.family].append(doc)
+        for group in grouped.values():
             rng.shuffle(group)
-        families = sorted(by_family, key=lambda f: (f is None, str(f)))
-        picked: list[Doc] = []
-        while len(picked) < min(quota[tag], len(pools[tag])) and len(chosen) + len(picked) < n:
-            for fam in families:  # round-robin across families
-                if by_family[fam] and len(picked) < quota[tag]:
-                    picked.append(by_family[fam].pop())
-        chosen.extend(picked)
+        by_family[tag] = grouped
+
+    def take(tag: str, want: int) -> None:
+        # Round-robin across layout families inside one stratum, so a stratum
+        # held by one printed form does not fill with that form alone.
+        grouped = by_family[tag]
+        families = sorted(grouped, key=lambda f: (f is None, str(f)))
+        taken = 0
+        while taken < want and len(chosen) < n and any(grouped[f] for f in families):
+            for family in families:
+                if grouped[family] and taken < want and len(chosen) < n:
+                    chosen.append(grouped[family].pop())
+                    taken += 1
+
+    # ONE document from every stratum that has any, before a single stratum
+    # takes a second. A pack is a diagnostic instrument, and a signal with no
+    # document in it is a signal nobody can check — which is what happened
+    # when six strata were added and the weights alone starved the smallest.
+    for tag, _, _ in STRATA:
+        take(tag, 1)
+    # Then the weights, over whatever room is left.
+    total_weight = sum(w for _, w, _ in STRATA)
+    room = max(0, n - len(chosen))
+    for tag, weight, _ in STRATA:
+        take(tag, max(0, round(room * weight / total_weight) - 1))
     # Top up from the biggest pools if rounding or empty strata left room.
     seen = {d.sha256 for d in chosen}
     while len(chosen) < n:
@@ -717,10 +844,16 @@ def build_pack(
     suggestions_dir: Path | None = None,
     source_db: Path | None = None,
     pin: set[str] | None = None,
+    drop: set[str] | None = None,
+    geometry_db: Path | None = None,
+    port: int = 8765,
 ) -> dict[str, int]:
     con = sqlite3.connect(facts_db)
     docs = load_documents(con)
+    attach_signals(docs, con, geometry_db)
     con.close()
+    if drop:
+        docs = {sha: doc for sha, doc in docs.items() if doc.short not in drop}
     chosen = choose(docs, n, seed, export, pin)
     if len({d.short for d in chosen}) != len(chosen):
         raise ValueError("two chosen documents share a 16-character id prefix")
@@ -760,11 +893,11 @@ def build_pack(
         encoding="utf-8",
     )
     shutil.copyfile(page, out / "index.html")
-    write_launcher(out)
+    write_launcher(out, port)
     return {t: strata_counts.get(t, 0) for t, _, _ in STRATA}
 
 
-def write_launcher(out: Path) -> None:
+def write_launcher(out: Path, port: int = 8765) -> None:
     """A double-clickable server for the pack.
 
     Opened straight off the disk, a browser may refuse this page `localStorage`,
@@ -775,14 +908,14 @@ def write_launcher(out: Path) -> None:
     windows = [
         "@echo off",
         'cd /d "%~dp0"',
-        'start "" http://localhost:8765/index.html',
-        "python -m http.server 8765 --bind 127.0.0.1",
+        f'start "" http://localhost:{port}/index.html',
+        f"python -m http.server {port} --bind 127.0.0.1",
         "",
     ]
     posix = [
         "#!/bin/sh",
         'cd "$(dirname "$0")"',
-        "python -m http.server 8765 --bind 127.0.0.1",
+        f"python -m http.server {port} --bind 127.0.0.1",
         "",
     ]
     # newline="" or the platform translates these again and cmd.exe gets \r\r\n.
@@ -863,6 +996,27 @@ def main() -> int:
         "a refresh moves documents between strata and would otherwise orphan the answers",
     )
     parser.add_argument(
+        "--geometry",
+        type=Path,
+        default=ROOT / "data/derived/geometry.sqlite",
+        help="page geometry, for the sloped-row stratum; skipped when absent",
+    )
+    parser.add_argument(
+        "--skip-labelled",
+        type=Path,
+        nargs="*",
+        default=None,
+        help="golden-labels exports whose documents must be LEFT OUT; a second round "
+        "should not spend a reader's time on pages they have already answered",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="the port the launcher serves on; a second pack needs its own, because "
+        "the page keeps a reader's answers in the browser's storage for one origin",
+    )
+    parser.add_argument(
         "--page-only",
         action="store_true",
         help="replace index.html in an existing pack and touch nothing else",
@@ -884,6 +1038,9 @@ def main() -> int:
     pin = pinned_shas(list(args.keep_labelled or []))
     if pin:
         print(f"pinning {len(pin)} already-labelled documents into the sample")
+    drop = pinned_shas(list(args.skip_labelled or []))
+    if drop:
+        print(f"leaving out {len(drop)} documents that have already been answered")
     counts = build_pack(
         args.facts,
         args.export,
@@ -894,11 +1051,14 @@ def main() -> int:
         args.suggestions,
         source_db=args.source,
         pin=pin,
+        drop=drop,
+        geometry_db=args.geometry,
+        port=args.port,
     )
     print(f"packed {sum(counts.values())} documents into {args.out}")
     for tag, count in counts.items():
         print(f"  {tag:<24}{count:>5}")
-    print("Run serve.cmd in that directory, then label at http://localhost:8765 .")
+    print(f"Run serve.cmd in that directory, then label at http://localhost:{args.port} .")
     print("Labels export as golden-labels/v1 and are scored by scripts/golden_score.py.")
     print("Nothing in this directory may be committed: it is the patients' reports.")
     return 0

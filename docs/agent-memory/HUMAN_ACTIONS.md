@@ -4,6 +4,27 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-016 — Label the second round (60 documents, none seen before)
+- **Needed by:** every value written by a pass added after the first round.
+  None of them has ever been checked by a person.
+- **Where:** `data/review/hla_pack_r2/`, served on **port 8767** — its own port
+  on purpose, because the page keeps answers in the browser's storage for one
+  origin and round one must stay intact on 8765.
+- **What is in it:** 60 documents, 660 cells, none of the 20 already answered.
+  Built with `--skip-labelled` against the first export and weighted so that
+  **22 of the 60 carry an assertion nobody has checked**: `template_band` (2),
+  `second_reading` (2), `whole_page` (2), `two_engine_reread` (5),
+  `drbx_reread` (4) and `sloped_row` (7). 539 of the 660 cells show a crop.
+  The remaining 38 are the first round's uncertainties, and 3 are a clean
+  control.
+- **What is most useful:** a wrong value is worth more than a right one. These
+  strata exist because each is a way the pipeline could be confidently wrong,
+  and a single contradicted cell in one of them is worth more than fifty
+  confirmations. The note field is read — the seven notes from round one were
+  the best diagnostic this project has had.
+- **Secret?** No. **Blocking now?** Blocks calling any of the new passes safe.
+
+
 ### HA-015 — `A*24,02`: two alleles, or one allele at two fields?
 - **Needed by:** 1,025 value tokens on 491 documents that currently go unread.
 - **Why:** some forms print both alleles of a locus in ONE box. Where the
