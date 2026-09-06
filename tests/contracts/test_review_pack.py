@@ -449,6 +449,17 @@ def test_the_page_shows_the_messages_and_the_caption_claim() -> None:
         )
 
 
+def test_the_messages_panel_is_open_before_anyone_clicks_it() -> None:
+    """The reviewer asked to SEE the texts, and the point of carrying the chat
+    is that the blood group and the role are usually in it rather than on the
+    form. Behind a closed disclosure, on every document, that is information
+    nobody reads. Closing one is still remembered for the tab."""
+    page = PAGE.read_text(encoding="utf-8")
+    body = page.split("function messagesOpen()")[1].split("function rememberMessagesOpen")[0]
+    assert "!== '0'" in body, "the default must be open, not closed"
+    assert "return true" in body, "a browser refusing storage must still open it"
+
+
 def test_every_whole_page_field_shows_where_its_value_came_from() -> None:
     """A blood group the laboratory PRINTED and one a person TYPED IN THE CHAT
     are not the same evidence.

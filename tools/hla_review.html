@@ -655,9 +655,14 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   // the captions wants them on every document, and a preference that outlived
   // the tab would surprise the next person at the same machine. sessionStorage
   // can be missing or refused, and the default then simply stands.
+  //
+  // The default is OPEN. It was closed, and the whole point of carrying the
+  // chat is that the blood group and the role are usually in it rather than on
+  // the form — a reader who has to click a disclosure on every document to see
+  // that is a reader who will not read it. Closing one is remembered.
   const MSGS_KEY = 'hla_review:messages_open';
   function messagesOpen() {
-    try { return sessionStorage.getItem(MSGS_KEY) === '1'; } catch (e) { return false; }
+    try { return sessionStorage.getItem(MSGS_KEY) !== '0'; } catch (e) { return true; }
   }
   function rememberMessagesOpen(open) {
     try { sessionStorage.setItem(MSGS_KEY, open ? '1' : '0'); } catch (e) { /* the default stands */ }
