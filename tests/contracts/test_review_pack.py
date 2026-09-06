@@ -175,7 +175,10 @@ SOURCE_MESSAGE_COLUMNS = (
 # Synthetic captions, typed for this test; nothing here is from the corpus.
 DONOR_CAPTION = "اهدا کننده کلیه گروه خونی O+"
 RECIPIENT_CAPTION = "گیرنده کلیه گروه خونی B مثبت"
-LONG_CAPTION = "متن " * 300  # 1,200 characters, to be clipped
+# Longer than any cap the pack sets, so the clipping is exercised whatever
+# `MAX_MESSAGE_CHARS` is set to; it was raised from 600 to 1,500 when the
+# reviewer asked to see every text a photograph was posted with.
+LONG_CAPTION = "متن " * 1000
 
 
 def synthetic_source(tmp_path: Path) -> Path:
@@ -288,7 +291,8 @@ def test_load_messages_orders_clips_and_hashes_the_poster(tmp_path: Path) -> Non
     assert all(m["on_photo"] for m in msgs)
     assert [m["forwarded"] for m in msgs] == [False, False, True]
     assert msgs[1]["text"] == DONOR_CAPTION
-    assert len(msgs[0]["text"]) == 600 and msgs[0]["text"].endswith("…")
+    assert len(msgs[0]["text"]) == module.MAX_MESSAGE_CHARS
+    assert msgs[0]["text"].endswith("…")
     expected = hashlib.sha256(b"km-sender|Poster One").hexdigest()[:8]
     assert msgs[0]["sender"] == msgs[1]["sender"] == expected
     assert msgs[2]["sender"] != expected
@@ -316,11 +320,18 @@ def test_load_messages_reads_the_caption_off_a_bundle_sibling(tmp_path: Path) ->
     assert msgs[1]["joined"] is True and msgs[1]["sender"] is None
 
 
-def test_load_messages_caps_at_eight_and_reads_the_claim(tmp_path: Path) -> None:
+def test_load_messages_caps_the_count_and_reads_the_claim(tmp_path: Path) -> None:
+    """The cap exists so one prolific thread cannot bury the pack, and it was
+    raised from 8 to 60 when the reviewer asked to see every text: 2,406 of
+    23,565 documents carry more than eight postings, and the truncated part is
+    exactly where a repost adds the blood group the form never printed. What
+    the test holds is that clipping happens in time order, not its size."""
     module = load()
     source = synthetic_source(tmp_path)
     msgs = module.load_messages(source, {sha_of(3)})[sha_of(3)]
-    assert [m["message_id"] for m in msgs] == list(range(400, 408))
+    expected = min(module.MAX_MESSAGES, 8)
+    assert [m["message_id"] for m in msgs][:expected] == list(range(400, 400 + expected))
+    assert len(msgs) <= module.MAX_MESSAGES
     claims = module.load_caption_claims(source, {sha_of(0), sha_of(1)})
     assert claims[sha_of(0)] == {
         "role": "DONOR",
@@ -438,6 +449,23 @@ def test_the_page_shows_the_messages_and_the_caption_claim() -> None:
         )
 
 
+def test_every_whole_page_field_shows_where_its_value_came_from() -> None:
+    """A blood group the laboratory PRINTED and one a person TYPED IN THE CHAT
+    are not the same evidence.
+
+    On the round-three pack, 14 of 25 resolved ABO values came from a caption
+    and 9 from the printed form. A reviewer weighing "is this right" needs to
+    know which, and Role was the only one of the three that said so.
+    """
+    page = PAGE.read_text(encoding="utf-8")
+    assert "function srcHint(field)" in page
+    for field in ("doc.abo", "doc.rh"):
+        assert f"srcHint({field})" in page, field
+    # Role states its source inline rather than through the helper; either way
+    # the reader must be able to see it.
+    assert "doc.role.source" in page
+
+
 def test_every_failure_signal_fills_its_own_stratum(tmp_path: Path) -> None:
     """A random sample would be nearly all easy cells; the pack draws from
     each signal the pipeline already emits, rarest first."""
@@ -469,6 +497,65 @@ def test_a_document_lands_in_its_rarest_stratum_but_keeps_every_tag(tmp_path: Pa
     flagged = next(d for d in pack["documents"] if d["consistency"] == "FORBIDDEN_GENE_PRESENT")
     assert flagged["primary_tag"] == "consistency_flag"
     assert flagged["tags"][0] == "consistency_flag"
+
+
+def test_a_rare_stratum_is_not_eaten_by_a_common_one(tmp_path: Path) -> None:
+    """A document belongs to its rarest signal, not to whichever signal sits
+    higher in STRATA.
+
+    This is the bug that emptied the reviewer's own stratum. `odd_box` holds 22
+    documents in the real corpus and `repaired_glyph` holds 11,179, but
+    `repaired_glyph` is written first, so every document carrying both was
+    pooled as a repaired glyph and `odd_box` drew nothing at all. Rarity is what
+    decides: one of 22 witnesses is worth more than one of 11,179.
+    """
+    module = load()
+    db, export = synthetic_corpus(tmp_path)
+    con = sqlite3.connect(db)
+    # Document 5 already carries `repaired_glyph`, the commoner signal. Give it
+    # a value box unlike the others on its page as well.
+    sha = hashlib.sha256(b"synthetic report 5").hexdigest()
+    stretched = json.dumps([[0.25, 0.10, 0.30, 0.60], [0.32, 0.10, 0.37, 0.60]])
+    con.execute("UPDATE fact SET value_boxes=? WHERE sha256=? AND field='DRB1'", (stretched, sha))
+    con.commit()
+    con.close()
+    counts = module.build_pack(db, export, tmp_path / "pack", 24, 1, PAGE)
+    assert counts["odd_box"] >= 1
+    pack = json.loads((tmp_path / "pack/pack.json").read_text(encoding="utf-8"))
+    document = next(d for d in pack["documents"] if d["id"] == sha[:16])
+    assert document["primary_tag"] == "odd_box"
+    assert "repaired_glyph" in document["tags"]
+
+
+def test_the_blank_paper_stratum_reads_the_column_the_ink_pass_writes(
+    tmp_path: Path,
+) -> None:
+    """`cell_ink` names the column `decision`.
+
+    The query asked for `verdict`, and a blanket `except OperationalError` —
+    written to tolerate a database from before the ink pass — reported the whole
+    stratum as empty instead of raising. 14,210 measured-blank cells went
+    unreviewable that way, and HA-012, which asks whether a blank cell means the
+    laboratory did not test that locus, is the largest open question in the
+    project. A missing table is tolerated; a wrong column is not.
+    """
+    module = load()
+    db, export = synthetic_corpus(tmp_path)
+    con = sqlite3.connect(db)
+    con.execute(
+        "CREATE TABLE cell_ink (sha256, field, extraction_version, ink_version, region, "
+        "fraction, coverage, longest_run, paper, decision, created_utc)"
+    )
+    sha = hashlib.sha256(b"synthetic report 3").hexdigest()
+    for locus in ("DQA1", "DPA1", "DPB1"):
+        con.execute(
+            "INSERT INTO cell_ink VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (sha, locus, "facts/v1", "ink/v1", "cell", 0.0, 0.0, 0, 1.0, "BLANK", "t"),
+        )
+    con.commit()
+    con.close()
+    counts = module.build_pack(db, export, tmp_path / "pack", 24, 1, PAGE)
+    assert counts["blank_paper"] >= 1
 
 
 def test_the_pack_is_deterministic_for_a_seed(tmp_path: Path) -> None:
@@ -727,11 +814,14 @@ def test_a_chat_exported_twice_does_not_repeat_its_messages(tmp_path: Path) -> N
     found = module.load_messages(source, {sha_of(0), sha_of(3)}, totals)
     assert [m["message_id"] for m in found[sha_of(0)]] == [90, 100, 250]
     assert totals[sha_of(0)] == 3
-    assert len(found[sha_of(3)]) == module.MAX_MESSAGES
+    # Ten postings under two export ids: the duplicate export must add none of
+    # them again, whatever the cap is.
+    assert len(found[sha_of(3)]) == min(10, module.MAX_MESSAGES)
     assert totals[sha_of(3)] == 10, "the total counts what the cap cut"
     records = [{"sha256": sha_of(3)}]
     module.attach_messages(records, source)
-    assert records[0]["n_messages_total"] == 10 and len(records[0]["messages"]) == 8
+    assert records[0]["n_messages_total"] == 10
+    assert len(records[0]["messages"]) == min(10, module.MAX_MESSAGES)
 
 
 def test_promoted_and_ink_certified_cells_are_strata_of_their_own(tmp_path: Path) -> None:

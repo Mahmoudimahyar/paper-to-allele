@@ -642,6 +642,14 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+  // Where a whole-page value came from. A blood group the laboratory PRINTED
+  // and one a person TYPED IN THE CHAT are not the same evidence, and half of
+  // the groups we now have are the second kind. The reader has to see which.
+  function srcHint(field) {
+    if (!field || !field.source || field.source === 'NONE') return '';
+    return ' (' + esc(field.source) + ')';
+  }
+
   // ---- the messages posted with the photo --------------------------------
   // Open or closed is remembered for the tab, not the pack: a reader who wants
   // the captions wants them on every document, and a preference that outlived
@@ -1196,9 +1204,11 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
           : '')
       + '</label>'
       + '<label>ABO ' + sel('abo', ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'], dl.abo)
-      + '<span class="pipehint">pipeline: ' + esc(doc.abo.value || doc.abo.status || '—') + '</span></label>'
+      + '<span class="pipehint">pipeline: ' + esc(doc.abo.value || doc.abo.status || '—')
+      + srcHint(doc.abo) + '</span></label>'
       + '<label>Rh ' + sel('rh', ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'], dl.rh)
-      + '<span class="pipehint">pipeline: ' + esc(doc.rh.value || '—') + '</span></label>'
+      + '<span class="pipehint">pipeline: ' + esc(doc.rh.value || '—')
+      + srcHint(doc.rh) + '</span></label>'
       + '<label><input type="checkbox" data-doc="not_a_report"' + (dl.not_a_report ? ' checked' : '') + '> not a lab report</label>'
       + '<label class="docnote">Note about this page'
       + '<input type="text" data-docnote maxlength="500" value="' + esc(noteOf('doc:' + doc.id)) + '"'

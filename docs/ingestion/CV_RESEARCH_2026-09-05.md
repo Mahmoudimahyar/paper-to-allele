@@ -346,3 +346,118 @@ before being built:
 largest bucket in the pipeline), **HA-014** (the nine contradictions) and
 **HA-011**. The reviewer's next round of labels is worth more than any
 recognizer.
+
+## 12. A locus from the allele's own prefix (amended 2026-09-06 by the operator)
+
+The reviewer, labelling round two, against a page whose loci all went unread:
+
+> "This is a unique report, it doesn't specify the loci, but we still can find
+> the info from the alleles name. For exmaple A*11 belong to HLA-A"
+
+That qualifies a rule the project states outright — `AGENTS.md`: "Geometry/
+template cell defines HLA locus; OCR text alone may not assign locus", and
+`.claude/rules/ocr.md` says it again. The rule is not wrong and is not being
+removed. It exists because a nearby WORD must never decide a gene: matching
+`DRB1` inside a value inflated apparent DRB1 presence 5.18x and put the
+locus wherever a patient's allele happened to sit (KI-010, ADR 0007).
+
+What the operator has decided is that a **fully-qualified allele is not a
+nearby word**. `A*11` states its own gene in the notation the laboratory
+printed, and on a form that labels no rows it is the only thing that does.
+
+`scripts/prefix_bind.py` implements it as the LAST thing tried and the weakest
+evidence accepted:
+
+* the locus must have no anchor anywhere on the page — geometry always gets
+  first refusal, and this never overrules a printed label;
+* the token must carry its own star (`B35` may be serology, `35` names nothing);
+* the value must be admissible for the locus it claims, and one inadmissible
+  claim taints the whole page;
+* every box taken for one locus must sit on one printed row, followed at the
+  page's own slope, because two rows are two people as easily as two alleles;
+* **a comparison sheet is refused outright** — two patients on one page means a
+  prefix cannot say whose value it is, which is the wrong-locus failure in its
+  most dangerous form: the right gene of the wrong person. 3,535 cells refused
+  on this ground alone;
+* a box claimed by two loci withdraws both.
+
+Measured: **4,767 cells** corpus-wide, and on the 561 human labels 308 correct
+becomes 310 with **no new contradiction**. Every fact carries
+`source='prefix-bound'` and a reason naming the prefix as the evidence, so the
+whole group can be found and withdrawn if the decision is reversed.
+
+HA-017 records that the sentence in `AGENTS.md` now has a documented exception
+and should be reworded by a person rather than by an agent.
+
+## s13 — the whole-page fields, and two strata that were silently empty
+
+The reviewer, on where the rest of the answer lives:
+
+> "I also want you to add the group text that the user sent along this picture.
+> Because we have the entire chat history and we can easily see what they have
+> sent with the image of their report. ... Usually the role and the blood type
+> will be present in the chat. In addition a person can send the image multiple
+> time each with different text so I want you to show all those texts"
+
+That is right, and it is the largest gain this project has had from a source
+that is not the photograph. `scripts/caption_pass.py` reads ABO, Rh and Role
+from every message a document was ever posted with, not only the first.
+Measured on the live database, 23,566 documents:
+
+| field | resolved before | resolved now  | from a caption |
+|-------|-----------------|---------------|----------------|
+| ABO   | 2,993 (12.7%)   | 10,049 (42.6%)| 7,054          |
+| RH    | 2,993 (12.7%)   |  8,850 (37.6%)| 5,855          |
+| ROLE  | 7,517 (31.9%)   | 15,884 (67.4%)| 10,858         |
+
+Role's caption count exceeds its gain because a caption often CONFIRMS what the
+form already printed; those carry `source='FORM_FIELD+CAPTION'`.
+
+The pack's message caps were raised from 8 postings to 60 and from 600
+characters to 1,500 to match: 2,406 documents carry more than eight postings,
+and the truncated tail is exactly where a repost adds the blood group the form
+never printed. On the round-three pack, 24 of 60 documents were posted more than
+once and one thread holds 75 postings.
+
+A caption is a person's claim, not a laboratory result, and the page now says so
+on all three fields rather than on Role alone. In that pack 14 of 25 resolved
+ABO values came from a caption against 9 from the printed form, and a reviewer
+weighing "is this right" cannot do it without knowing which.
+
+### Two strata reported empty when they were not
+
+Building the round-three pack, `odd_box` — the reviewer's own box-size signal —
+and `blank_paper` both drew **zero** documents. Neither was empty.
+
+**`blank_paper` asked for the wrong column.** `cell_ink` names it `decision`;
+the query asked for `verdict`, and a blanket `except sqlite3.OperationalError`
+— written to tolerate a facts database from before the ink pass existed —
+reported the whole stratum as absent instead of raising. 14,210 measured-blank
+cells across 63 qualifying pages were unreachable that way, and HA-012, which
+asks whether a blank printed cell means the laboratory did not test that locus,
+is the largest open question in the project. The table's presence is now checked
+explicitly, so a wrong column is heard instead of swallowed.
+
+**`odd_box` was eaten by a commoner stratum.** A document was pooled under
+`doc.tags[0]`, and `tag_document` returns tags in the order `STRATA` is
+*written* — an order that had drifted from how rare the strata actually are.
+`odd_box` holds 22 documents corpus-wide and sat below `repaired_glyph`, which
+holds 11,179, so every odd box was pooled as a repaired glyph. Documents are now
+assigned to their rarest stratum **as measured on the corpus being packed**,
+with the written order breaking ties only, so a pack stays reproducible for a
+seed.
+
+Corpus-wide, the strata are spread over four orders of magnitude — `whole_page`
+17 documents, `repaired_glyph` 11,179 — which is why written order could not
+stand in for rarity and why it must not be trusted to again.
+
+Neither defect failed loudly, and that is the part worth keeping: a stratum
+reporting zero looks exactly like a signal that does not occur, and the pack is
+the instrument the whole project steers by. Corpus-wide counts per stratum are
+cheap; read them whenever a stratum is added.
+
+The same seed, before and after:
+
+    before: 26 strata drawn, 3 empty, largest stratum 7 of 60 documents
+    after:  26 strata drawn, 0 empty, largest stratum 5 of 60 documents
+

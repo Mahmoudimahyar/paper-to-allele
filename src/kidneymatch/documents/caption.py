@@ -32,6 +32,7 @@ from enum import StrEnum
 from kidneymatch.documents.role import Role, normalise
 
 CAPTION_READER_VERSION = "caption-role/v1"
+CAPTION_ABO_VERSION = "caption-abo/v1"
 
 
 class CaptionTier(StrEnum):
@@ -110,3 +111,123 @@ def read_caption_role(text: str) -> CaptionClaim:
 
     role = Role.DONOR if donor is not None else Role.RECIPIENT
     return CaptionClaim(role, CaptionTier.STATEMENT, matched=found.group(0))
+
+
+# --- the blood group a caption states -----------------------------------------
+#
+# The reviewer: "Usually the role and the blood type will be present in the
+# chat." They are, and the archive is 87% short of a laboratory-printed blood
+# group (2,995 documents of 23,566), so the caption is the only place the rest
+# of it exists.
+#
+# Two hazards govern this reader, and both come from the corpus rather than from
+# caution in the abstract.
+#
+# **`A` and `B` are HLA loci.** Every caption here sits beside an HLA report, so
+# a bare letter is the commonest token in the archive and means a gene far more
+# often than a blood group. A letter alone therefore never states a group: it
+# needs its own Rh sign (`A+`) or a blood-group word beside it.
+#
+# **A caption states as often what is WANTED as what is had** — the same
+# inversion `read_caption_role` exists for. "گروه خونی A مثبت نیاز دارم" is a
+# request from someone who is not group A. `_REQUEST` already knows those words,
+# and a request refuses the reading rather than reversing it.
+
+_BLOOD_GROUP_WORD = re.compile(
+    r"گروه\s?خون[یي]?|گروه\s?خونی|\bblood\s*(?:group|type)\b|\bbg\b", re.IGNORECASE
+)
+# A group with its own sign: unambiguous enough to stand without a blood word.
+# Not followed by a letter or digit, so `A+B` (both of two things) is not a group
+# and `B+12` is not either.
+_GROUP_SIGNED = re.compile(r"(?<![A-Za-z0-9])(AB|A|B|O)\s*([+\-])(?![A-Za-z0-9+\-])")
+# A group beside a blood-group word, where the sign may be a Persian word.
+_GROUP_BARE = re.compile(r"(?<![A-Za-z0-9])(AB|A|B|O)(?![A-Za-z0-9*])")
+_POSITIVE_WORD = re.compile(r"مثبت|\bpos(?:itive)?\b", re.IGNORECASE)
+_NEGATIVE_WORD = re.compile(r"منفی|منفي|\bneg(?:ative)?\b", re.IGNORECASE)
+# How far from the blood-group word an unsigned letter may sit and still be its
+# value. A caption is one line of shorthand; beyond this it is another sentence.
+_NEAR_CHARS = 24
+
+
+@dataclass(frozen=True, slots=True)
+class CaptionAbo:
+    """What the caption says about the blood group. Never a laboratory finding."""
+
+    group: str | None
+    rh: str  # "POSITIVE", "NEGATIVE" or "UNKNOWN"
+    tier: CaptionTier
+    matched: str = ""
+    reason: str = ""
+
+
+def _rh_from(text: str) -> str:
+    positive, negative = _POSITIVE_WORD.search(text), _NEGATIVE_WORD.search(text)
+    if positive and not negative:
+        return "POSITIVE"
+    if negative and not positive:
+        return "NEGATIVE"
+    return "UNKNOWN"
+
+
+def read_caption_abo(text: str) -> CaptionAbo:
+    """Read a blood group from a caption, or refuse.
+
+    Refusal is the common answer, as it is for the role: a message naming two
+    groups is a broker advertising two people, and a message asking for a group
+    says nothing about the person whose report it carries.
+    """
+    if not text or not text.strip():
+        return CaptionAbo(None, "UNKNOWN", CaptionTier.NONE)
+    cleaned = normalise(text)
+
+    found: list[tuple[str, str, str]] = []  # (group, rh, matched)
+    for match in _GROUP_SIGNED.finditer(cleaned):
+        group = "O" if match.group(1) == "0" else match.group(1)
+        found.append((group, "POSITIVE" if match.group(2) == "+" else "NEGATIVE", match.group(0)))
+    for word in _BLOOD_GROUP_WORD.finditer(cleaned):
+        window = cleaned[word.end() : word.end() + _NEAR_CHARS]
+        letter = _GROUP_BARE.search(window)
+        if letter is None:
+            continue
+        signed = _GROUP_SIGNED.search(cleaned[word.end() : word.end() + _NEAR_CHARS])
+        if signed is not None:
+            continue  # already counted above, with its sign
+        found.append((letter.group(1), _rh_from(window), word.group(0) + letter.group(0)))
+
+    if not found:
+        return CaptionAbo(None, "UNKNOWN", CaptionTier.NONE)
+    groups = {group for group, _, _ in found}
+    if len(groups) > 1:
+        return CaptionAbo(
+            None,
+            "UNKNOWN",
+            CaptionTier.REFUSED,
+            reason=(
+                "the caption names more than one blood group, so it describes more than one person"
+            ),
+        )
+    rhs = {rh for _, rh, _ in found if rh != "UNKNOWN"}
+    if len(rhs) > 1:
+        return CaptionAbo(
+            None,
+            "UNKNOWN",
+            CaptionTier.REFUSED,
+            reason="the caption gives one group with both Rh signs",
+        )
+    if _REQUEST.search(cleaned):
+        return CaptionAbo(
+            None,
+            "UNKNOWN",
+            CaptionTier.REFUSED,
+            matched=found[0][2],
+            reason=(
+                "the caption reads as a request for that blood group, not a statement of "
+                "one, and a request describes someone else"
+            ),
+        )
+    return CaptionAbo(
+        next(iter(groups)),
+        next(iter(rhs), "UNKNOWN"),
+        CaptionTier.STATEMENT,
+        matched=found[0][2],
+    )

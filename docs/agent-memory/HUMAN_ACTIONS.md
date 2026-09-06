@@ -4,6 +4,21 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-017 — `AGENTS.md`'s locus rule now has a documented exception
+- **Needed by:** nothing is blocked; this is a wording debt an agent must not
+  pay itself.
+- **Why:** `AGENTS.md` says "Geometry/template cell defines HLA locus; OCR text
+  alone may not assign locus", and `.claude/rules/ocr.md` repeats it. The
+  operator decided in a round-two note that a fully-qualified allele may name
+  its own locus where the page labels nothing, and that is recorded with its
+  gates and its measurements in `CV_RESEARCH_2026-09-05.md` s12
+  (`scripts/prefix_bind.py`, 4,767 cells, no new contradiction on 561 labels).
+- **Decision required:** reword the sentence in `AGENTS.md` so the constitution
+  and the code agree — or reverse the decision, in which case every fact with
+  `source='prefix-bound'` is withdrawn as a group, which is why they carry it.
+- **Secret?** No. **Blocking now?** No.
+
+
 ### HA-016 — Label the second round (60 documents, none seen before)
 - **Needed by:** every value written by a pass added after the first round.
   None of them has ever been checked by a person.

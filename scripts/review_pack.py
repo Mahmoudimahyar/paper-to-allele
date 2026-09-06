@@ -13,9 +13,14 @@ A random sample would be almost all easy cells. The point is to find where the
 pipeline is wrong, so documents are drawn from strata defined by the failure
 signals the pipeline already emits, with quotas that over-represent the rare
 ones, plus a clean-control stratum that measures how often "every signal
-agrees" is still wrong. A document is assigned to the FIRST stratum in
-`STRATA` that it belongs to, so the rarest signals fill first; every tag it
-carries is kept on the record.
+agrees" is still wrong. A document is assigned to its RAREST stratum, counted
+on the corpus being packed; every tag it carries is kept on the record.
+
+Rarest as MEASURED, not as written: the assignment used to follow the order of
+`STRATA`, and that silently emptied the two newest strata, because `odd_box`
+holds 22 documents corpus-wide and sits below `repaired_glyph`, which holds
+11,179. Every odd box was pooled as a repaired glyph and the stratum the
+reviewer had asked for drew nothing.
 
 ## What the pack contains (PHI: lands under the gitignored `data/review/`)
 
@@ -50,6 +55,7 @@ import random
 import re
 import shutil
 import sqlite3
+import statistics
 import sys
 import time
 from collections import Counter, defaultdict
@@ -144,6 +150,12 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ),
     ("zero_fact_refused", 10, "labels anchored but every cell refused; nothing extracted"),
     (
+        "odd_box",
+        16,
+        "one allele's box is not the size of the others on its page; measured on 561 "
+        "labels, such a cell is wrong 25% of the time against 5% for an ordinary box",
+    ),
+    (
         "blank_paper",
         6,
         "several printed cells are empty and the ink measure calls them paper; whether "
@@ -151,17 +163,34 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ),
     ("clean_control", 20, "every signal agrees; measures how often 'clean' is still wrong"),
 )
+# Ties in rarity fall back to the order STRATA is written in, so a pack stays
+# reproducible for a seed.
+STRATA_ORDER = {name: i for i, (name, _, _) in enumerate(STRATA)}
 FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
 # Nearly every report leaves SOME printed cell empty, so one is no signal at
 # all. Three is a form the laboratory filled in only partly, which is the
 # case HA-012 has to decide.
 MIN_BLANK_CELLS = 3
+# A page needs this many bound allele boxes before their median means anything,
+# and a box this far from it is not the size of its neighbours.
+ODD_BOX_MIN = 3
+ODD_BOX_TALL = 1.6
+ODD_BOX_SHORT = 0.6
 # Padding around a cell crop, as a fraction of the page.
 PAD_X, PAD_Y = 0.012, 0.008
 MIN_CROP_HEIGHT = 44  # px; smaller crops are upscaled for the eye
 # The messages shown with a document: how many, and how much of each.
-MAX_MESSAGES = 8
-MAX_MESSAGE_CHARS = 600
+#
+# The reviewer asked for all of them: "a person can send the image multiple time
+# each with different text so I want you to show all those texts so we extract
+# the maximum information out of it." Measured over the archive, a document has
+# a median of 1 posting and a mean of 4.7, but 2,406 of 23,565 carry more than
+# eight and one carries 466. Eight truncated a tenth of the corpus, and the
+# truncated part is exactly where a repost adds the blood group the form never
+# printed. Sixty covers 97.6% of documents whole; the page still says "n of m"
+# when it does not, so a reader can see that something was cut.
+MAX_MESSAGES = 60
+MAX_MESSAGE_CHARS = 1500
 SENDER_HASH_SALT = "km-sender|"
 # Telegram's title attribute: "31.08.2026 12:34:56 UTC+03:30". Sorted as a
 # string that puts the 1st of every month before the 2nd of any other.
@@ -237,14 +266,18 @@ def attach_signals(docs: dict[str, Doc], con: sqlite3.Connection, geometry: Path
     far its own rulings slope. Both are the subject of a stratum, and both come
     from passes that write no fact, so nothing in `fact` records them.
     """
-    try:
+    if con.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='cell_ink'"
+    ).fetchone()[0]:
+        # `decision`, not `verdict`: asking for the wrong column here once cost
+        # the whole `blank_paper` stratum, because a blanket `except
+        # OperationalError` reported it as an absent pass rather than as the bug
+        # it was. Presence is checked instead, so a real query error is heard.
         for sha, blanks in con.execute(
-            "SELECT sha256, COUNT(*) FROM cell_ink WHERE verdict='BLANK' GROUP BY sha256"
+            "SELECT sha256, COUNT(*) FROM cell_ink WHERE decision='BLANK' GROUP BY sha256"
         ):
             if sha in docs:
                 docs[sha].blank_cells = int(blanks)
-    except sqlite3.OperationalError:
-        pass  # a facts database from before the ink pass
     if geometry is None or not geometry.exists():
         return
     stored = load_stored_rulings(geometry, GEOMETRY_VERSION)
@@ -321,7 +354,7 @@ def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
         elif fld == "ABO":
             doc.abo = {"status": status, "value": value, "source": src, "reason": reason}
         elif fld == "RH":
-            doc.rh = {"status": status, "value": value}
+            doc.rh = {"status": status, "value": value, "source": src}
     # One row PER CONFIRMER. Keying them all onto one field would show the
     # reader whichever engine the database happened to return last, and there
     # are two of them now.
@@ -341,6 +374,31 @@ def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
             votes = _loads(jitter) or {}
             cell.decode = {"verdict": verdict, "reading": reading, "votes": votes}
     return docs
+
+
+def odd_value_box(resolved: list[Cell]) -> bool:
+    """Is one bound allele box not the size of the others on this page?
+
+    The reviewer's signal: "most of the time all of them should have the same
+    size... if we see one or two of them have unusually short length or very
+    large width we may want to assume that the shape is different." A laboratory
+    prints its values in one font, so a box that disagrees is usually the
+    detector's mistake. Measured on 561 labels, a cell whose box is unlike its
+    page's others is wrong 25% of the time against 5% for an ordinary one.
+
+    Compared against the page's OWN bound boxes rather than against every box on
+    it, which is what the reviewer described and needs nothing the pack does not
+    already carry.
+    """
+    heights = [
+        box[3] - box[1] for cell in resolved for box in (cell.value_boxes or []) if len(box) >= 4
+    ]
+    if len(heights) < ODD_BOX_MIN:
+        return False
+    middle = statistics.median(heights)
+    if middle <= 0:
+        return False
+    return any(h / middle > ODD_BOX_TALL or h / middle < ODD_BOX_SHORT for h in heights)
 
 
 def tag_document(doc: Doc, export: Path) -> list[str]:
@@ -409,6 +467,8 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
+    if odd_value_box(resolved):
+        tags.add("odd_box")
     if doc.blank_cells >= MIN_BLANK_CELLS:
         tags.add("blank_paper")
     if doc.row_slope:
@@ -456,11 +516,24 @@ def choose(
 ) -> list[Doc]:
     """Stratified, deterministic, spread across layout families inside a stratum."""
     rng = random.Random(seed)
-    pools: dict[str, list[Doc]] = defaultdict(list)
+    present: list[Doc] = []
     for doc in docs.values():
         doc.tags = tag_document(doc, export)
         if doc.tags and (export / doc.rel_path).exists():
-            pools[doc.tags[0]].append(doc)
+            present.append(doc)
+    # A document belongs to its RAREST stratum, measured on this corpus rather
+    # than assumed from the order STRATA happens to be written in. It was
+    # written order before, and that silently emptied the two newest strata:
+    # `odd_box` holds 22 documents corpus-wide and sits below `repaired_glyph`,
+    # which holds 11,179, so every odd box was claimed as a repaired glyph and
+    # the reviewer's own signal drew nothing. Rarity is the property that
+    # matters — a document that is one of 22 witnesses to a signal is worth far
+    # more there than as one of 11,179.
+    frequency = Counter(tag for doc in present for tag in doc.tags)
+    pools: dict[str, list[Doc]] = defaultdict(list)
+    for doc in present:
+        doc.tags = sorted(doc.tags, key=lambda tag: (frequency[tag], STRATA_ORDER[tag]))
+        pools[doc.tags[0]].append(doc)
     # Documents someone has already labelled come first and are never dropped:
     # their answers are the only ground truth the project has.
     held = [doc for doc in docs.values() if doc.short in (pin or set())]
@@ -494,7 +567,7 @@ def choose(
     # takes a second. A pack is a diagnostic instrument, and a signal with no
     # document in it is a signal nobody can check — which is what happened
     # when six strata were added and the weights alone starved the smallest.
-    for tag, _, _ in STRATA:
+    for tag in sorted(pools, key=lambda t: (len(pools[t]), STRATA_ORDER[t])):
         take(tag, 1)
     # Then the weights, over whatever room is left.
     total_weight = sum(w for _, w, _ in STRATA)
