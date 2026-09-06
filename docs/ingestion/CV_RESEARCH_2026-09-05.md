@@ -181,3 +181,64 @@ better detector. Chasing detection there is work with nothing at the end of it.
 rules, it adds a cloud dependency and a per-page cost, and it sends a patient's
 whole report off the machine. `vision_pass.py` and `vision_compare.py` stay as
 measuring instruments, run deliberately, writing no fact.
+
+## 9. The reviewer's notes, and what they turned out to be
+
+The review page carries an optional note per answer. Seven were written, and
+they are the most useful diagnostic the project has received. Three of them
+name one cause:
+
+* "This image is tilted and the system failed to recognize that and all the
+  boxes are situated incorrectly. The system must identify the lines and the
+  slope of the lines and immediately identify that an image is tilted and draw
+  its boxes for each loci with that slope."
+* "This image is tilted and that caused the system to not recognize the correct
+  alleles values for each HLA"
+* "the pipeline failed to generate correct alleles for each loci, specifically
+  it only recognized one of the two alleles"
+
+The slope had been measured on every one of those pages and thrown away:
+
+| note | rulings measured | what the pipeline did |
+|---|---|---|
+| tilted (LOW) | -3.05 deg | ROTATE applied, cells still wrong |
+| tilted (HIGH) | -3.19 deg | UNCERTAIN: scatter 2.02 over `MAX_MAD_DEG` 1.5 |
+| one of two alleles | -1.31 deg | ROTATE, then declined by `MIN_FRAME_TILT_DEG` |
+| different structure | -1.70 deg | ROTATE applied |
+
+`ocr/rows.py` and `ValueRule.row_slope` are the answer (see the commit and
+`tests/unit/test_row_slope.py`): the row test now compares a box where its
+printed row would have put it on a level page. 64 correct to 67 on the labels,
+nothing lost, and both halves of the "one of two alleles" page recovered.
+
+**"What if we give them the entire image?"** The reviewer's other note is that
+every second opinion so far has been an opinion about OUR boxes: the confirmers
+re-read the crop our detector drew, which can say nothing about a cell the
+detector never boxed. `page_ocr_pass.py` runs PP-OCRv5-server detection AND
+recognition over whole pages, locally, and `vision_compare.py`'s harness scores
+it through the identical binding rule:
+
+| boxes from | correct | missed | locus label found |
+|---|---|---|---|
+| our detector, flat rows | 64 | 17 | 138 |
+| our detector, rows along the slope | 67 | 16 | 138 |
+| Google Vision, whole page | 31 | 53 | 135 |
+| PaddleOCR, whole page | 63 | 20 | **142** |
+
+The whole-page read finds MORE printed locus labels than our own detector, and
+the two disagree in both directions: it is right on 7 cells ours misses, ours
+is right on 11 it misses, and at least one of them is right on 74 of 160. So
+neither replaces the other and `page_ocr_bind.py` takes the union — our own
+reading always stands, and the whole page is asked only about cells the
+pipeline left unresolved, under every gate the resolver applies.
+
+**Still open, and specified.** One note reads "this lab report has totally
+different structure. Instead of writing the loci and then the alleles in front
+of it, it writes each allele in the cell under the loci." That page is a
+column-header form: read whole, it prints `HLA-A`, `HLA-B` and `HLA-C` side by
+side on one line with each value in the same column directly beneath, and both
+alleles of a locus share one token separated by a period. It needs two things
+this round did not build: a per-document reading direction, so `direction`
+is measured from the page rather than assumed to be `right`, and a value
+grammar for the paired token. Our own detector gave that page 38 boxes and
+missed `HLA-B` entirely; the whole-page read finds all three headers.

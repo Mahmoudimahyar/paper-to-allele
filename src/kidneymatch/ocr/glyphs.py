@@ -162,6 +162,23 @@ _VALUE = re.compile(
     re.VERBOSE,
 )
 
+# Both alleles of one locus printed in ONE box, each carrying its own star:
+# `A*24,*02`. Measured over the corpus, 1,819 such tokens on 890 documents,
+# commonest as `A*##,*##`, `DRB1*##,*##` and `B*##,*##`. The second star is
+# what makes it unambiguous, and it is why nothing looser is accepted here:
+# `A*24,02` has one star, and whether that is two alleles or the two-field
+# `A*24:02` written with a comma is a question about the form, not about the
+# glyphs — 1,025 tokens on 491 documents wait on that answer rather than being
+# guessed at (HA-015).
+_PAIR = re.compile(
+    rf"""^
+    (?P<first>.+?)
+    \s*[,.;/]\s*
+    (?P<second>[{re.escape(_STAR_VARIANTS)}]\s*[0-9A-Za-z]{{2,3}}(?::[0-9A-Za-z]{{2,3}})?[NLSQCA]?)
+    $""",
+    re.VERBOSE,
+)
+
 # The recognizer's B/8 confusion in the PREFIX slot: `8*44` for `B*44`,
 # 56 cells corpus-wide. Repaired only when a star follows; a bare `844` is a
 # number, and which locus a number belongs to is never decided from its text.
@@ -248,6 +265,35 @@ def is_grouped_drbx_header(token: str) -> bool:
     """Is this token the combined DRB3/4/5 header? `drbx.py` reads that row;
     `anchors.py` lets the header own its row like any label."""
     return bool(_GROUPED_DRBX.match((token or "").strip()))
+
+
+def parse_allele_values(token: str) -> list[AlleleValue]:
+    """Every allele this ONE box states: usually one, sometimes a printed pair.
+
+    A cell that prints `A*24,*02` holds both of a locus's alleles in a single
+    box, and reading it as one value or as none loses half the genotype. The
+    pair is split only when the SECOND part carries its own star, which is what
+    separates it from `A*24,02` — that could as easily be a two-field allele
+    written with a comma, and guessing between them would either invent a
+    second allele or silently upgrade the resolution of the first, both of
+    which this project forbids.
+    """
+    stripped = (token or "").strip()
+    single = parse_allele_value(stripped)
+    if single is not None:
+        return [single]
+    found = _PAIR.match(stripped)
+    if not found:
+        return []
+    first = parse_allele_value(found.group("first"))
+    if first is None or first.locus_prefix is None:
+        # Without a locus on the first half there is nothing to carry over, and
+        # a bare pair of numbers names no gene.
+        return []
+    second = parse_allele_value(f"{first.locus_prefix}{found.group('second')}")
+    if second is None or second.locus_prefix != first.locus_prefix:
+        return []
+    return [first, second]
 
 
 def looks_like_locus_label(token: str) -> bool:

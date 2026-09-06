@@ -55,7 +55,7 @@ from kidneymatch.ocr.glyphs import (
     canonical_locus_label,
     is_grouped_drbx_header,
     looks_like_locus_label,
-    parse_allele_value,
+    parse_allele_values,
 )
 
 Direction = Literal["right", "below"]
@@ -330,7 +330,7 @@ def _bare_class_i_column(boxes: list[Box]) -> dict[str, list[Box]]:
         if not any(
             other.x0 > box.x1
             and abs(other.centre_y - box.centre_y) <= box.height
-            and parse_allele_value((other.text or "").strip()) is not None
+            and parse_allele_values((other.text or "").strip())
             for other in boxes
         ):
             continue
@@ -517,7 +517,7 @@ def _value_beyond_the_chain(
         if _distance(edge, box, rule.direction) <= 0:
             continue
         text = (box.text or "").strip()
-        if looks_like_locus_label(text) or parse_allele_value(text) is None:
+        if looks_like_locus_label(text) or not parse_allele_values(text):
             continue
         if _owned_by_another_anchor(box, anchor, boxes, rule) is not None:
             continue
@@ -645,8 +645,10 @@ def _bind(
         kept = [
             box
             for box in found
-            if (value := parse_allele_value((box.text or "").strip())) is None
-            or value.locus_prefix in (None, locus)
+            if all(
+                value.locus_prefix in (None, locus)
+                for value in parse_allele_values((box.text or "").strip())
+            )
         ]
         set_aside = len(found) - len(kept)
         found = kept
@@ -703,78 +705,82 @@ def _bind(
     unparsed: str | None = None
     for box in found:
         text = (box.text or "").strip()
-        value = parse_allele_value(text)
-        if value is None:
+        # One box can print BOTH alleles of a locus (`A*24,*02`): 1,819 such
+        # tokens on 890 documents. Reading it as one value loses half the
+        # genotype, and reading it as none loses all of it.
+        values = parse_allele_values(text)
+        if not values:
             if unparsed is None:
                 unparsed = text
             continue
-        if value.separator_missing and not rule.require_prefix:
-            # `B35` with no star. On a form measured to print `LOCUS*NN` on
-            # 99.8-99.9% of its values (the family rule), that is the star the
-            # recognizer did not read — 1,958 cells corpus-wide. On a form
-            # nobody has measured, it may be a serological spelling, which
-            # HLA_VALIDATION_SPEC s4 keeps apart from allele notation; a
-            # human decides which it is.
-            return LocusResolution(
-                locus,
-                ResolutionStatus.REVIEW_REQUIRED,
-                anchor_box=anchor,
-                value_boxes=found,
-                reason=(
-                    f"candidate {text!r} names its locus without a star, and this form is not "
-                    "measured to print the locus on its values"
-                ),
-            )
-        if rule.require_prefix and value.locus_prefix is None:
-            # This family prints the locus on every value, so a bare number on
-            # the row band is not one of its values. Without the distance cap
-            # that this requirement replaces, accepting it would bind anything
-            # on the line.
-            return LocusResolution(
-                locus,
-                ResolutionStatus.REVIEW_REQUIRED,
-                anchor_box=anchor,
-                value_boxes=found,
-                reason=(
-                    f"this form prints the locus on every value, and {text!r} does not name one"
-                ),
-            )
-        if value.locus_prefix is not None and value.locus_prefix != locus:
-            # Gate 2. Geometry says one gene, the printed value says another.
-            return LocusResolution(
-                locus,
-                ResolutionStatus.REVIEW_REQUIRED,
-                anchor_box=anchor,
-                value_boxes=found,
-                reason=(
-                    f"value names {value.locus_prefix} but the anchor is {locus}; "
-                    "geometry and text disagree"
-                ),
-            )
-        if not vocabulary.covers(locus):
-            # An unchecked value must never be presented as a checked one.
-            return LocusResolution(
-                locus,
-                ResolutionStatus.REVIEW_REQUIRED,
-                anchor_box=anchor,
-                value_boxes=found,
-                reason=f"no first-field vocabulary for {locus}; cannot check the value",
-            )
-        if not vocabulary.is_admissible(locus, value.first_field):
-            # Gate 5. The recognizer's commonest surviving error is a leading
-            # `0` read as `8` or `9` (`A*83`, `DRB1*93`). Both readings are
-            # clean digits, so no repair and no geometric gate can see it.
-            return LocusResolution(
-                locus,
-                ResolutionStatus.REVIEW_REQUIRED,
-                anchor_box=anchor,
-                value_boxes=found,
-                reason=(
-                    f"{value.first_field!r} is not an allele family of {locus} "
-                    f"in IMGT {vocabulary.imgt_version}"
-                ),
-            )
-        parsed.append(value)
+        for value in values:
+            if value.separator_missing and not rule.require_prefix:
+                # `B35` with no star. On a form measured to print `LOCUS*NN` on
+                # 99.8-99.9% of its values (the family rule), that is the star the
+                # recognizer did not read — 1,958 cells corpus-wide. On a form
+                # nobody has measured, it may be a serological spelling, which
+                # HLA_VALIDATION_SPEC s4 keeps apart from allele notation; a
+                # human decides which it is.
+                return LocusResolution(
+                    locus,
+                    ResolutionStatus.REVIEW_REQUIRED,
+                    anchor_box=anchor,
+                    value_boxes=found,
+                    reason=(
+                        f"candidate {text!r} names its locus without a star, and this form is not "
+                        "measured to print the locus on its values"
+                    ),
+                )
+            if rule.require_prefix and value.locus_prefix is None:
+                # This family prints the locus on every value, so a bare number on
+                # the row band is not one of its values. Without the distance cap
+                # that this requirement replaces, accepting it would bind anything
+                # on the line.
+                return LocusResolution(
+                    locus,
+                    ResolutionStatus.REVIEW_REQUIRED,
+                    anchor_box=anchor,
+                    value_boxes=found,
+                    reason=(
+                        f"this form prints the locus on every value, and {text!r} does not name one"
+                    ),
+                )
+            if value.locus_prefix is not None and value.locus_prefix != locus:
+                # Gate 2. Geometry says one gene, the printed value says another.
+                return LocusResolution(
+                    locus,
+                    ResolutionStatus.REVIEW_REQUIRED,
+                    anchor_box=anchor,
+                    value_boxes=found,
+                    reason=(
+                        f"value names {value.locus_prefix} but the anchor is {locus}; "
+                        "geometry and text disagree"
+                    ),
+                )
+            if not vocabulary.covers(locus):
+                # An unchecked value must never be presented as a checked one.
+                return LocusResolution(
+                    locus,
+                    ResolutionStatus.REVIEW_REQUIRED,
+                    anchor_box=anchor,
+                    value_boxes=found,
+                    reason=f"no first-field vocabulary for {locus}; cannot check the value",
+                )
+            if not vocabulary.is_admissible(locus, value.first_field):
+                # Gate 5. The recognizer's commonest surviving error is a leading
+                # `0` read as `8` or `9` (`A*83`, `DRB1*93`). Both readings are
+                # clean digits, so no repair and no geometric gate can see it.
+                return LocusResolution(
+                    locus,
+                    ResolutionStatus.REVIEW_REQUIRED,
+                    anchor_box=anchor,
+                    value_boxes=found,
+                    reason=(
+                        f"{value.first_field!r} is not an allele family of {locus} "
+                        f"in IMGT {vocabulary.imgt_version}"
+                    ),
+                )
+            parsed.append(value)
     if unparsed is not None:
         return LocusResolution(
             locus,

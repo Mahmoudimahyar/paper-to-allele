@@ -4,6 +4,23 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-015 — `A*24,02`: two alleles, or one allele at two fields?
+- **Needed by:** 1,025 value tokens on 491 documents that currently go unread.
+- **Why:** some forms print both alleles of a locus in ONE box. Where the
+  second half carries its own star (`A*24,*02`) that is unambiguous and the
+  pipeline now reads both (1,819 tokens on 890 documents). Where it does not
+  (`A*24,02`) there are two readings and no way to choose from the glyphs:
+  two alleles with the star not repeated, or the two-field allele `A*24:02`
+  written with a comma where nomenclature uses a colon. Guessing either way
+  breaks a rule the project states outright — invent a second allele, or
+  promote a first-field reading to a second field (`OCR-001`).
+- **Decision required:** for each laboratory that prints this, does a comma
+  between two numbers separate two alleles or two fields of one? A page of
+  each form beside its report would settle it; so would one lab's answer.
+- **Secret?** No.
+- **Blocking now?** Blocks 1,025 tokens. Nothing else.
+
+
 ### HA-013 — Google Vision: DECIDED 2026-09-05, whole pages permitted
 - **Decision:** the operator set `GOOGLE_VISION_API` in the ignored `.env` and
   chose the **broad** option: whole report pages may be sent to Google Cloud
