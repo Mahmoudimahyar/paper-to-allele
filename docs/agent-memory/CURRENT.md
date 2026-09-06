@@ -15,74 +15,74 @@ labels entirely.
 ## Locked facts
 - **The archive is present**, local-only and gitignored, at
   `data/raw/ChatExport_2026-08-31`: 23,566 unique images, 90% above 900 px.
-- **The source layer is parsed (HIST-001, HIST-002).** 180,441 messages,
-  3,456 service events, **zero unparsed fragments**; re-import is a no-op.
-  23,565 of 23,566 documents link to the messages that posted them (110,050
-  rows), and 18,799 have caption text the pack shows.
-- **Extraction (ADR 0008, 0009 §7):** `facts.sqlite` refreshed in place three
-  times on 2026-09-05 (`refresh_facts.py`; snapshots beside it). It prints the
-  per-locus comparison and names a stop signal, and that comparison is part of
-  the procedure: it caught a prefix bug that had made the letterhead's `LAB` an
-  HLA-B anchor on 9,817 documents before it shipped. The third refresh's stop
-  signal was the later passes' own writes being reset, all 15 swaps DRB5
-  presence reverting to the row rule — re-run the passes in the order below.
-  **RESOLVED 82,480 → 110,893** across the session.
+- **The source layer is parsed (HIST-001, HIST-002):** 180,441 messages,
+  **zero unparsed fragments**; 23,565 of 23,566 documents link to their
+  postings, 18,799 with caption text.
+- **Extraction (ADR 0008, 0009 §7):** `facts.sqlite` refreshed in place with
+  `refresh_facts.py` (snapshots beside it), which prints the per-locus
+  comparison and names a stop signal — that comparison caught the `LAB`-as-HLA-B
+  bug on 9,817 documents before it shipped. Every refresh's stop signal so far
+  has been the later passes' writes being reset (all 15 swaps are DRB5 presence
+  reverting to the row rule); re-run the passes in the order below.
 - **Page geometry (`rulings/v3+lsd+sweep`):** sweep corroborates within 2°,
   calibrated on photographs (3°/0.7). 6,511 ROTATE / 14,139 STRAIGHT / 2,916
   UNCERTAIN; 1,591 levelled (KI-024). A tilt from stored boxes is biased.
 - **Recognizers, against the labels** (67 cells, `ENGINE_BENCH_2026-09-05.md`):
-  **PP-OCRv6-medium 65 exact**, the shipped pipeline 57, PP-OCRv5-server 55,
-  Qwen3-VL-4B 52, Tesseract 32, ours 14. No pair ever agreed on a wrong value,
-  which licenses every two-engine gate below.
+  **PP-OCRv6-medium 65 exact**, shipped pipeline 57, v5-server 55, Qwen3-VL 52,
+  Tesseract 32, ours 14. No pair agreed on a wrong value, which licenses the
+  two-engine gates.
 - **The decode and the confirmers.** `confirm_pass.py` has three targets;
   `promote_proposals.py` promotes CONFIRMED proposals — never on a LOW page,
   re-judged with admissibility, withdrawn when an equal-or-better reader
   disagrees. Crops stay axis-aligned; the upright ablation was a wash.
 - **The DRB3/4/5 row prints gene names** (22,017 vs 75 bare numbers); grammar v2
-  waits on HA-011. `drbx_reread.py` re-reads a gene resting on the S-for-5 repair
-  and takes the digit only when it IS one: 1,992 rows rewritten.
-- **The printed table is read as a grid (`ocr/lattice.py`).** The rulings
-  place a label the recognizer could not read (**+2,272 cells**, 0 swapped) and
-  the second DRB3/4/5 slot, which ink certifies ABSENT when it is paper
-  (**4,540 genes**). `cell_ink_pass.py` measures ~24,000 empty cells and
-  **writes no fact**: NOT_TESTED is HA-009's verdict, so HA-012 asks.
+  waits on HA-011. `drbx_reread.py` takes the digit only when it IS one.
+- **The printed table is read as a grid (`ocr/lattice.py`):** rulings place a
+  label the recognizer could not read (**+2,272**) and the second DRB3/4/5 slot,
+  which ink certifies ABSENT when it is paper (**4,540 genes**).
+  `cell_ink_pass.py` writes no fact: NOT_TESTED is HA-009's, so HA-012 asks.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci).
 - **Accuracy is unvalidated (KI-012); the binding constraint.**
-  The reviewer's 220-cell export scored **84 correct** as the pack showed it,
-  103 against the database at the start of this session and **107 correct / 86
-  correct abstentions / 14 missed / 4 partial / 9 contradicted** at its end.
-  Seven of the nine contradictions are HA-014: cells marked NOT_PRINTED where
-  the page evidence says otherwise, and **the page had shown no crop for 50 of
-  the 220** because the pipeline had found neither label nor value there. The
-  blind golden corpus waits on a person.
+  The reviewer's 220-cell export scored **84 correct** as the pack showed it and
+  **113 correct / 86 correct abstentions / 10 missed / 2 partial / 9
+  contradicted** now. All nine contradictions are HA-014, cells marked
+  NOT_PRINTED where the page evidence says otherwise; the page had shown no crop
+  for 50 of the 220. The blind golden corpus waits on a person.
+- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — they are
+  in the export under `notes`, not in `pack_score.py`'s report
+  (`CV_RESEARCH` s9). Seven were written; three named tilt and one named a
+  column-header layout, and each was exactly right.
+- **Rows are read along the slope the page prints them at** (`ocr/rows.py`,
+  `ValueRule.row_slope`). The slope was already measured on every page the
+  reviewer called tilted and thrown away by `MAX_MAD_DEG` (scatter is
+  perspective, not a second grid) or `MIN_FRAME_TILT_DEG` (calibrated for
+  rotating pixels, not for grouping boxes). Taken from the DOMINANT cluster of
+  rulings, floored at 0.008 fall per unit width where the ablation turns
+  net-positive. On the labels 64 to 67; corpus-wide **+209 second alleles**.
+- **The whole page is read too** (`page_ocr_pass.py`, PP-OCRv5-server det+rec,
+  local). Every other second opinion judges OUR crops and so cannot see a cell
+  we never boxed. It finds MORE locus labels than our detector (142 of 160
+  against 138) and is complementary, right on 7 cells ours misses and wrong on
+  11 ours gets, so `page_ocr_bind.py` takes the union: our reading stands, the
+  whole page is offered only unresolved cells. 15 s/page, so the pack yes, the
+  corpus (100 h) not yet.
 - **Two reading refusals get a second opinion (`reread_refused.py`).** An
-  inadmissible first field, and a candidate that does not parse: 5,145 cells
-  holding boxes nobody re-read. PP-OCRv6 and PP-OCRv5-server must state the
-  SAME value, and it must parse, be admissible and differ from what was
-  refused. Single-engine yield 97%, two-engine 75%; the gap is what nothing
-  corroborated. **+2,926 cells**, resumable by its own table.
+  inadmissible first field, and a candidate that does not parse. PP-OCRv6 and
+  PP-OCRv5-server must state the SAME value; single-engine yield was 97% and
+  two-engine 75%. **+2,926 cells**, resumable by its own table.
 - **A bare `A`, `B` or `C` can be a locus label** when the page's structure
-  says so: the label column of a form spelling out two other loci, an allele on
-  its row, and two such letters stacked. The text matcher still refuses them.
-  Ablated over 4,000 documents: +106 cells, none changed. Ownership between two
-  aligned labels needs a quarter-label-height margin, so the photograph's tilt
-  cannot decide which gene owns a value (+17).
-- **A pack rebuild pins the labelled documents (`--keep-labelled`).** The
-  sample is stratified by fact status, so a refresh reshuffles it: 11 of 220
-  labels survived the first rebuild, 220 with the flag, and 189 now show a
-  crop rather than 170.
-- **Google Vision was measured and is NOT adopted (`CV_RESEARCH` s8).** 150
-  whole pages, same binding rule, scored against the labels: ours 62 correct of
-  160, Vision 28, and Vision is correct where we miss on exactly **one** cell.
-  Its words split `A*24` into three, so its own `detectedBreak` marks must be
-  used to rejoin them; raw words score 1. **The finding that matters:** the
+  says so (+106 per 4,000 documents, none changed); the text matcher still
+  refuses them. Ownership needs a quarter-label-height margin (+17). One box
+  may print both alleles (`A*24,*02`, 1,819 tokens); `A*24,02` waits on HA-015.
+- **A pack rebuild pins the labelled documents (`--keep-labelled`)** or the
+  sample reshuffles and orphans them: 11 of 220 survived the first rebuild.
+- **Google Vision measured, NOT adopted (`CV_RESEARCH` s8):** ours 62 of 160,
+  Vision 28, right where we miss on one cell. **The finding that matters:** the
   23,719-cell "anchor found but no box in its cell" refusal is not a detector
-  failure. Vision boxes something in 1.0% of 197 such cells, against 89.0% of
-  400 cells we resolved. That bucket is paper, and it closes through HA-012 and
-  HA-009, not through OCR.
+  failure — Vision boxes something in 1.0% of 197 such cells against 89.0% of
+  400 we resolved. That bucket is paper and closes through HA-012/HA-009.
 - **Two form facts constrain the product:** DPA1/DPB1 printed, never filled
-  (HA-009); the letterhead disclaims its blood-group field (KI-014). Zero-fact
-  documents are mostly not reports (KI-018). Geometry determines locus.
+  (HA-009); the letterhead disclaims its blood-group field (KI-014).
 
 ## Decided (operator delegated)
 HA-003 resolution bands (MID provisional) · HA-005 names as a salted hash ·
