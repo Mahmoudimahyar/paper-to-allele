@@ -32,14 +32,14 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **The printed table is read as a grid (`ocr/lattice.py`):** rulings place an
   unreadable label (**+2,272**) and the second DRB3/4/5 slot, ink-certified
   ABSENT when paper (**4,540 genes**). NOT_TESTED is HA-012's to answer.
-- **Accuracy is unvalidated (KI-012); the binding constraint.** 561 labels:
-  **310 correct, 205 abstained, 35 missed, 2 partial, 9 contradicted** — 87.1%
-  of the 356 cells a person actually read. Round one alone went 84 -> 121.
-  Contradictions are HA-014. `scripts/label_score.py` scores any number of
-  exports against LIVE facts, no pack needed. Golden corpus waits on a person.
+- **Accuracy (KI-012), 957 labels over 3 rounds (s16):** HLA **511 correct,
+  365 abstained, 59 missed, 11 partial, 11 contradicted — 86.3%** of the 592
+  cells a person read. Whole-page, of comparable answers: **ROLE 98.5% (67/1),
+  ABO 100% (34/0), RH 100% (34/0)**. PRECISION IS NOT THE PROBLEM — ABO/RH miss
+  29 each, and the RH misses are the SAME documents as the ABO ones.
+  `scripts/label_score.py` scores any number of exports against LIVE facts.
 - **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — under
-  `notes`, printed by `label_score.py` (s9). 14 annotated pages hold 26 of the
-  35 misses.
+  `notes`, printed by `label_score.py` (s9).
 - **Rows are read along the page's own slope** (`ocr/rows.py`): the DOMINANT
   ruling cluster, floored at 0.008. It was already measured on every tilted
   page and thrown away by thresholds meant for rotating pixels. **+209**.
@@ -58,13 +58,15 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **Google Vision measured, NOT adopted (s8):** ours 62 of 160, Vision 28; it
   boxes something in 1.0% of "no box in its cell" refusals — they are paper.
 - **The chat is a source of record.** `caption_pass.py` reads ABO/Rh/Role from
-  EVERY message posted with a document: ABO **42.6%**, RH **37.6%** (s13). But
-  the labels CANNOT judge those: every disagreement is against NOT_PRINTED —
-  the reviewer answers "what does this page print", the pass answers "what is
-  this person's group" (s15). Unvalidated, not disproven.
-- **A bare role word IS read** (`FORM_FIELD_BARE`, `role_repass.py`, s15).
-  Refusing it double-charged evidence already gated above; on 50 labelled roles
-  a bare word is right 13 times, wrong once. **ROLE 67.4% -> 78.1%.**
+  EVERY message posted with a document. Round three VALIDATED it: caption ABO is
+  14 correct, 0 contradictions (s16); the s15 worry was the NOT_PRINTED question
+  mismatch, not an error.
+- **One printed value can be detected twice** (`_one_token_read_twice`, s16):
+  both engines box the same ink and agree. **+993 documents, 0 lost, 0 value
+  changes**; ABO 45.6%, RH 40.7%. Gate 1 (identical values) does all the work.
+- **A bare role word IS read** (`FORM_FIELD_BARE`, `role_repass.py`, s15):
+  refusing it double-charged evidence already gated above. **ROLE 78.1%**;
+  measured 8 right, 1 wrong on the labels.
 - **A stratum reporting zero looks exactly like a signal that does not occur.**
   Two did and neither was empty: a wrong column name swallowed by a blanket
   `except`, and a rare stratum pooled away by a common one. Pools are now by
@@ -74,12 +76,10 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **A locus can come from the allele's own printed prefix** (`prefix_bind.py`,
   s12) where the page labels no row: **4,767 cells**, tried last, comparison
   sheets refused. HA-017 holds the AGENTS.md wording.
-- **`anchor_row_bind.py` (s14): 80 cells, ACCURACY UNMEASURED.** Its first
-  version bound 458 and an adversarial review confirmed 11 defects: no gap cap,
-  no direction, and it resolved values inside another locus's cell — the case
-  `resolve_locus` reserves for a human. Those writes were REVERTED; 83% failed
-  this project's own rules. **Review a write-rule adversarially BEFORE
-  believing its yield.**
+- **`anchor_row_bind.py` (s14): 80 cells, UNMEASURED.** Its first version
+  bound 458; adversarial review confirmed 11 defects and 83% failed this
+  project's own rules. **Review a write-rule adversarially BEFORE believing its
+  yield** — a later workflow refused all 28 proposals it was given (s16).
 - **Two form facts:** DPA1/DPB1 printed but never filled (HA-009); the
   letterhead disclaims its blood-group field (KI-014).
 

@@ -650,3 +650,107 @@ prints, is a question for the operator and not for a pass.
 The one genuine role contradiction in the whole set is a single
 `FORM_FIELD_BARE` DONOR the reviewer read as RECIPIENT.
 
+## s16 — 957 labels: where the accuracy actually is, and one value the pipeline was throwing away
+
+Three rounds of review now give **957 HLA cell labels** and **86 whole-page
+answers**. Scored against live facts:
+
+| HLA cells | |
+|---|---|
+| correct | 511 |
+| correctly abstained | 365 |
+| missed | 59 |
+| partial | 11 |
+| contradicted | 11 |
+
+**86.3% correct on the 592 cells a person actually read.**
+
+| whole-page field | correct | wrong | missed | precision |
+|---|---|---|---|---|
+| ROLE | 67 | 1 | 9 | 98.5% |
+| ABO | 34 | 0 | 29 | 100% |
+| RH | 34 | 0 | 29 | 100% |
+
+The single role error is a `FORM_FIELD_BARE` donor the reviewer read as
+recipient — the s15 rule running 8 correct to 1 wrong.
+
+**s15's worry about caption blood groups is resolved, and it was unfounded.**
+With the third round's labels, caption-derived ABO is **14 correct and 0
+contradictions**. The earlier "13 wrong" were every one against `NOT_PRINTED`:
+the question mismatch, exactly as diagnosed. Those values are validated now,
+not merely unrefuted.
+
+### Precision is not the problem; recall is
+
+Nothing in the whole-page fields is wrong. ABO and Rh simply abstain on more
+than half the documents a person can read, and — measured — **the Rh misses are
+exactly the same documents as the ABO misses**, so ABO recall is one lever that
+moves both fields.
+
+### One printed value, detected twice
+
+`read_abo` refused any cell holding more than one parsing box. 1,113 documents
+reach that branch, and **996 of them are ONE printed token that both engines
+boxed**: the Latin pass (onnxtr) and the Persian pass (easyocr) each drew a
+rectangle around the same ink, and the two readings agree. Refusing them cost
+993 documents a blood group and 760 an Rh for no safety whatsoever.
+
+`_one_token_read_twice` collapses that case behind three gates. Measured on the
+1,113, gate 1 does all the work and the others are insurance:
+
+| gate | rejects |
+|---|---|
+| the parsed values must be identical | 117 |
+| the boxes must overlap (IoU ≥ 0.5) — same ink, not two agreeing values | 1 |
+| the boxes must come from two different engines | 0 |
+
+Same-ink cross-engine disagreement runs at 10.5% (9.1% sign-only, 1.4% letter),
+and gate 1 catches all of it — including every sign disagreement, which is the
+dangerous one: an `A-` read as `A+` puts a Rh-negative recipient in a positive
+pool.
+
+**A/B over all 23,566 documents, gate on against gate off: 993 gained, 0 lost,
+0 values changed on a document already resolved.** Conditional on the gates:
+
+| independent check | result |
+|---|---|
+| 282 chat claims | 0 letter contradictions, 0 sign |
+| the reviewer's own answers | 6 of 6 |
+| PP-OCRv5, whole page | 14 of 14 agree |
+| PP-OCRv6, on our boxes | 14 of 14 agree |
+| **control — what already ships** | **10 letter errors in 1,003 (1.0%)** |
+
+So the collapsed readings are measurably no worse than readings the pipeline
+already trusts. The 95% upper bound is 1.06%, not zero, which is why the 117
+genuinely different cells still go to a person and why every fact records BOTH
+boxes it agreed on.
+
+Applied: **ABO 42.6% → 45.6%, RH 37.6% → 40.7%.** On the reviewer's answers,
+ABO and Rh each go from 29 correct to **34 correct, still 0 wrong**.
+
+### What an adversarial workflow refused to let through
+
+Five investigators produced 28 proposals; independent verifiers, each told to
+refute by default and to measure rather than read, **rejected all 28**. That is
+the point of the exercise, and three of the rejections are worth keeping:
+
+* **anchoring the blood group on a bare `Blood` box** would gain 5 values and
+  create 2,425 new review items — 485 review items per value. 69.5% of those
+  boxes are the specimen line ("Whole Blood", "Peripheral Blood"); the cell it
+  opens is the SPECIMEN cell. Measured dead in all three reading directions.
+* **repairing a value's prefix toward the anchored locus** claimed +275 cells;
+  re-measured, **+16**, because 288 of the 304 are already resolved by passes
+  that read pixels rather than guessing glyphs.
+* **the sideways-page flag** claimed 611 documents / 4,888 cells; the flag
+  itself yields **0 new values**, since all 4,888 are already UNKNOWN. The
+  diagnosis survived, though, and independently: flagged pages have median
+  vertical-ruling share 0.784 against the corpus's 0.240, and median box aspect
+  2.25 against 0.39 — a 90° rotation predicts exactly that swap. **611
+  documents in this archive are photographed sideways**, and re-reading them
+  upright is real work with a real yield, which is not the same as the flag.
+
+The 993 that survived did so because its mechanism was attacked with
+constructed counterexamples and placebo controls and did not break; its
+rejection was for two misstated yield figures and a provenance defect, all
+three of which are fixed here.
+

@@ -312,3 +312,91 @@ def test_a_caption_with_the_opposite_Rh_still_conflicts() -> None:
     image = read_abo([FA_LABEL, box(0.48, "A+", w=0.05)], [])
     decision = reconcile_abo(image, caption_claims={("A", Rh.NEGATIVE)})
     assert decision.status is AboStatus.CONFLICT
+
+
+# --- one printed value detected twice --------------------------------------
+#
+# 1,113 documents reach the "more than one value in a single cell" branch, and
+# 996 of them are ONE printed token that two engines each drew a box around:
+# the Latin pass (onnxtr) and the Persian pass (easyocr) both see it, so the
+# cell holds two boxes over the same ink. Refusing those cost 993 documents a
+# blood group and 760 an Rh, for no safety: the two readings AGREE.
+#
+# Measured before shipping: 0 letter and 0 sign contradictions against 282
+# independently-written chat claims, 6/6 against the reviewer's own answers,
+# 14/14 against PP-OCRv5 whole-page and 14/14 against PP-OCRv6 — versus a 1.0%
+# letter-error control for the readings the pipeline already ships. The
+# genuinely different cells (117 of them) still go to a person.
+
+
+FA_VALUE = box(0.48, "A+", w=0.05)
+
+
+def overlapping(box: Box, text: str, *, shrink: float = 0.06) -> Box:
+    """A second engine's box over the same printed ink: nearly the same
+    rectangle, never exactly it."""
+    dx = (box.x1 - box.x0) * shrink
+    dy = (box.y1 - box.y0) * shrink
+    return Box(x0=box.x0 + dx, y0=box.y0 + dy, x1=box.x1 - dx, y1=box.y1 - dy, text=text)
+
+
+def test_two_engines_over_one_token_is_one_value() -> None:
+    """The gate that does all the work: the parsed values must be identical."""
+    latin = [FA_VALUE]
+    persian = [FA_LABEL, overlapping(FA_VALUE, FA_VALUE.text)]
+    reading = read_abo(persian, latin)
+    assert reading.status is AboStatus.RESOLVED
+    assert reading.group == "A"
+    assert reading.rh is Rh.POSITIVE
+
+
+def test_a_sign_disagreement_still_goes_to_a_person() -> None:
+    """`A+` and `A-` over one piece of ink is the failure that would send a
+    Rh-negative recipient into a positive pool. It must never collapse."""
+    latin = [FA_VALUE]
+    persian = [FA_LABEL, overlapping(FA_VALUE, "A-")]
+    reading = read_abo(persian, latin)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert "more than one blood-group value" in reading.reason
+
+
+def test_a_letter_disagreement_still_goes_to_a_person() -> None:
+    latin = [FA_VALUE]
+    persian = [FA_LABEL, overlapping(FA_VALUE, "B+")]
+    assert read_abo(persian, latin).status is AboStatus.REVIEW_REQUIRED
+
+
+def test_two_separate_tokens_that_happen_to_agree_do_not_collapse() -> None:
+    """Two subjects on one page can both be group A. Agreement is only evidence
+    when the boxes are the SAME INK; boxes that do not overlap are two values."""
+    second = Box(x0=0.62, y0=FA_VALUE.y0, x1=0.70, y1=FA_VALUE.y1, text="A+")
+    reading = read_abo([FA_LABEL, second], [FA_VALUE])
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+
+
+def test_one_engine_seeing_its_own_token_twice_is_not_corroboration() -> None:
+    """A detector emitting two boxes over one token is an artefact, not a
+    second opinion. Both boxes here come from the Latin pass."""
+    latin = [FA_VALUE, overlapping(FA_VALUE, FA_VALUE.text)]
+    assert read_abo([FA_LABEL], latin).status is AboStatus.REVIEW_REQUIRED
+
+
+def test_a_collapsed_cell_records_both_boxes_it_agreed_on() -> None:
+    """Provenance: a reviewer has to be able to see the agreement. Without the
+    boxes the page shows a RESOLVED medical value with nothing behind it."""
+    latin = [FA_VALUE]
+    persian = [FA_LABEL, overlapping(FA_VALUE, FA_VALUE.text)]
+    reading = read_abo(persian, latin)
+    assert reading.value_box is not None
+    assert len(reading.value_boxes) == 2
+    assert reading.raw_value == FA_VALUE.text
+
+
+def test_the_box_kept_is_the_one_whose_text_was_read() -> None:
+    """`raw_value` and `value_box` must describe the same box. They used to be
+    whichever engine the list happened to order first."""
+    latin = [FA_VALUE]
+    persian = [FA_LABEL, overlapping(FA_VALUE, FA_VALUE.text)]
+    reading = read_abo(persian, latin)
+    assert reading.value_box is not None
+    assert reading.raw_value == reading.value_box.text

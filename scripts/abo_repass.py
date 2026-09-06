@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Re-read ABO and Rh where a doubled cell was one printed token, not two values.
+
+`read_abo` refused any cell holding more than one parsing box, on the reasoning
+that two values in one cell means the cell is wrong. Measured, 1,113 documents
+reach that branch and **996 of them are one printed token that both engines
+boxed** — the Latin pass (onnxtr) and the Persian pass (easyocr) each drew a
+rectangle around the same ink, and their two readings AGREE. Refusing those cost
+993 documents a blood group and 760 an Rh for no safety at all.
+
+`documents/abo.py::_one_token_read_twice` now collapses that case behind three
+gates, of which the first does all the work: identical parsed values, boxes
+overlapping by `_MIN_IOU`, and two different engines. The genuinely different
+cells — 117 of them — still go to a person.
+
+Measured A/B over all 23,566 documents, the gate on against the gate off:
+**993 gained, 0 lost, 0 values changed on a document already resolved.**
+
+Against every independent check available:
+
+    282 chat claims          0 letter contradictions, 0 sign
+    the reviewer's answers   6 of 6 correct
+    PP-OCRv5 whole-page     14 of 14 agree
+    PP-OCRv6 on our boxes   14 of 14 agree
+    control: what already ships   10 letter errors in 1,003 (1.0%)
+
+So the collapsed readings are measurably no worse than the readings the
+pipeline already trusts. The 95% upper bound is 1.06%, not zero, which is why
+the disagreeing cells stay in review and why every fact here records BOTH boxes
+it agreed on, so a reviewer can see the agreement rather than take it on trust.
+
+This applies the reading to the extracted corpus rather than running
+`refresh_facts.py`, which rebuilds every fact and resets the later passes.
+
+**Comparison sheets.** 2 of the 993 are pages carrying two subjects. They are
+written, because `extract_facts` applies its comparison-sheet downgrade only to
+HLA loci and 64 such pages ALREADY ship a resolved ABO — refusing the 2 while
+leaving the 64 would be an inconsistency dressed as a safeguard. The exposure is
+66 documents and it is recorded as HA-018 for a person to decide, not silently
+changed here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+import time
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from kidneymatch.documents.abo import AboStatus, read_abo, reconcile_abo  # noqa: E402
+from kidneymatch.ocr.anchors import Box  # noqa: E402
+
+EV = "facts/v1"
+DOUBLED = "more than one blood-group value in a single cell"
+
+
+def boxes_of(geometry_json: str | None, texts_json: str | None) -> list[Box]:
+    geometry = json.loads(geometry_json or "[]")
+    texts = json.loads(texts_json or "[]")
+    return [Box(b[0], b[1], b[2], b[3], t) for b, t in zip(geometry, texts, strict=False)]
+
+
+def run(facts: Path, persian_db: Path, ocr_db: Path, *, dry_run: bool) -> Counter:
+    con = sqlite3.connect(facts)
+    tally: Counter[str] = Counter()
+    # Only the cells this change can affect: the ones refused as doubled, plus
+    # the ones a caption resolved while the image itself was refused as doubled.
+    work = {
+        sha: (status, value, source)
+        for sha, status, value, source in con.execute(
+            "SELECT sha256, status, value, source FROM fact WHERE extraction_version=? "
+            "AND field='ABO'",
+            (EV,),
+        )
+    }
+    persian = sqlite3.connect(f"file:{persian_db.as_posix()}?mode=ro", uri=True)
+    ocr = sqlite3.connect(f"file:{ocr_db.as_posix()}?mode=ro", uri=True)
+    P = {
+        sha: boxes_of(b, t)
+        for sha, b, t in persian.execute(
+            "SELECT sha256, boxes_json, texts_json FROM persian_result WHERE n_boxes>0"
+        )
+    }
+    L: dict[str, list[Box]] = {}
+    for sha, rel, b, t in ocr.execute(
+        "SELECT sha256, rel_path, boxes_json, texts_json FROM ocr_result WHERE n_boxes>0"
+    ):
+        if "_thumb" not in rel and sha not in L:
+            L[sha] = boxes_of(b, t)
+    persian.close()
+    ocr.close()
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+    for sha, (status, value, source) in sorted(work.items()):
+        reading = read_abo(P.get(sha, []), L.get(sha, []))
+        if reading.status is not AboStatus.RESOLVED:
+            continue
+        if len(reading.value_boxes) < 2:
+            continue  # not a collapsed cell; this pass has nothing to say
+        decision = reconcile_abo(reading)
+        if decision.status is not AboStatus.RESOLVED:
+            continue
+        if status == "RESOLVED":
+            if (value or "") != (decision.group or ""):
+                tally["!! a resolved value would CHANGE; refused"] += 1
+                continue
+            tally[f"already resolved, now read from the form ({source})"] += 1
+        else:
+            tally["newly resolved from a doubled cell"] += 1
+        if dry_run:
+            continue
+        con.execute(
+            "UPDATE fact SET status='RESOLVED', value=?, raw=?, reason=?, source=?, "
+            "repaired=?, anchor_box=?, value_boxes=?, created_utc=? "
+            "WHERE sha256=? AND field='ABO' AND extraction_version=?",
+            (
+                decision.group,
+                reading.raw_value,
+                "one printed value that both engines boxed, and they agree",
+                decision.source.value,
+                int(reading.repaired),
+                json.dumps(
+                    [
+                        reading.anchor_box.x0,
+                        reading.anchor_box.y0,
+                        reading.anchor_box.x1,
+                        reading.anchor_box.y1,
+                    ]
+                )
+                if reading.anchor_box
+                else None,
+                json.dumps([[b.x0, b.y0, b.x1, b.y1] for b in reading.value_boxes]),
+                now,
+                sha,
+                EV,
+            ),
+        )
+        con.execute(
+            "UPDATE fact SET status='RESOLVED', value=?, reason=?, source=?, created_utc=? "
+            "WHERE sha256=? AND field='RH' AND extraction_version=? AND status!='RESOLVED'",
+            (
+                decision.rh.value,
+                "the Rh sign is printed in the same token as the group",
+                decision.source.value,
+                now,
+                sha,
+                EV,
+            ),
+        )
+    con.commit()
+    con.close()
+    return tally
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
+    parser.add_argument("--persian", type=Path, default=ROOT / "data/derived/persian_pass.sqlite")
+    parser.add_argument("--ocr", type=Path, default=ROOT / "data/derived/ocr_pass.sqlite")
+    parser.add_argument("--dry-run", action="store_true", help="count, change nothing")
+    args = parser.parse_args()
+    tally = run(args.facts, args.persian, args.ocr, dry_run=args.dry_run)
+    print(f"{'would re-read' if args.dry_run else 're-read'} the doubled blood-group cells")
+    for name, count in sorted(tally.items(), key=lambda kv: -kv[1]):
+        if count:
+            print(f"  {name[:64]:<66}{count:>7,}")
+    print(
+        "Only cells where both engines boxed ONE token and agreed. A cell holding two "
+        "genuinely different values still goes to a person, and every fact records both boxes."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

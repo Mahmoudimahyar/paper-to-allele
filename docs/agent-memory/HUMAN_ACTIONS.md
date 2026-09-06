@@ -290,3 +290,31 @@ yet; the review pack's `mid_res` stratum measures it (HA-008).
 - **Blocking now?** Yes. Nothing extracted may be published to Gold until it
   passes, and no precision figure may be quoted before it.
 
+## HA-018 — a blood group on a page carrying two people
+
+- **Status:** OPEN. Not blocking extraction; blocking any use of these 66 groups
+  in matching.
+- **What was found:** `extract_facts` downgrades a comparison sheet — a page
+  printing two subjects — for the HLA loci only. ABO and Rh are not downgraded,
+  so **64 comparison sheets already ship a RESOLVED blood group**, and the
+  doubled-cell collapse (`scripts/abo_repass.py`) adds 2 more. The document gets
+  one blood group; the page describes two people.
+- **Why an agent must not decide it:** refusing the 2 while leaving the 64 would
+  be an inconsistency dressed as a safeguard, and withdrawing all 66 discards
+  readings that may well be correct for the subject the report is about. Which
+  subject a comparison sheet's blood-group field belongs to is a question about
+  these laboratories' forms, not about this code.
+- **What to do:** open a handful of the 66 and say which of these holds:
+  1. the blood-group field on a comparison sheet always describes the patient
+     (then keep all 66, and record why);
+  2. it may describe either subject (then all 66 become REVIEW_REQUIRED, and
+     the comparison-sheet downgrade extends to ABO and Rh);
+  3. it depends on the form family (then the rule is per-family, and the
+     families need naming).
+- **Find them:** `SELECT f.sha256 FROM fact f JOIN document d USING (sha256)
+  WHERE f.field='ABO' AND f.status='RESOLVED' AND d.comparison_sheet=1 AND
+  f.extraction_version='facts/v1'`
+- **Secret?** No. The pages are PHI and stay in the local, gitignored store.
+- **Blocking now?** Not extraction. Yes for MATCH-ABO-001: a blood group that
+  may belong to the other person on the page must not gate a match.
+

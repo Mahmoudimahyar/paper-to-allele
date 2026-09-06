@@ -643,7 +643,10 @@ def extract(
         rule_id="abo/anchored-cell",
         source=abo_decision.source.value,
         anchor_box=_box(abo_reading.anchor_box),
-        value_boxes=_boxes([abo_reading.value_box] if abo_reading.value_box else []),
+        value_boxes=_boxes(
+            list(abo_reading.value_boxes)
+            or ([abo_reading.value_box] if abo_reading.value_box else [])
+        ),
     )
     add(
         "RH",

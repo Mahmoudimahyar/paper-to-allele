@@ -86,6 +86,9 @@ _LABEL_LATIN = re.compile(
 _LABEL_GROUP_WORD = re.compile(r"(?i)^gr[o0]up(?P<punctuation>\s*[:;.\-/&]+)?$")
 _BLOOD_WORD = re.compile(r"(?i)^b[l1i][o0]{1,2}d[:;.\-/&]*$")
 
+# How much two boxes must overlap to be one printed token rather than two
+# values. Measured on the 996 collapsible cells, every pair clears 0.5 but one.
+_MIN_IOU = 0.5
 _MAX_LABEL_CHARS = 25
 _MAX_GAP = 10.0  # anchor heights; measured p99 of the real gap is 9.36
 _OVERLAP = 0.35
@@ -142,6 +145,9 @@ class AboReading:
     source: AboSource = AboSource.NONE
     anchor_box: Box | None = None
     value_box: Box | None = None
+    # Every box the value was read from. Normally one; two when a single
+    # printed token was detected by both engines and they agreed.
+    value_boxes: tuple[Box, ...] = ()
     raw_value: str | None = None
     repaired: bool = False
     reason: str = ""
@@ -226,9 +232,66 @@ def _cell(anchor: Box, boxes: list[Box], rightwards: bool) -> list[Box]:
     return out
 
 
+def _iou(a: Box, b: Box) -> float:
+    """How much two boxes overlap, as intersection over union."""
+    x0, y0 = max(a.x0, b.x0), max(a.y0, b.y0)
+    x1, y1 = min(a.x1, b.x1), min(a.y1, b.y1)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    overlap = (x1 - x0) * (y1 - y0)
+    union = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - overlap
+    return overlap / union if union > 0 else 0.0
+
+
+def _one_token_read_twice(
+    values: list[tuple[tuple[str, Rh, bool], Box, str]], persian: set[int]
+) -> bool:
+    """Is this cell ONE printed value that both engines boxed, rather than two?
+
+    1,113 documents reach the multi-value branch and 996 of them are this: the
+    Latin pass and the Persian pass each drew a rectangle around the same ink,
+    so the cell holds two boxes and one value. Refusing them cost 993 documents
+    a blood group and 760 an Rh for no safety, because the two readings agree.
+
+    Three gates, and the first does all the work:
+
+    1. **the parsed values must be identical.** Measured, this rejects 117 of
+       the 1,113 — including every sign disagreement, which is the dangerous
+       one: an `A-` read as `A+` would put a Rh-negative recipient in a
+       positive pool. Same-ink cross-engine disagreement runs at 10.5%, and
+       this gate catches all of it;
+    2. **the boxes must be the same ink**, `_MIN_IOU` overlap against the
+       first. Two agreeing values in different places are two values — a page
+       with two subjects can print group A twice, and that is not corroboration
+       about either of them;
+    3. **the boxes must come from two different engines.** One detector
+       emitting two rectangles over one token is an artefact, not a second
+       opinion.
+
+    Conditional on all three, measured before shipping: 0 letter and 0 sign
+    contradictions against 282 independently written chat claims, 6/6 against
+    the reviewer's own answers, 14/14 against PP-OCRv5 read whole-page and
+    14/14 against PP-OCRv6. The control for what the pipeline ALREADY ships is
+    10 letter errors in 1,003 (1.0%), so the collapsed readings are measurably
+    no worse than the ones already trusted. The 95% upper bound is 1.06%, not
+    zero, which is why the genuinely different cells still go to a person.
+    """
+    if len({(parsed[0], parsed[1]) for parsed, _, _ in values}) > 1:
+        return False
+    first = values[0][1]
+    if any(_iou(first, box) < _MIN_IOU for _, box, _ in values[1:]):
+        return False
+    engines = {id(box) in persian for _, box, _ in values}
+    return len(engines) > 1
+
+
 def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
     """Read the blood group from its printed cell, or abstain."""
     everything = list(persian_boxes) + list(latin_boxes)
+    # Which engine drew each box, by identity: the Persian pass (easyocr) and
+    # the Latin pass (onnxtr) are independent in vendor, detector and
+    # recognizer, which is what makes their agreement worth anything.
+    from_persian = {id(b) for b in persian_boxes}
     anchors = [(b, False) for b in persian_boxes if _is_persian_label(b.text)]
     anchors += [
         (b, True)
@@ -245,7 +308,7 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
         else AboSource.LABORATORY_PRINTED
     )
 
-    found: list[tuple[str, Rh, bool, Box, Box, str]] = []
+    found: list[tuple[str, Rh, bool, Box, Box, str, tuple[Box, ...]]] = []
     partial = ""
     for anchor, rightwards in anchors:
         cell = _cell(anchor, everything, rightwards)
@@ -255,7 +318,7 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
             parsed = _parse(token)
             if parsed:
                 values.append((parsed, b, token))
-        if len(values) > 1:
+        if len(values) > 1 and not _one_token_read_twice(values, from_persian):
             return AboReading(
                 AboStatus.REVIEW_REQUIRED,
                 source=source,
@@ -264,7 +327,9 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
             )
         if values:
             (group, rh, repaired), vbox, raw = values[0]
-            found.append((group, rh, repaired, anchor, vbox, raw))
+            # Every box that agreed travels with the fact, so a reviewer can
+            # see the agreement rather than take it on trust.
+            found.append((group, rh, repaired, anchor, vbox, raw, tuple(b for _, b, _ in values)))
             continue
         texts = [(b.text or "").strip() for b in cell]
         if any(_LETTER_ONLY.match(t) for t in texts) and any(_SIGN_ONLY.match(t) for t in texts):
@@ -276,13 +341,13 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
         elif any(_SIGN_ONLY.match(t) for t in texts):
             partial = partial or "an Rh sign with no group letter in its cell"
 
-    distinct = {(g, rh) for g, rh, _, _, _, _ in found}
+    distinct = {(g, rh) for g, rh, _, _, _, _, _ in found}
     if len(distinct) > 1:
         return AboReading(
             AboStatus.REVIEW_REQUIRED, source=source, reason="two cells report different groups"
         )
     if found:
-        group, rh, repaired, anchor, vbox, raw = found[0]
+        group, rh, repaired, anchor, vbox, raw, boxes = found[0]
         return AboReading(
             AboStatus.RESOLVED,
             group=group,
@@ -290,6 +355,7 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
             source=source,
             anchor_box=anchor,
             value_box=vbox,
+            value_boxes=boxes,
             raw_value=raw,
             repaired=repaired,
         )
