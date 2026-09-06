@@ -32,12 +32,16 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **The printed table is read as a grid (`ocr/lattice.py`):** rulings place an
   unreadable label (**+2,272**) and the second DRB3/4/5 slot, ink-certified
   ABSENT when paper (**4,540 genes**). NOT_TESTED is HA-012's to answer.
-- **Accuracy (KI-012), 957 labels over 3 rounds (s16):** HLA **511 correct,
-  365 abstained, 59 missed, 11 partial, 11 contradicted — 86.3%** of the 592
-  cells a person read. Whole-page, of comparable answers: **ROLE 98.5% (67/1),
-  ABO 100% (34/0), RH 100% (34/0)**. PRECISION IS NOT THE PROBLEM — ABO/RH miss
-  29 each, and the RH misses are the SAME documents as the ABO ones.
-  `scripts/label_score.py` scores any number of exports against LIVE facts.
+- **Accuracy (KI-012), 1,342 labels over 4 rounds (s18). LEAD WITH RECALL,
+  NOT PRECISION** — the reviewer experiences how often the answer was THERE.
+  HLA: recall **85.1%** of cells a person read (692/813), precision 98.0%, 14
+  wrong. ROLE recall 84.4%. **ABO recall 47.9%, RH 46.9%** (precision 100%;
+  50/51 misses). Round four, the hard one: HLA 81.9%, ABO 36%.
+- **The loss is segmented (s18):** comparison sheets 0% (13 misses), no-family
+  pages 64% (32 misses), ABO cell window 21 misses (direction/distance/overlap
+  — geometry the HLA rules have and `_cell` lacks). 7 of 8 allele
+  contradictions are GLYPH-REPAIRED; **repaired+SPLIT is wrong 21%** on 1,467
+  corpus cells vs 0.4% for the 44,066 clean+UNANIMOUS core.
 - **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — under
   `notes`, printed by `label_score.py` (s9).
 - **Rows are read along the page's own slope** (`ocr/rows.py`): the DOMINANT
@@ -45,10 +49,9 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   page and thrown away by thresholds meant for rotating pixels. **+209**.
 - **The whole page is read too** (`page_ocr_pass.py`) and our boxes again by
   PP-OCRv6 (`rerecognise_pass.py`); strictly additive.
-- **REFUSALS AND MISSES ARE DIFFERENT POPULATIONS** (s11, s17). 84.3% of
-  REFUSED cells are blank paper — do not chase recognition. But of the 59
-  MISSED cells, 88.4% have their digits already in the stored OCR: read but
-  unbound. Opposite fix.
+- **REFUSALS AND MISSES ARE DIFFERENT POPULATIONS** (s11, s17): refused cells
+  are blank paper; MISSED cells have their digits in the stored OCR 88% of the
+  time — read but unbound. Opposite fix.
 - **611 pages were photographed SIDEWAYS** (s17, `upright_pass.py`): 0 of them
   anchored any locus. Turned, 425 anchor and **801 cells resolve**. The metric
   is box height>width IN PIXELS — normalised coords make it meaningless.
@@ -58,20 +61,17 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **A pack rebuild pins labelled documents (`--keep-labelled`)** or the sample
   reshuffles: 11 of 220 survived the first rebuild.
 - **Google Vision measured, NOT adopted (s8):** ours 62 of 160, Vision 28.
-- **The chat is a source of record.** `caption_pass.py` reads ABO/Rh/Role from
-  EVERY message posted with a document. Round three VALIDATED it: caption ABO is
-  14 correct, 0 contradictions (s16); the s15 worry was the NOT_PRINTED question
-  mismatch, not an error.
+- **The chat is a source of record** (`caption_pass.py`, s13/s16): caption ABO
+  validated at 14 correct, 0 wrong; the s15 worry was a question mismatch.
 - **One printed value can be detected twice** (`_one_token_read_twice`, s16):
   both engines box the same ink and agree. **+993 documents, 0 lost, 0 value
   changes**; ABO 45.6%, RH 40.7%. Gate 1 (identical values) does all the work.
 - **A bare role word IS read** (`FORM_FIELD_BARE`, `role_repass.py`, s15):
   refusing it double-charged evidence already gated above. **ROLE 78.1%**;
   measured 8 right, 1 wrong on the labels.
-- **A stratum reporting zero looks exactly like a signal that does not occur.**
-  Two did and neither was empty: a wrong column name swallowed by a blanket
-  `except`, and a rare stratum pooled away by a common one. Pools are now by
-  MEASURED rarity; read corpus-wide counts when adding a stratum.
+- **A stratum reporting zero looks like a signal that does not occur.** It
+  happened three times (column name, rare pooled away, common pooled away).
+  The summary now prints what each stratum is CARRIED by.
 - **A value box unlike its page's others is wrong 5x as often** (25% vs 5%,
   `ocr/boxsize.py`); n=8, so it MARKS for review and gates nothing yet.
 - **A locus can come from the allele's printed prefix** (`prefix_bind.py`, s12)

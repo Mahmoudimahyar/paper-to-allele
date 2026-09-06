@@ -859,3 +859,136 @@ to review rather than being best-guessed, and 25% is ambiguous by any reading �
 but a 3:1 trade is a judgement about how this archive will be used, not a
 measurement. It is recorded here for the operator and NOT applied.
 
+## s18 — 1,342 labels: the honest accuracy, and the loss segmented
+
+The reviewer, after round four: "You've claimed that you have more than 90%
+accuracy. However these new annotations didn't reflect that."
+
+They were right about the emphasis. The number led with was PRECISION — of what
+the pipeline asserted, how much was right — and that holds on every round. The
+number a reviewer experiences is how often the pipeline HAD the answer, and on
+blood group it does not have it more often than it does. Both are reported here
+and the second is put first.
+
+Four rounds, **1,342 HLA cell labels** and **120 whole-page answers**, scored
+against live facts. Round four was drawn deliberately from the strata the
+pipeline is least sure of.
+
+### HLA cells
+
+| | all four rounds | round four alone |
+|---|---|---|
+| correct | 692 | 181 |
+| correctly abstained | 529 | 164 |
+| missed | 88 | 29 |
+| partial | 19 | 8 |
+| **wrong** | **14** | **3** |
+| **recall on cells a person read** | **85.1%** | **81.9%** |
+| **precision of what was asserted** | **98.0%** | **98.4%** |
+
+Per round: 90.3% / 85.1% / 85.2% / 81.9% recall, with 9 / 0 / 2 / 3 wrong. Recall
+falls as the rounds get harder; precision RISES. The pipeline abstains more on
+hard pages, and it is right when it speaks.
+
+### Whole-page fields
+
+| field | correct | wrong | **missed** | precision | **recall** |
+|---|---|---|---|---|---|
+| ROLE | 92 | 2 | 17 | 97.9% | 84.4% |
+| ABO | 46 | 0 | **50** | 100% | **47.9%** |
+| RH | 45 | 0 | **51** | 100% | **46.9%** |
+
+On round four alone ABO recall is **36%** (12 of 33) and Rh **33%**. That is
+the number the reviewer felt, and it is the right number to feel.
+
+### The loss, segmented
+
+**Where the 88 HLA misses are.** Three strata run at exactly zero: comparison
+sheets (13 read, 0 correct), pages that anchored no label (18, 0) and pages
+that anchored labels and refused every cell (7, 0). Pages with **no template
+family run at 64.1%** (32 misses on 103 read) against 87.6% for FORM#0.
+
+By stored reason: no anchor 28, no grouped DRB3/4/5 header 12, too many
+candidates 8, second gene column unread 8, candidate does not parse 7, header
+with no gene token 6, no box in the cell 4, S-read-as-5 3, inadmissible family
+3, owned by another locus 3, beyond the chain 2, three anchors 1.
+
+The 28 "no anchor" misses, by page: **10 on comparison sheets** (0 anchors, 2-4
+allele tokens each — the page prints alleles and no labels), **10 on pages with
+no template family**, 5 on FORM#0 pages that DID anchor 4-6 labels (so the
+anchor exists and the cell rule fails), 2 on a sideways page that turned
+upright but still bound nothing, and 3 on a page with no allele tokens at all.
+
+**The 19 partials are all declared.** Every one carries `second_allele=UNREAD`:
+11 from the two-engine re-read, 5 from prefix binding, 3 from anchor-row. The
+pipeline said it read one allele. It did not silently drop the second.
+
+**The 14 wrong values, and the one segment that holds them.** 6 are DRB3/4/5
+presence calls (4 from the two add-on sources, s17's stratum). The other 8 are
+allele values, and **7 of the 8 went through glyph repair**. Splitting every
+resolved value cell by repair and stability:
+
+| segment | labelled | wrong | error | corpus cells |
+|---|---|---|---|---|
+| clean / UNANIMOUS | 260 | 1 | **0.4%** | 44,066 |
+| repaired / UNANIMOUS | 79 | 2 | 2.5% | 9,655 |
+| repaired / NOT_CHECKED | 44 | 0 | 0.0% | 8,771 |
+| clean / SPLIT | 21 | 0 | 0.0% | 2,034 |
+| **repaired / SPLIT** | **19** | **4** | **21.1%** | **1,467** |
+| repaired / DIGITS_LOST | 19 | 1 | 5.3% | 671 |
+
+A value that needed a glyph repair AND whose reading changes under one-pixel
+jitter is wrong one time in five. It holds 4 of the 8 allele contradictions on
+1,467 corpus cells, against a trustworthy core of 44,066 cells at 0.4%. The
+gate is obvious and it is not applied here, because 15 correct readings would
+go to review for every 4 wrong ones withdrawn — the same 3:1 trade as s17, and
+the same decision for the operator.
+
+**Where the 50 ABO misses are.** By stored reason: no label 29, label found but
+cell unreadable 18, sign without letter 2, doubled 1. By what the page holds:
+
+| the page | misses |
+|---|---|
+| a strict label IS present; the cell rule fails | **21** |
+| the label is there in a spelling the reader misses | 9 |
+| no label anywhere, but a group-shaped token exists | 7 |
+| no Persian OCR ran on this page, no Latin label | 6 |
+| no label in either script, no group token | 6 |
+| the page is sideways | 1 |
+
+And inside the 21 where the label was found: 7 pages carry NO group-shaped
+token at all (the reviewer read a value the recognizer never produced), 4 carry
+only a bare letter with no Rh sign, **3 have the value on the wrong side of
+the label**, 4 have it beyond `_MAX_GAP` (12h, 22h, 23h), 2 have it inside the
+gap with zero vertical overlap, 1 was refused as doubled. The nearest token
+sits at median 5 anchor heights but with median vertical overlap 0.00 — the
+value is beside the label and the window does not reach it.
+
+**The 17 ROLE misses are not a reader defect.** 6 pages have no Persian OCR at
+all. Of the 11 that do, none prints a role word the reader failed on; 5 have
+chat that only REQUESTS a role (correctly refused), 6 have chat that says
+nothing. The recall ceiling here is the Persian pass backlog, not the patterns.
+
+### The prioritised list
+
+Ranked by measured cells, with what each needs:
+
+1. **ABO cell window — 21 labelled misses, ~2,736 corpus.** Direction (3),
+   distance (4) and vertical overlap (2) are geometry the HLA rules already
+   handle with a page slope and a chain walk; `_cell` has neither. The 7 with
+   no token and the 4 bare letters are not window problems.
+2. **Comparison sheets — 13 HLA misses at 0%, 450 corpus documents, 4,946
+   unresolved cells.** The pages print alleles under column headers with no
+   row labels. Needs column-aware subject assignment; refused outright today.
+3. **No template family — 32 HLA misses at 64%.** 20 of 122 labelled documents
+   and a third of the loss. Needs new families or a better generic rule.
+4. **Persian OCR backlog — 1,566 documents never read in Persian.** 6 of 17
+   role misses and 6 of 50 ABO misses have no Persian OCR at all.
+5. **`repaired / SPLIT` — 4 of 8 allele contradictions, 1,467 corpus cells at
+   21%.** Operator decision: 3:1 correct-to-wrong deferred to review.
+6. **DRBX add-on on a damaged header — 4 of 6 presence contradictions, 1,461
+   corpus cells at 25%.** Same shape, same decision (s17).
+7. **ABO label spellings — 9 misses.** s16's Tier-1 pair route, verified with
+   placebo controls, +194 documents.
+8. **DRB3/4/5 no grouped header — 12 misses.** HA-011.
+
