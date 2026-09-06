@@ -73,6 +73,16 @@ _SIGN_ONLY = re.compile(r"^[+\-]$")
 _DISCLAIMER = re.compile(r"براساس|بر اساس|شرح|مسئول|اطلاعات|آزمایشگاه|ازمایشگاه")
 _KHOON = re.compile(r"^[خح]و?[نی]{1,2}ی?$")
 _GROOH = re.compile(r"^[گک]رو[هه]$")
+# The recognizer's damaged spellings of the same two words. Neither may anchor
+# ALONE — `کرده` ("done") matches the wide group pattern and appears in prose on
+# 364 of these pages. What licenses them is ADJACENCY: the group word
+# immediately followed by the blood word, inside one box, reconstructs the
+# printed phrase `گروه خونی`. Measured (CV_RESEARCH s16): 194 net new blood
+# groups; 0 contradictions against 80 independent chat claims; 15/15 identical
+# to the strict reading on pages both anchor; a size-matched non-label decoy
+# used as the anchor returns a value on 1 of 275.
+_GROOH_WIDE = re.compile(r"^[گکذ]ر[ودرء]?[هءا0]$")
+_KHOON_WIDE = re.compile(r"^[خحغ][ودر]?[نیلفتثز]{1,2}[یرم]?$")
 
 # `groups?` used to be accepted bare. The methods footnote on these forms reads
 # "... alleles or groups of alleles ... PCR-SSP ...", which anchored a cell on
@@ -104,7 +114,14 @@ def _is_persian_label(text: str) -> bool:
     words = [w for w in re.split(r"[\s:;.,()،؛]+", normalised) if w]
     if any(_KHOON.match(w) for w in words):
         return True
-    return any(_GROOH.match(w) for w in words) and any(w[:1] in "خح" for w in words)
+    if any(_GROOH.match(w) for w in words) and any(w[:1] in "خح" for w in words):
+        return True
+    # The pair route: a damaged group word directly followed by a damaged blood
+    # word. Either half alone is refused above and stays refused here.
+    return any(
+        (_GROOH.match(a) or _GROOH_WIDE.match(a)) and _KHOON_WIDE.match(b)
+        for a, b in zip(words, words[1:], strict=False)
+    )
 
 
 def _has_blood_word(text: str) -> bool:

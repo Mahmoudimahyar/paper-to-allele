@@ -400,3 +400,40 @@ def test_the_box_kept_is_the_one_whose_text_was_read() -> None:
     reading = read_abo(persian, latin)
     assert reading.value_box is not None
     assert reading.raw_value == reading.value_box.text
+
+
+# --- the label in the spellings the recognizer actually produces -------------
+#
+# 9 of the reviewer's 50 ABO misses have the label present in a spelling the
+# strict patterns miss. The pair route (s16 Tier 1) reads a damaged group word
+# IMMEDIATELY followed by a damaged blood word; adjacency is the whole gate.
+
+
+def test_a_damaged_pair_in_one_box_is_the_label() -> None:
+    """`کروا خوتی`: neither half matches the strict pattern, both match the
+    wide ones, and they are adjacent — the printed phrase, misread."""
+    reading = read_abo([box(0.60, "کروا خوتی :"), box(0.48, "A+", w=0.05)], [])
+    assert reading.status is AboStatus.RESOLVED
+    assert reading.group == "A"
+
+
+def test_either_damaged_half_alone_is_not_a_label() -> None:
+    """A lone damaged word anchors nothing: `کرده` ("done") matches the wide
+    group pattern and sits in prose on 364 of these pages."""
+    for text in ("کروا", "خوتی", "کرده"):
+        reading = read_abo([box(0.60, text), box(0.48, "A+", w=0.05)], [])
+        assert reading.status is AboStatus.UNKNOWN, text
+
+
+def test_the_verb_followed_by_prose_is_not_a_label() -> None:
+    """`کرده است` — "has done" — is the collision the wide pattern invites, and
+    the second word is not blood-shaped, so the pair route refuses it."""
+    reading = read_abo([box(0.60, "کرده است"), box(0.48, "A+", w=0.05)], [])
+    assert reading.status is AboStatus.UNKNOWN
+
+
+def test_the_pair_route_still_refuses_the_disclaimer_sentence() -> None:
+    """The letterhead's disclaimer contains the phrase and is prose; the length
+    and disclaimer gates run before the pair route and still hold."""
+    reading = read_abo([box(0.60, DISCLAIMER_FA, w=0.35), box(0.20, "A+", w=0.05)], [])
+    assert reading.status is AboStatus.UNKNOWN
