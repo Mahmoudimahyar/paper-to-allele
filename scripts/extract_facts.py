@@ -82,6 +82,7 @@ from kidneymatch.ocr.glyphs import canonical_locus_label  # noqa: E402
 from kidneymatch.ocr.lattice import Lattice  # noqa: E402
 from kidneymatch.ocr.lattice import lattice_for as build_lattice  # noqa: E402
 from kidneymatch.ocr.lattice import load_rulings as load_stored_rulings  # noqa: E402
+from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 from kidneymatch.ocr.store import read_corpus  # noqa: E402
 from kidneymatch.ocr.templates import (  # noqa: E402
@@ -226,6 +227,28 @@ def lattice_for(
     document, rulings: dict[str, tuple[int, int, str, str]], frame: PageFrame | None
 ) -> Lattice | None:
     return build_lattice(document.sha256, rulings, frame)
+
+
+def row_slope_for(
+    document, rulings: dict[str, tuple[int, int, str, str]], frame: PageFrame | None
+) -> float:
+    """The slope of this page's printed rows, in the frame the boxes live in.
+
+    Read from the same stored rulings the lattice is built from, and rectified
+    by the same frame, so what comes back on a rotated page is the RESIDUAL
+    slope the rotation did not remove — which under perspective is not zero.
+    Zero whenever the page printed no measurable grid, which is the row test
+    exactly as it was (`ocr/rows.py`).
+    """
+    stored = rulings.get(document.sha256)
+    if stored is None:
+        return 0.0
+    width, height, h_json, _ = stored
+    try:
+        segments = json.loads(h_json or "[]")
+    except ValueError:
+        return 0.0
+    return measure_row_slope(segments, width, height, frame) or 0.0
 
 
 # A label the recognizer could not read is placed by the form's template only
@@ -405,6 +428,7 @@ def extract(
     testing_policy: LocusTestingPolicy | None = None,
     frame: PageFrame | None = None,
     lattice: Lattice | None = None,
+    row_slope: float = 0.0,
 ) -> tuple[list[tuple], dict]:
     """Every fact this document yields. Pure: no I/O, so it is testable."""
     latin = document.boxes
@@ -430,6 +454,11 @@ def extract(
         else DEFAULT_RULE
     )
     rule_id = f"family/{family}" if rule is FAMILY_RULE else "ADR0008/default-row-rule"
+    # The rows of this page, along the slope this page prints them at. On a
+    # level page, or one whose rulings could not be measured, this is the rule
+    # unchanged.
+    if row_slope:
+        rule = replace(rule, row_slope=row_slope)
 
     def add(field, status, **kwargs):
         rows.append(
@@ -679,6 +708,7 @@ def run(
 
     for index, document in enumerate(work, 1):
         now = datetime.now(UTC).isoformat(timespec="seconds")
+        frame = frame_for(document, geometry)
         rows, summary = extract(
             document,
             persian.get(document.sha256, []),
@@ -688,8 +718,9 @@ def run(
             prefixed,
             caption_roles.get(document.sha256, Role.UNKNOWN),
             testing_policy,
-            frame_for(document, geometry),
-            lattice_for(document, rulings, frame_for(document, geometry)),
+            frame,
+            lattice_for(document, rulings, frame),
+            row_slope_for(document, rulings, frame),
         )
         facts.extend(rows)
         documents.append(

@@ -29,6 +29,11 @@ time. Four gates now stand between a candidate box and a RESOLVED value:
    label belongs to that label.
 4. **Cardinality** — a locus has at most two alleles.
 
+**The rows are read along the page's own rulings.** `ValueRule.row_slope`
+carries the slope `ocr/rows.py` measured, and the alignment test compares a box
+where its printed row would have put it on a level page. Nothing is moved: this
+is how boxes are grouped, not how pixels are stored.
+
 Anchors are found by `glyphs.canonical_locus_label`, which repairs the
 recognizer's measured final-character confusions (`DRBI` is read 3.5x more often
 than `DRB1`) and refuses interior damage. Where a form prints the Class I labels
@@ -225,6 +230,17 @@ class ValueRule:
     # label sees the same boxes the band does; a tall anchor gets no band.
     fallback_band: float | None = None
 
+    # How far a printed row falls per unit of page width, in normalised
+    # coordinates: the slope of the page's own rulings, measured by
+    # `ocr/rows.py` and set per document. The row test compares a value's `y`
+    # to its label's, which is only the same question when the page is level;
+    # a photograph tilted three degrees puts a value half a width away about
+    # three label-heights off its label, and the locus goes unread. Grouping
+    # boxes into rows is not rotating a page, so this applies wherever a slope
+    # was measured, including the pages the geometry pass declines to rotate.
+    # Zero is the behaviour of before.
+    row_slope: float = 0.0
+
 
 @dataclass(frozen=True, slots=True)
 class LocusResolution:
@@ -360,12 +376,31 @@ def _anchor_is_tall(anchor: Box, boxes: list[Box]) -> bool:
     return anchor.height > TALL_ANCHOR_RATIO * heights[len(heights) // 2]
 
 
+def _row_lift(anchor: Box, box: Box, rule: ValueRule) -> float:
+    """How far this box's line has fallen by the time it reaches the box.
+
+    Zero on a level page and on any page whose rulings were not measurable, so
+    the comparison below is the one it always was unless the page says
+    otherwise.
+    """
+    if not rule.row_slope or rule.direction != "right":
+        return 0.0
+    return rule.row_slope * (box.centre_x - anchor.centre_x)
+
+
 def _aligned(anchor: Box, box: Box, rule: ValueRule) -> bool:
-    """Do these two boxes sit on the same printed line (or column)?"""
+    """Do these two boxes sit on the same printed line (or column)?
+
+    On a tilted page "the same line" is not "the same `y`". The box is compared
+    where its own printed row would have put it had the page been level, which
+    is its `y` less the fall of the row between the two boxes.
+    """
     if rule.direction == "right":
-        overlap = min(anchor.y1, box.y1) - max(anchor.y0, box.y0)
-        shorter = min(anchor.height, max(box.y1 - box.y0, 1e-6))
-        centres = abs(box.centre_y - anchor.centre_y)
+        lift = _row_lift(anchor, box, rule)
+        top, bottom = box.y0 - lift, box.y1 - lift
+        overlap = min(anchor.y1, bottom) - max(anchor.y0, top)
+        shorter = min(anchor.height, max(bottom - top, 1e-6))
+        centres = abs(box.centre_y - lift - anchor.centre_y)
     else:
         overlap = min(anchor.x1, box.x1) - max(anchor.x0, box.x0)
         shorter = min(max(anchor.x1 - anchor.x0, 1e-6), max(box.x1 - box.x0, 1e-6))
@@ -428,7 +463,7 @@ def _owned_by_another_anchor(
     allele belongs to.
     """
     ours = _distance(anchor, candidate, rule.direction)
-    ours_offset = abs(candidate.centre_y - anchor.centre_y)
+    ours_offset = abs(candidate.centre_y - _row_lift(anchor, candidate, rule) - anchor.centre_y)
     for locus, other in _all_locus_anchors(boxes):
         if other is anchor:
             continue
@@ -456,7 +491,8 @@ def _owned_by_another_anchor(
         # its layout: on the reviewer's labels two values were handed to the
         # locus printed above them on exactly this clause.
         margin = OWNERSHIP_Y_MARGIN * max(anchor.height, other.height)
-        if abs(candidate.centre_y - other.centre_y) < ours_offset - margin:
+        theirs_offset = abs(candidate.centre_y - _row_lift(other, candidate, rule) - other.centre_y)
+        if theirs_offset < ours_offset - margin:
             return locus
     return None
 
