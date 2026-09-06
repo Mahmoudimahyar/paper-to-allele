@@ -44,43 +44,43 @@ labels entirely.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci).
 - **Accuracy is unvalidated (KI-012); the binding constraint.**
   The reviewer's 220-cell export scored **84 correct** as the pack showed it and
-  **113 correct / 86 correct abstentions / 10 missed / 2 partial / 9
+  **118 correct / 86 correct abstentions / 6 missed / 1 partial / 9
   contradicted** now. All nine contradictions are HA-014, cells marked
   NOT_PRINTED where the page evidence says otherwise; the page had shown no crop
   for 50 of the 220. The blind golden corpus waits on a person.
-- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — they are
-  in the export under `notes`, not in `pack_score.py`'s report
-  (`CV_RESEARCH` s9). Seven were written; three named tilt and one named a
-  column-header layout, and each was exactly right.
+- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — in the
+  export under `notes`, not in `pack_score.py`'s report (`CV_RESEARCH` s9).
+  Three named tilt, one a column-header layout; each was exactly right.
 - **Rows are read along the slope the page prints them at** (`ocr/rows.py`,
-  `ValueRule.row_slope`). The slope was already measured on every page the
-  reviewer called tilted and thrown away by `MAX_MAD_DEG` (scatter is
-  perspective, not a second grid) or `MIN_FRAME_TILT_DEG` (calibrated for
-  rotating pixels, not for grouping boxes). Taken from the DOMINANT cluster of
-  rulings, floored at 0.008 fall per unit width where the ablation turns
-  net-positive. On the labels 64 to 67; corpus-wide **+209 second alleles**.
+  `ValueRule.row_slope`), taken from the DOMINANT cluster of rulings and
+  floored at 0.008 fall per unit width. The slope was already measured on every
+  page the reviewer called tilted and discarded by `MAX_MAD_DEG` (scatter is
+  perspective, not a second grid) or `MIN_FRAME_TILT_DEG` (for rotating pixels,
+  not grouping boxes). Corpus-wide **+209 second alleles**.
 - **The whole page is read too** (`page_ocr_pass.py`, PP-OCRv5-server det+rec,
-  local). Every other second opinion judges OUR crops and so cannot see a cell
-  we never boxed. It finds MORE locus labels than our detector (142 of 160
-  against 138) and is complementary, right on 7 cells ours misses and wrong on
-  11 ours gets, so `page_ocr_bind.py` takes the union: our reading stands, the
-  whole page is offered only unresolved cells. 15 s/page, so the pack yes, the
-  corpus (100 h) not yet.
-- **Two reading refusals get a second opinion (`reread_refused.py`).** An
-  inadmissible first field, and a candidate that does not parse. PP-OCRv6 and
-  PP-OCRv5-server must state the SAME value; single-engine yield was 97% and
-  two-engine 75%. **+2,926 cells**, resumable by its own table.
+  local), and our own boxes are read again by PP-OCRv6 (`rerecognise_pass.py`,
+  2 s/page). Both are additive: our reading always stands, our locus labels are
+  never replaced, and only unresolved cells are offered a second view. The
+  re-read also COMPLETES a half-read pair, never contradicts one.
+- **DO NOT chase the OCR further without reading `CV_RESEARCH` s11.** Six
+  measurements with adversarial verification: detection is not the constraint
+  (our detector draws 12,646 boxes on the pack against PaddleOCR's 7,670),
+  recognition is 3.3% of the loss, resolution is flat from 500 to 1,300 px, and
+  **84.3% of refused cells never got a box from any engine**. The two biggest
+  refusals hold no box at all, and 77% of the second is measured blank paper.
+  The remaining work is HA-012, HA-014 and HA-011, not an engine.
+- **Two reading refusals get a second opinion (`reread_refused.py`):** an
+  inadmissible first field and a candidate that does not parse. Both engines
+  must state the SAME value. **+2,926 cells**, resumable by its own table.
 - **A bare `A`, `B` or `C` can be a locus label** when the page's structure
-  says so (+106 per 4,000 documents, none changed); the text matcher still
-  refuses them. Ownership needs a quarter-label-height margin (+17). One box
-  may print both alleles (`A*24,*02`, 1,819 tokens); `A*24,02` waits on HA-015.
+  says so (+106 per 4,000 documents, none changed). Ownership needs a
+  quarter-label-height margin. One box may print both alleles (`A*24,*02`);
+  `A*24,02` waits on HA-015.
 - **A pack rebuild pins the labelled documents (`--keep-labelled`)** or the
   sample reshuffles and orphans them: 11 of 220 survived the first rebuild.
 - **Google Vision measured, NOT adopted (`CV_RESEARCH` s8):** ours 62 of 160,
-  Vision 28, right where we miss on one cell. **The finding that matters:** the
-  23,719-cell "anchor found but no box in its cell" refusal is not a detector
-  failure — Vision boxes something in 1.0% of 197 such cells against 89.0% of
-  400 we resolved. That bucket is paper and closes through HA-012/HA-009.
+  Vision 28, right where we miss on one cell. It boxes something in 1.0% of 197
+  "no box in its cell" refusals against 89.0% of 400 we resolved: paper.
 - **Two form facts constrain the product:** DPA1/DPB1 printed, never filled
   (HA-009); the letterhead disclaims its blood-group field (KI-014).
 

@@ -271,3 +271,55 @@ The direction is only ever read from the page, and `right` is what a page keeps
 whenever the evidence does not clearly say otherwise — 149 of the 150 pack
 pages. A form read the wrong way round binds one locus's value to another,
 which is the failure this project exists to prevent.
+
+## 11. Where the OCR still loses cells, and why most of it is not OCR
+
+Six independent measurements over the local stores, each proposal then handed
+to a separate skeptic told to break it. 29 proposals, 22 verified, and the
+skeptics corrected the claimed sizes by between two and twenty times. Three
+survived, all worth zero cells. The value of the exercise is the negative
+result, so it is recorded rather than the proposals.
+
+**Detection is not the constraint, and our detector is not the weak one.** Over
+the 150 pack pages ours draws 12,646 boxes against PaddleOCR v5-server's 7,670
+(medians 83 against 54). Of 56 (page, locus) anchors PaddleOCR or Vision find
+and we do not, 54 already have one of our own boxes on the label; all 53 cells
+their boxes resolve that ours do not are already RESOLVED in shipped facts. A
+comparison run on boxes alone overstates the opportunity about fivefold, which
+is a correction to how s8 and s9 framed it: the whole-page pass is worth having
+for the layouts it reads, not for its detector.
+
+**Recognition is 3.3% of the loss.** A better engine's reading is already
+stored for 2,036 cells whose outcome it would change, which is real and is what
+`rerecognise_pass.py` collects. It is also the ceiling, because **84.3% of
+refused HLA cells — 115,153 of 136,596 — never got a box from any engine at
+all.** Nothing that reads better can reach them.
+
+**The two biggest refusals hold no box, so no re-read can ever touch them.**
+Of 188,528 value-locus cells, 60,913 are RESOLVED and 86,688 refused. 61,999 of
+those are "no anchor on this document" and 23,986 are "anchor found but no box
+at all in its cell". **77% of the second bucket is measured blank paper**, whose
+only remaining question is HA-012 and HA-009's per-laboratory NOT_TESTED policy.
+That agrees with what Google Vision said in s8 from the other direction.
+
+**Resolution is not the binding constraint.** The resolved-cell rate on
+form-family pages is flat between 0.47 and 0.62 from under 500 px to over
+1,300 px on the longest edge. Thumbnails are worth zero cells end to end. Page
+upscaling has no size gradient to exploit. `quality_band` does not separate
+outcomes and should not be used to route work. The one size signal that does
+convert into lost cells is neither the page nor the glyph but the CROP: a value
+box taller than about 1.6 times its own anchor row is lost 40-96% of the time —
+a box the detector stretched across rows, not a small one.
+
+**The grouped DRB3/4/5 row holds 60 of the 220 labelled cells**, not 40, and
+scores 40 correct, 12 correct abstentions, 2 missed and 6 contradicted. Every
+one of those 6 is a NOT_PRINTED label, so the row contributes six of the nine
+contradictions and only two of the misses. Corpus-wide it leaves 30,459 cells
+UNKNOWN, and the skeptics killed every proposal to widen the header grammar:
+merging adjacent same-line boxes before matching gains 75 cells and de-resolves
+more, and accepting a truncated header is refused by design.
+
+**So the remaining work is not an engine.** It is HA-012 (the NOT_TESTED
+policy, which decides the largest bucket in the pipeline), HA-014 (the nine
+contradictions), and HA-011 (the DRB3/4/5 grammar). The reviewer's next round of
+labels is worth more than any recognizer.
