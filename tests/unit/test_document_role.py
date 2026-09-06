@@ -211,12 +211,43 @@ def test_an_anchored_field_is_a_finding() -> None:
     assert decision.is_finding is True
 
 
-def test_an_uncorroborated_weak_reading_is_not_a_finding() -> None:
-    """Measured: the weakest tier contradicts recipient-only serology in 20% of
-    cases, against 0% for the two anchored tiers. It is a proposal at most."""
+def test_a_bare_role_word_the_page_prints_alone_is_read() -> None:
+    """The operator's instruction: "whenever you see something like اهدا کننده
+    this means donor ... do not miss these obvious evidence."
+
+    It used to be refused, on the ground that the weakest tier contradicts
+    recipient-only serology 20% of the time. That measurement stands, but the
+    contradiction it names is caught by its OWN gate two branches above, so
+    refusing here charged the same evidence twice. Against the reviewer's 50
+    labelled roles a bare word agrees 13 times and disagrees once.
+
+    It resolves under a distinct source, `FORM_FIELD_BARE`, so the whole group
+    can be found, stratified for review and withdrawn if that changes.
+    """
     decision = decide_document_role(read_form_role([box(0.44, DONOR_WORD)], []))
+    assert decision.role is Role.DONOR
+    assert decision.is_finding is True
+    assert decision.source == "FORM_FIELD_BARE"
+
+
+def test_a_bare_word_is_still_refused_when_the_page_contradicts_it() -> None:
+    """Every contradiction gate runs BEFORE the bare word is accepted, and each
+    one still refuses. Reading a bare word is not the same as trusting it over
+    evidence that disagrees."""
+    bare = read_form_role([box(0.44, DONOR_WORD)], [])
+    # A recipient's test on a donor form means the page carries two subjects.
+    assert decide_document_role(bare, has_recipient_only_test=True).role is Role.UNKNOWN
+    # The chat says the other thing.
+    assert decide_document_role(bare, caption_role=Role.RECIPIENT).role is Role.UNKNOWN
+
+
+def test_both_role_words_printed_is_still_ambiguous() -> None:
+    """Two role words on one page is the case a bare reading must never
+    resolve: which subject the typing belongs to is exactly what is unknown."""
+    reading = read_form_role([box(0.44, DONOR_WORD), box(0.60, RECIPIENT_WORD)], [])
+    decision = decide_document_role(reading)
     assert decision.role is Role.UNKNOWN
-    assert decision.is_finding is False
+    assert decision.needs_review is True
 
 
 def test_a_weak_reading_corroborated_by_the_caption_becomes_a_finding() -> None:

@@ -17,8 +17,8 @@ Every string here is fabricated.
 from __future__ import annotations
 
 import pytest
-from kidneymatch.documents.caption import CaptionTier, read_caption_role
 
+from kidneymatch.documents.caption import CaptionTier, read_caption_role
 from kidneymatch.documents.role import Role
 
 pytestmark = pytest.mark.task("HIST-002")
@@ -141,3 +141,59 @@ def test_the_reader_never_looks_at_a_phone_number_or_a_price() -> None:
     source = inspect.getsource(caption)
     for forbidden in ("price", "toman", "rial", "قیمت", "تومان", "phone"):
         assert forbidden not in source.lower()
+
+
+# --- spellings measured in the archive that the reader used to miss ---------
+# 179 documents with no role carry one of these and nothing that contradicts
+# it. The operator: "whenever you see something like اهدا کننده this means
+# donner and whenever you see گیرنده or any other variations you should
+# extract that the role is reciever."
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "اهدای کننده کلیه هستم",  # the ezafe ی between the two halves
+        "اهداء کننده",  # the hamza spelling
+        "اهدا کننده کلیه",
+        "دهنده کلیه سالم",
+        "دهنده هستم",  # `دهنده` alone: only `دهنده کلیه` matched
+        "I want to donate my kidney",
+    ],
+)
+def test_a_donor_says_so_in_more_than_one_spelling(text: str) -> None:
+    assert read_caption_role(text).role is Role.DONOR
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "گیرنده کلیه",
+        "گيرنده",  # Arabic yeh, normalised to Persian
+        "کاندید پیوند کلیه",
+        "کاندد پیوند",  # the recognizer's and the typist's slip
+        "دریافت کننده",
+    ],
+)
+def test_a_recipient_says_so_in_more_than_one_spelling(text: str) -> None:
+    assert read_caption_role(text).role is Role.RECIPIENT
+
+
+def test_kidney_donation_as_a_topic_is_not_a_person() -> None:
+    """`اهدا کلیه` names an activity and rides in the group's own
+    boilerplate. 93 documents carry it, and reading it as a role would be a
+    guess about whose report the photograph is."""
+    assert read_caption_role("اهدا کلیه").role is Role.UNKNOWN
+
+
+def test_a_request_still_refuses_every_new_spelling() -> None:
+    """Widening the vocabulary must not widen what is ASSERTED. "I need a
+    kidney donor" names a donor and describes a recipient, and the reader's
+    job is to notice that, not to resolve it."""
+    for text in ("دهنده کلیه نیاز دارم", "دنبال اهدای کننده هستم", "looking for a donor"):
+        claim = read_caption_role(text)
+        assert claim.role is Role.UNKNOWN, text
+
+
+def test_both_roles_in_one_caption_is_still_unreadable() -> None:
+    assert read_caption_role("اهدای کننده و گیرنده").role is Role.UNKNOWN

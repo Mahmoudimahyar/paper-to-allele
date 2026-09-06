@@ -398,11 +398,25 @@ def decide_document_role(
             return RoleDecision(form.role, True, False, "FORM_FIELD")
         if caption_role is form.role:
             return RoleDecision(form.role, True, False, "FORM_FIELD+CAPTION")
-        # Tier C alone: measured to contradict recipient-only serology 20% of
-        # the time, against 0% for the anchored tiers. A proposal, not a fact.
-        return RoleDecision(
-            Role.UNKNOWN, False, True, "FORM_FIELD_WEAK", "a bare role word needs corroboration"
-        )
+        # Tier C alone: the page prints ONE role word, in a form this reader
+        # recognises, and nothing on the page or in the chat disagrees with it.
+        #
+        # This was refused, on the ground that the weakest tier contradicts
+        # recipient-only serology 20% of the time against 0% for the anchored
+        # tiers. That measurement stands, but the contradiction it names has
+        # its OWN gate two branches above, and so does a caption that
+        # disagrees, and so does a page printing both words. Refusing here
+        # charged the same evidence a second time and cost 2,423 documents
+        # whose form says plainly which person it describes.
+        #
+        # Against the reviewer's 50 labelled roles, a bare word agrees with the
+        # human 13 times and disagrees once. The operator's instruction is to
+        # read it: "whenever you see something like اهدا کننده this means
+        # donor ... do not miss these obvious evidence."
+        #
+        # It is still the weakest thing here, so it carries its own source and
+        # can be found, reviewed and withdrawn as one group.
+        return RoleDecision(form.role, True, False, "FORM_FIELD_BARE")
 
     if has_recipient_only_test:
         return RoleDecision(Role.RECIPIENT, False, True, "RECIPIENT_ONLY_TEST")

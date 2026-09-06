@@ -566,3 +566,87 @@ rule is against this repository's own test-first requirement.
 naming a way a pass could assert something untrue, seven of them reproducing a
 probe from the review.
 
+## s15 — the role words the form prints, and a question the review page asked badly
+
+The operator:
+
+> "whenever you see something like اهدا کننده this means donner and whenever
+> you see گیرنده or any other variations you should extract that the role is
+> reciever. So do not miss these obvious evidence."
+
+They were being missed, and measurement says where. Of 7,682 documents with no
+role, **5,096** have Persian OCR with boxes, and of those:
+
+| | documents |
+|---|---|
+| exactly ONE role word printed, role still unresolved | **2,400** |
+| no role word in the Persian OCR | 2,594 |
+| both role words printed (ambiguous by design) | 102 |
+
+The 2,400 were all Tier C — a role word with no `نسبت:` field label beside it
+and no other form word on its row. Only **4** of those pages print a `نسبت`
+label anywhere, so this is not an anchor window set too tight; the forms really
+do print the word bare.
+
+### Why the refusal was wrong
+
+`decide_document_role` refused Tier C alone, on a real measurement: the weakest
+tier contradicts recipient-only serology 20% of the time against 0% for the
+anchored tiers. That number stands. But the contradiction it names has **its own
+gate two branches earlier** in the same function, and so does a caption naming
+the other role, and so does a page printing both words. By the time control
+reached the Tier-C branch, every failure the 20% described had already been
+excluded. Refusing there charged the same evidence a second time.
+
+Against the reviewer's **50 labelled roles**, a bare word agrees with the human
+**13 times and disagrees once**.
+
+So a bare word now resolves, under its own source `FORM_FIELD_BARE`, with every
+contradiction gate unchanged ahead of it. `scripts/role_repass.py` applies the
+decision to the extracted corpus rather than a full refresh.
+
+**ROLE: 67.4% → 78.1%** of 23,566 documents (15,884 → 18,404). By source:
+CAPTION_CLAIM 8,458, FORM_FIELD 5,029, FORM_FIELD+CAPTION 2,527,
+FORM_FIELD_BARE 2,390. A `bare_role` stratum draws from the last group so the
+next round settles its rate.
+
+### The caption spellings
+
+Separately, 1,416 unresolved documents carry a role word in their chat text.
+Classified: 588 name BOTH roles, 549 ask for a role rather than state one (both
+correctly refused), and **179** name one role in a spelling the reader did not
+know — the ezafe `ی` in `اهدای کننده`, the hamza in `اهداء کننده`, and `دهنده`
+standing alone rather than only before `کلیه`. Those are now read.
+
+`اهدا کلیه` — "kidney donation" — is deliberately NOT read as a role. It names
+an activity, not a person, and rides in the group's own boilerplate; 93
+documents carry it.
+
+### A question the review page was asking badly
+
+Scoring the whole-page fields against the 50 human answers turned up something
+that is not a pipeline error at all:
+
+| field | source | correct | disagreeing |
+|---|---|---|---|
+| ABO | LABORATORY_PRINTED | 6 | 0 |
+| ABO | CAPTION_CLAIM | 4 | 13 |
+| RH | CAPTION_CLAIM | 4 | 10 |
+| ROLE | CAPTION_CLAIM | 16 | 6 |
+
+**Every single one of those disagreements is against a human answer of
+`NOT_PRINTED`, `UNREADABLE` or `UNKNOWN`.** Not one is a different blood group
+or the opposite role. The reviewer was answering "what does this page print?" —
+correctly — and the pipeline was answering "what is this person's group?" from
+the chat. Two different questions, and the page did not say which it was
+asking.
+
+That is an instrument defect, and it means the caption-derived ABO and Rh from
+s13 are **unvalidated, not disproven**: the labels cannot speak to them. The
+page now says so on any caption-sourced value. Whether a chat-stated group
+should be recorded as a fact about the person, separately from what the form
+prints, is a question for the operator and not for a pass.
+
+The one genuine role contradiction in the whole set is a single
+`FORM_FIELD_BARE` DONOR the reviewer read as RECIPIENT.
+

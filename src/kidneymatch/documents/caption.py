@@ -56,9 +56,25 @@ class CaptionClaim:
 # Role words, in the spellings a person types rather than the ones OCR produces.
 # `role.py`'s patterns are tuned for a recognizer's misreadings of a printed
 # form; a caption is typed, so these are separate and simpler on purpose.
-_DONOR_WORD = re.compile(r"اهدا\s?کننده|اهداکننده|دهنده\s?کلیه|\bdonor\b", re.IGNORECASE)
+# Measured on the archive: 179 documents with no role at all carry one of these
+# spellings and nothing that contradicts it. `normalise` has already folded the
+# Arabic yeh and kaf and stripped the zero-width non-joiner, so `گيرنده` and
+# `اهدا‌کننده` arrive in one shape; what these add is the ezafe `ی`, the
+# hamza, and `دهنده` standing on its own rather than only before `کلیه`.
+#
+# `اهدا کلیه` — "kidney donation" — is deliberately NOT here. It names an
+# activity, not a person, and it rides in the group's own boilerplate; 93
+# documents carry it, and reading it as "this person is a donor" would be a
+# guess about whose report the photograph is.
+_DONOR_WORD = re.compile(
+    r"اهدا[ءیه]?\s?کننده|اهداکننده"
+    r"|(?<![\u0600-\u06FF])دهنده"
+    r"|\bdonor\b|\bdonat(?:e|es|ed|ing|ion)\b",
+    re.IGNORECASE,
+)
 _RECIPIENT_WORD = re.compile(
-    r"گیرنده|دریافت\s?کننده|کاندید\s?پیوند|بیمار\s?کلیوی|\brecipient\b", re.IGNORECASE
+    r"گیرنده|دریافت\s?کننده|کاند[یب]?د\s?پ[یب]?وند|بیمار\s?کلیوی|\brecipient\b",
+    re.IGNORECASE,
 )
 
 # Words that turn a role word into a request for that role. Anything here makes
