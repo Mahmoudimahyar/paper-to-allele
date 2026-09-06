@@ -104,5 +104,30 @@ super-resolution; calibration or LTT before the golden set holds ≥50 wrong
 reads; word-lexicon-only CTC constraints (they complete low-resolution reads);
 inferring a DRBX gene or first field from DRB1; emitting ABSENT from an empty
 cell; scoring the DRB3/4/5 row as three fields; new dependencies without a
-register row and `uv lock`; any cloud OCR/VLM or sending an image off the
-machine.
+register row and `uv lock`.
+
+## 7. What may leave the machine (amended 2026-09-05 by the project owner)
+
+s6 read "any cloud OCR/VLM or sending an image off the machine" until the
+operator lifted it. **Whole report pages may now be sent to the Google Cloud
+Vision API**, using the key in the ignored `.env`, for the purpose of measuring
+a second detector against the reviewer's labels.
+
+The operator was given the narrow option — value crops only, a padded rectangle
+around one allele, carrying no name, no laboratory, no date and no identifier —
+and chose whole pages, because the evidence is only useful there: the largest
+refusal bucket in the pipeline is **23,719 cells whose locus label was found and
+whose value box was never detected**, and a crop cannot say whether a better
+detector would have boxed it. A whole page carries the patient's name and the
+laboratory's letterhead, and this decision accepts that.
+
+What the amendment does NOT permit, and what still needs a further decision:
+
+* no other cloud OCR or VLM service;
+* no cloud call from any pass that writes a fact. A cloud reading is evidence
+  about our detector, not a laboratory value, and the rule that OCR produces
+  proposals rather than verification is untouched;
+* no key in a document, a commit, a log line, a prompt or a memory file. It
+  lives in `.env` and is read from the environment;
+* nothing is sent that a person did not put in the sample: the pass takes an
+  explicit document list and refuses to walk the corpus.

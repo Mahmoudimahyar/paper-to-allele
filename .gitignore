@@ -33,6 +33,12 @@ data/gold/*
 !data/gold/.gitkeep
 !data/README.md
 *.sqlite3
+# `.sqlite` too, not only `.sqlite3`: every derived store this project writes
+# uses that spelling, they hold report text, and the stop hook commits with
+# `git add -A`. A store written outside `data/derived/` by a mistyped `--out`
+# was otherwise untracked rather than ignored, which is one careless flag away
+# from the sweep this file's note below already records happening once.
+*.sqlite
 
 # OCR/model/cache
 .paddleocr/

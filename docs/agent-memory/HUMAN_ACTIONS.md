@@ -4,32 +4,20 @@ Never put secret values in this file.
 
 ## Open
 
-### HA-013 — Google Vision: the key is not on this machine, and the policy still forbids it
-- **Needed by:** the requested head-to-head against the reviewer's 220 labels.
-- **Why:** two things are in the way, and only a person can clear either.
-  1. **The key is absent.** `.env` holds nine variables and none of them names
-     Google, Vision, GCP or a service account, and no other `.env` file exists
-     in the repository. Nothing was sent anywhere; the benchmark simply cannot
-     run.
-  2. **The versioned decision forbids it.** `docs/ingestion/CV_RESEARCH_2026-09-05.md`
-     s6 "Do not do" ends with "any cloud OCR/VLM or sending an image off the
-     machine". That is a policy, and policy is the human's to change, so the
-     instruction to test Google Vision conflicts with a source-of-truth
-     document rather than overriding it silently.
-- **Decision required, in two parts:**
-  - name the variable and set it in the local `.env` (never in a document, a
-    commit, or this file);
-  - amend `CV_RESEARCH_2026-09-05.md` s6 to say what may leave the machine.
-    The narrow amendment the pipeline actually needs is **value crops only** —
-    a padded rectangle around one allele, carrying no name, no laboratory, no
-    date and no identifier. The broad one is **whole pages**, which is where
-    the evidence would be most useful (the largest refusal bucket in the whole
-    pipeline is 23,719 cells whose label was found and whose value box was
-    never detected) and which does send the patient's name and the laboratory's
-    letterhead to Google.
-- **Secret?** The key is. It goes in `.env` only.
-- **Blocking now?** Blocks the Google Vision comparison and nothing else. Every
-  other measurement in this round was made with the local engines.
+### HA-013 — Google Vision: DECIDED 2026-09-05, whole pages permitted
+- **Decision:** the operator set `GOOGLE_VISION_API` in the ignored `.env` and
+  chose the **broad** option: whole report pages may be sent to Google Cloud
+  Vision, not only value crops. They were told a whole page carries the
+  patient's name and the laboratory's letterhead, and chose it because the
+  evidence is only useful there — the largest refusal bucket in the pipeline is
+  23,719 cells whose label was found and whose value box was never detected,
+  and a crop cannot say whether a better detector would have boxed it.
+- **Recorded in:** `docs/ingestion/CV_RESEARCH_2026-09-05.md` s7, which
+  replaces the s6 prohibition and states what is still not permitted: no other
+  cloud service, no cloud call from a pass that writes a fact, no key outside
+  `.env`, and no walk of the corpus without an explicit document list.
+- **Secret?** The key is, and it stays in `.env`.
+- **Blocking now?** No longer blocking.
 
 ### HA-014 — Seven cells the pipeline reads and the reviewer marked NOT PRINTED
 - **Needed by:** the accuracy figure on the 220-label set; these are 7 of the
