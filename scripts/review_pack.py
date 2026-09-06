@@ -150,6 +150,13 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ),
     ("zero_fact_refused", 10, "labels anchored but every cell refused; nothing extracted"),
     (
+        "upright",
+        18,
+        "the photograph was a quarter turn off upright; turned, the page anchors its loci and "
+        "these values were read from it (`upright+rotated`). 801 cells on 425 pages that had "
+        "ZERO before, and none of them is labelled, so this stratum is the only measure",
+    ),
+    (
         "bare_role",
         14,
         "the role came from a role word the form prints with no field label beside it "
@@ -481,6 +488,8 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
+    if any(c.source == "upright+rotated" for c in resolved):
+        tags.add("upright")
     if (doc.role or {}).get("source") == "FORM_FIELD_BARE":
         tags.add("bare_role")
     if any(c.source == "anchor-row-prefix" for c in resolved):

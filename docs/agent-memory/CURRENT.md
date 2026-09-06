@@ -44,19 +44,20 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   ruling cluster, floored at 0.008. It was already measured on every tilted
   page and thrown away by thresholds meant for rotating pixels. **+209**.
 - **The whole page is read too** (`page_ocr_pass.py`) and our boxes again by
-  PP-OCRv6 (`rerecognise_pass.py`); strictly additive. On the worst annotated
-  pages the whole-page engine finds FEWER boxes than ours (s14).
-- **DO NOT chase the OCR further without reading `CV_RESEARCH` s11.** Six
-  measurements: detection is not the constraint, recognition is 3.3% of the
-  loss, and **84.3% of refused cells never got a box from any engine** — blank
-  paper. The rest is HA-012/014/011.
+  PP-OCRv6 (`rerecognise_pass.py`); strictly additive.
+- **REFUSALS AND MISSES ARE DIFFERENT POPULATIONS** (s11, s17). 84.3% of
+  REFUSED cells are blank paper — do not chase recognition. But of the 59
+  MISSED cells, 88.4% have their digits already in the stored OCR: read but
+  unbound. Opposite fix.
+- **611 pages were photographed SIDEWAYS** (s17, `upright_pass.py`): 0 of them
+  anchored any locus. Turned, 425 anchor and **801 cells resolve**. The metric
+  is box height>width IN PIXELS — normalised coords make it meaningless.
 - **`reread_refused.py`: both engines must state the SAME value. +2,926 cells.**
 - **A bare `A`/`B`/`C` can be a locus label** when structure says so (+106 per
   4,000). One box may print both alleles; `A*24,02` is HA-015.
 - **A pack rebuild pins labelled documents (`--keep-labelled`)** or the sample
   reshuffles: 11 of 220 survived the first rebuild.
-- **Google Vision measured, NOT adopted (s8):** ours 62 of 160, Vision 28; it
-  boxes something in 1.0% of "no box in its cell" refusals — they are paper.
+- **Google Vision measured, NOT adopted (s8):** ours 62 of 160, Vision 28.
 - **The chat is a source of record.** `caption_pass.py` reads ABO/Rh/Role from
   EVERY message posted with a document. Round three VALIDATED it: caption ABO is
   14 correct, 0 contradictions (s16); the s15 worry was the NOT_PRINTED question
@@ -73,9 +74,8 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   MEASURED rarity; read corpus-wide counts when adding a stratum.
 - **A value box unlike its page's others is wrong 5x as often** (25% vs 5%,
   `ocr/boxsize.py`); n=8, so it MARKS for review and gates nothing yet.
-- **A locus can come from the allele's own printed prefix** (`prefix_bind.py`,
-  s12) where the page labels no row: **4,767 cells**, tried last, comparison
-  sheets refused. HA-017 holds the AGENTS.md wording.
+- **A locus can come from the allele's printed prefix** (`prefix_bind.py`, s12)
+  where the page labels no row: **4,767 cells**. HA-017 holds the wording.
 - **`anchor_row_bind.py` (s14): 80 cells, UNMEASURED.** Its first version
   bound 458; adversarial review confirmed 11 defects and 83% failed this
   project's own rules. **Review a write-rule adversarially BEFORE believing its

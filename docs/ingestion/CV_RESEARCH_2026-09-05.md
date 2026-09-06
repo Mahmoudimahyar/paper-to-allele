@@ -754,3 +754,108 @@ constructed counterexamples and placebo controls and did not break; its
 rejection was for two misstated yield figures and a provenance defect, all
 three of which are fixed here.
 
+## s17 — 611 pages were photographed sideways
+
+The misses and the refusals are not the same population, and s11 answered only
+one of them. Root-causing all 59 missed cells against the 957 labels:
+
+| class | cells | share |
+|---|---|---|
+| the locus label was never anchored | 29 | 49.2% |
+| a box parsed, and a gate refused it | 13 | 22.0% |
+| no box in the cell at all | 11 | 18.6% |
+| a box was there and did not parse | 6 | 10.2% |
+
+**43 of the 59 missed cells have a human value to find, and 38 of those (88.4%)
+have its digits somewhere in the stored OCR — 29 (67.4%) as a box that parses
+as an allele with the right first field. Only 5 are absent from both engines.**
+
+s11 measured that 84.3% of all REFUSED cells are blank paper, and that is still
+true. But the missed population is the opposite: **the refusals are blank
+paper; the misses are read-but-unbound.** Different problem, opposite fix, and
+chasing recognition would have addressed neither.
+
+### The largest single population: pages that are not upright
+
+A metric already sitting in `ocr_pass.sqlite` finds them for nothing — the
+fraction of detected boxes whose PIXEL height exceeds their pixel width. That
+qualifier is the whole measurement: the stored geometry is normalised to 0-1,
+so comparing normalised height with normalised width compares a fraction of the
+page's height with a fraction of its width and means nothing.
+
+`tallfrac >= 0.6` over the 23,357 documents with at least 8 boxes selects
+**611**, and the distribution is bimodal rather than a judgement call: 592 are
+above 0.8, and moving the threshold to 0.5 or 0.7 gives 621 or 599.
+
+The separation is total. **0 of the 611 carry a single named locus anchor**,
+against 83.9% of the corpus, and all 4,888 of their locus cells are UNKNOWN
+with reason "no anchor on this document". Nothing on these pages was trusted,
+so nothing could be disturbed.
+
+Three independent measurements confirm they are ROTATED rather than merely
+unreadable — only the first of those is fixable:
+
+| | flagged | corpus |
+|---|---|---|
+| vertical-ruling share (median) | 0.784 | 0.240 |
+| vertical-dominant, of ruled pages | 87.7% | 6.4% |
+| box aspect, pixel height/width (median) | 2.25 | 0.39 |
+
+A quarter turn predicts exactly that transposition (1/0.39 = 2.56).
+
+### What it was worth
+
+`upright_pass.py` reads each of the 611 at all four rotations and keeps one
+**only when it beats every other outright on named locus anchors**. A tie, or
+zero anchors everywhere, writes nothing: binding a locus from a wrongly turned
+page reads every value against the wrong row, which is the worst failure this
+change could produce.
+
+    611 read     425 found an upright rotation (70%)
+                 186 yield no anchor at any rotation and stay unreadable
+    rotations    284 at 270 degrees, 141 at 90, and NONE at 180
+
+The absent 180° is the sanity check: an upside-down page still prints wide
+boxes, so it is never flagged, and none was.
+
+`upright_bind.py` then binds with the generic rule and **no stored geometry at
+all** — the frame, the template family and the row slope were every one
+measured on the sideways image, and rectifying an upright reading with a
+sideways frame places every cell wrong.
+
+**801 cells resolved** (DQB1 191, A 175, DRB1 170, B 165, C 75, DQA1 23, DPA1
+and DPB1 1 each) on pages that had zero. The 957 labels are unchanged — 511
+correct, 11 contradicted — because none of the 801 is labelled, which is
+exactly why an `upright` stratum now draws from them.
+
+Note what the honest number is NOT. The reason strings on those pages cover
+4,888 cells, and quoting that as the yield would overstate it 6x: most cells on
+these forms hold nothing to recover. On the one flagged page a human has
+labelled, the reviewer found a value in 2 of 11 cells.
+
+### The precision question this leaves for a person
+
+All 11 contradictions on the 957 labels concentrate hard. Splitting the 261
+labelled DRB3/4/5 cells by whether the grouped header is cleanly spelled or
+only reachable through the damage-tolerant regex:
+
+| stratum | cells | correct | contradicted |
+|---|---|---|---|
+| clean header + add-on source | 37 | 37 | 0 |
+| **damaged header + add-on source** | **20** | 15 | **5 (25%)** |
+| damaged header + core rule | 40 | 30 | 1 (2.5%) |
+| clean header + core rule | 119 | 112 | 0 |
+
+**Every add-on contradiction lives in one stratum**, at 25% against a 1.4%
+baseline for the core row rule. Corpus-wide the two add-on sources
+(`drbx-reread+ppocrv6`, `ink-certified`) hold 8,799 cells on 3,737 documents;
+gating them on a cleanly spelled header keeps 7,338 and sends **1,461 to
+review** — extrapolating the stratum's own rate, roughly 365 wrong values
+withdrawn at the cost of roughly 1,096 correct ones deferred to a person.
+
+That removes 45% of every contradiction the pipeline has, at three correct
+readings per wrong one. `PRODUCT_CONSTITUTION` says ambiguous critical OCR goes
+to review rather than being best-guessed, and 25% is ambiguous by any reading —
+but a 3:1 trade is a judgement about how this archive will be used, not a
+measurement. It is recorded here for the operator and NOT applied.
+
