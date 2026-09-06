@@ -196,15 +196,23 @@ def run(facts: Path, ocr_db: Path, geometry_db: Path, *, dry_run: bool) -> Count
             tally[f"bound from its own prefix: {locus}"] += 1
             if dry_run:
                 continue
+            # The boxes travel with the fact. Without them `cell_crop_box` has
+            # nothing to crop and the review page shows the reader a RESOLVED
+            # medical value with no pixels behind it, which is how 50 of one
+            # round's 220 answers became unusable. There is no anchor to store
+            # here by construction: this pass runs only where the page prints
+            # no label at all.
             con.execute(
-                "UPDATE fact SET status='RESOLVED', value=?, reason=?, source=?, repaired=1, "
-                "second_allele=?, created_utc=? WHERE sha256=? AND field=? "
-                "AND extraction_version=?",
+                "UPDATE fact SET status='RESOLVED', value=?, raw=?, reason=?, source=?, "
+                "repaired=1, second_allele=?, value_boxes=?, created_utc=? "
+                "WHERE sha256=? AND field=? AND extraction_version=?",
                 (
                     " ".join(values),
+                    " ".join((box.text or "").strip() for box in claimed),
                     REASON,
                     SOURCE,
                     "READ" if len(values) > 1 else "UNREAD",
+                    json.dumps([[b.x0, b.y0, b.x1, b.y1] for b in claimed]),
                     now,
                     sha,
                     locus,
@@ -213,6 +221,7 @@ def run(facts: Path, ocr_db: Path, geometry_db: Path, *, dry_run: bool) -> Count
             )
         con.commit()
     con.close()
+    ocr.close()
     return tally
 
 

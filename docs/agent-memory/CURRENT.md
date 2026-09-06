@@ -14,72 +14,74 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 
 ## Locked facts
 - **The archive** (local-only, gitignored, `data/raw/ChatExport_2026-08-31`):
-  23,566 unique images, 90% above 900 px. **Parsed (HIST-001/002):** 180,441
-  messages, ZERO unparsed fragments; 23,565 documents link to their postings.
+  23,566 images, 90% >900 px. **Parsed (HIST-001/002):** 180,441 messages, ZERO
+  unparsed; 23,565 documents link to their postings.
 - **Extraction (ADR 0008, 0009 §7):** `refresh_facts.py` rebuilds in place and
   prints the per-locus comparison against its snapshot — that caught the
-  `LAB`-as-HLA-B bug on 9,817 documents before it shipped. ALWAYS compare.
-  Every stop signal so far has been later passes being reset; re-run them.
+  `LAB`-as-HLA-B bug on 9,817 documents. ALWAYS compare; every stop signal so
+  far has been later passes being reset, so re-run them.
 - **Page geometry (`rulings/v3+lsd+sweep`):** 6,511 ROTATE / 14,139 STRAIGHT /
   2,916 UNCERTAIN; 1,591 levelled (KI-024). A tilt from stored boxes is biased.
 - **Recognizers** (`ENGINE_BENCH_2026-09-05.md`): PP-OCRv6 65 of 67 exact,
   shipped 57, ours 14. No pair agreed on a WRONG value: the two-engine gates
   rest on that.
-- **The decode and the confirmers.** `confirm_pass.py` has three targets;
-  `promote_proposals.py` promotes CONFIRMED proposals, never on a LOW page, and
-  withdraws when an equal-or-better reader disagrees.
+- **The confirmers.** `confirm_pass.py` has three targets; `promote_proposals`
+  never promotes on a LOW page and withdraws when a better reader disagrees.
+  **Every binding pass must write `value_boxes`** or the reviewer sees a
+  RESOLVED value with no crop behind it (s14; it has happened twice).
 - **The DRB3/4/5 row prints gene names**; grammar v2 waits on HA-011.
   `drbx_reread.py` takes the digit only when it IS one, and sees both boxes.
 - **The printed table is read as a grid (`ocr/lattice.py`):** rulings place an
-  unreadable label (**+2,272**) and the second DRB3/4/5 slot, which ink
-  certifies ABSENT when it is paper (**4,540 genes**). `cell_ink_pass.py`
-  writes no fact: NOT_TESTED is HA-012's to answer.
+  unreadable label (**+2,272**) and the second DRB3/4/5 slot, ink-certified
+  ABSENT when paper (**4,540 genes**). NOT_TESTED is HA-012's to answer.
 - **Accuracy is unvalidated (KI-012); the binding constraint.** 561 labels:
   **310 correct, 205 abstained, 35 missed, 2 partial, 9 contradicted** — 87.1%
   of the 356 cells a person actually read. Round one alone went 84 -> 121.
   Contradictions are HA-014. `scripts/label_score.py` scores any number of
   exports against LIVE facts, no pack needed. Golden corpus waits on a person.
-- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — in the
-  export under `notes`, printed by `label_score.py` (`CV_RESEARCH` s9). The 14
-  annotated pages hold 26 of the 35 misses and 5 of the 9 contradictions.
-- **Rows are read along the slope the page prints them at** (`ocr/rows.py`,
-  `ValueRule.row_slope`): the DOMINANT ruling cluster, floored at 0.008. The
-  slope was already measured on every page the reviewer called tilted and thrown
-  away by thresholds meant for rotating pixels. **+209 second alleles**.
-- **The whole page is read too** (`page_ocr_pass.py`), and our boxes again by
-  PP-OCRv6 (`rerecognise_pass.py`). Strictly additive: locus labels are never
-  replaced, only unresolved cells get a second view, half-read pairs are
-  COMPLETED not contradicted.
+- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — under
+  `notes`, printed by `label_score.py` (s9). The 14 annotated pages hold 26 of
+  the 35 misses and 5 of the 9 contradictions.
+- **Rows are read along the page's own slope** (`ocr/rows.py`): the DOMINANT
+  ruling cluster, floored at 0.008. It was already measured on every tilted
+  page and thrown away by thresholds meant for rotating pixels. **+209**.
+- **The whole page is read too** (`page_ocr_pass.py`) and our boxes again by
+  PP-OCRv6 (`rerecognise_pass.py`); strictly additive. On the worst annotated
+  pages the whole-page engine finds FEWER boxes than ours (s14).
 - **DO NOT chase the OCR further without reading `CV_RESEARCH` s11.** Six
-  measurements, adversarially verified: detection is not the constraint (12,646
-  of our boxes against PaddleOCR's 7,670), recognition is 3.3% of the loss,
-  resolution is flat 500-1,300 px, and **84.3% of refused cells never got a box
-  from any engine** — they are blank paper. Everything else is HA-012/014/011.
-- **Two reading refusals get a second opinion (`reread_refused.py`):** both
-  engines must state the SAME value. **+2,926 cells**.
-- **A bare `A`, `B` or `C` can be a locus label** when structure says so (+106
-  per 4,000, none changed). One box may print both alleles (`A*24,*02`);
-  `A*24,02` waits on HA-015.
-- **A pack rebuild pins the labelled documents (`--keep-labelled`)** or the
-  sample reshuffles and orphans them: 11 of 220 survived the first rebuild.
-- **Google Vision measured, NOT adopted (`CV_RESEARCH` s8):** ours 62 of 160,
-  Vision 28. It boxes something in 1.0% of "no box in its cell" refusals against
-  89.0% of cells we resolved — the refusals are paper.
+  measurements: detection is not the constraint, recognition is 3.3% of the
+  loss, resolution is flat 500-1,300 px, and **84.3% of refused cells never got
+  a box from any engine** — blank paper. The rest is HA-012/014/011.
+- **`reread_refused.py`: both engines must state the SAME value. +2,926 cells.**
+- **A bare `A`/`B`/`C` can be a locus label** when structure says so (+106 per
+  4,000). One box may print both alleles; `A*24,02` is HA-015.
+- **A pack rebuild pins labelled documents (`--keep-labelled`)** or the sample
+  reshuffles: 11 of 220 survived the first rebuild.
+- **Google Vision measured, NOT adopted (s8):** ours 62 of 160, Vision 28. It
+  boxes something in 1.0% of "no box in its cell" refusals against 89.0% of
+  cells we resolved — those refusals are paper.
 - **The chat is a source of record.** `caption_pass.py` reads ABO/Rh/Role from
   EVERY message a document was posted with: 12.7% -> **42.6%**, 12.7% ->
-  **37.6%**, 31.9% -> **67.4%** (`CV_RESEARCH` s13). A caption is a person's
-  CLAIM, never a laboratory result, and the page says so on all three.
+  **37.6%**, 31.9% -> **67.4%** (s13). A caption is a person's CLAIM, never a
+  laboratory result; the page says so on all three.
 - **A stratum reporting zero looks exactly like a signal that does not occur.**
   Two did and neither was empty: a wrong column name swallowed by a blanket
-  `except`, and a rare stratum pooled away by a common one. Documents now pool
-  by MEASURED rarity. Read corpus-wide per-stratum counts when adding one.
+  `except`, and a rare stratum pooled away by a common one. Pools are now by
+  MEASURED rarity; read corpus-wide counts when adding a stratum.
 - **A value box unlike its page's others is wrong 5x as often** (25% vs 5%,
-  `ocr/boxsize.py`): n=8, so it MARKS for review and gates nothing yet.
+  `ocr/boxsize.py`); n=8, so it MARKS for review and gates nothing yet.
 - **A locus can come from the allele's own printed prefix** (`prefix_bind.py`,
   s12) where the page labels no row: **4,767 cells**, tried last, comparison
   sheets refused outright. HA-017 holds the AGENTS.md wording.
-- **Two form facts constrain the product:** DPA1/DPB1 printed, never filled
-  (HA-009); the letterhead disclaims its blood-group field (KI-014).
+- **`anchor_row_bind.py` (s14): 80 cells, ACCURACY UNMEASURED.** Its FIRST
+  version bound 458 and an adversarial review confirmed 11 defects: no gap cap
+  and no direction (87% of binds sat past the cap `DEFAULT_RULE` enforces on
+  the same pages), and it resolved values inside another locus's cell — the
+  case `resolve_locus` reserves for a human. Those writes were REVERTED; 83% of
+  them fail this project's own rules. Labels score identically; none of the 80
+  is labelled. **Review a write-rule adversarially BEFORE believing its yield.**
+- **Two form facts:** DPA1/DPB1 printed but never filled (HA-009); the
+  letterhead disclaims its blood-group field (KI-014).
 
 ## Decided (operator delegated)
 HA-003 resolution bands (MID provisional) · HA-005 names as a salted hash ·
@@ -107,13 +109,11 @@ measurements the thresholds rest on are committed in `config/`.
    `rerecognise_pass`, `prefix_bind`, `caption_pass`. Rebuild the pack with
    `--keep-labelled <export>` or the labels are orphaned; `--skip-labelled`
    instead when the point is to show a reviewer what they have NOT yet seen.
-3. **Agent: work the annotated documents.** The 14 pages the reviewer wrote a
-   note on hold **26 of the 35 misses and 5 of the 9 contradictions** — the
-   notes are the map. Open by name: a page labelling rows `A` not `HLA-A` (two
-   notes, 7 misses); a no-table ABC-only form; `A*01, *33`; alleles UNDER their
-   locus; a serologic-type form; and `02ec0e8e` (note 13), which `prefix_bind`
-   was built for and still misses 7 of 11. Then M6 after HA-011, KI-023, KI-027,
-   MEDIA-001, DEDUPE-001, ENTITY-001. Human: HA-004 before matching.
+3. **Agent: work the annotated documents** (`CV_RESEARCH` s14). The 14 pages
+   with a reviewer note hold **26 of the 35 misses and 5 of the 9
+   contradictions**. Measured: the two "bare A" pages fail because NO engine
+   emits an `A`/`B`/`C` box, not because a rule refuses. Then M6 after HA-011,
+   KI-023, KI-027, MEDIA-001, DEDUPE-001, ENTITY-001. Human: HA-004.
 
 ## Last verified baseline
 `python scripts/verify_repo.py` PASS, 12 steps, 2026-09-05 (fourth session).

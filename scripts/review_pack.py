@@ -150,6 +150,13 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ),
     ("zero_fact_refused", 10, "labels anchored but every cell refused; nothing extracted"),
     (
+        "anchor_row",
+        18,
+        "the label was read but its cell held no box, and the value was taken from the anchor's "
+        "own row by its printed prefix; 458 cells corpus-wide and NONE in the 561 existing "
+        "labels, so this stratum is the only thing that can measure the rule",
+    ),
+    (
         "odd_box",
         16,
         "one allele's box is not the size of the others on its page; measured on 561 "
@@ -467,6 +474,8 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
+    if any(c.source == "anchor-row-prefix" for c in resolved):
+        tags.add("anchor_row")
     if odd_value_box(resolved):
         tags.add("odd_box")
     if doc.blank_cells >= MIN_BLANK_CELLS:

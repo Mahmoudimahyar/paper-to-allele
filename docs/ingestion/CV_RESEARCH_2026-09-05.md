@@ -461,3 +461,108 @@ The same seed, before and after:
     before: 26 strata drawn, 3 empty, largest stratum 7 of 60 documents
     after:  26 strata drawn, 0 empty, largest stratum 5 of 60 documents
 
+## s14 — the reviewer's notes are where the loss is, and one pass built from them
+
+Scored against live facts, the 561 labels give 310 correct, 205 abstained, 35
+missed, 2 partial, 9 contradicted — 87.1% of the 356 cells a person actually
+read. The reviewer wrote a note on **14 pages**. Those 14 hold **26 of the 35
+misses and 5 of the 9 contradictions**. Fourteen pages out of 561 labelled
+cells hold three quarters of the loss, and the reviewer named the cause on each
+one. Nothing else in this project has that hit rate.
+
+What the notes name, and what was found on inspecting each page:
+
+| the note | what is actually wrong |
+|---|---|
+| "instead of HLA-A we just have A" (twice) | no engine produces an `A`/`B`/`C` box at all — not the bare-label rule refusing |
+| "doesn't specify the loci ... A*11 belongs to HLA-A" | `prefix_bind` refuses: A/B/C DO have anchors here, so the gate stands down |
+| "no tables and only ABC loci" | no anchors from any engine |
+| "just says A*01, *33" | HA-015, the star-less continuation |
+| "each allele in the cell under the loci" | column layout |
+| tilted (three notes) | four of the nine contradictions sit on one tilted page |
+
+The two "bare A" pages were the surprise. `_bare_class_i_column` was built for
+exactly them, and it is not the thing refusing: on one, our detector drew 86
+boxes on a full report and produced **zero** `A`, `B` or `C` tokens, garbling
+the table region while reading the letterhead cleanly. The whole-page engine
+does no better — across the seven worst annotated pages it finds FEWER boxes
+than ours (43 against 86, 39 against 144) and recovers two anchors in total.
+That is s11's finding reached from a third direction: these pages are not lost
+to a binding rule, they are lost before any rule runs.
+
+### `anchor_row_bind.py`, and what it is worth
+
+One note did point at something fixable. "anchor found but no box at all in its
+cell under this rule" is the second largest refusal in the corpus — 23,986
+cells over 14,701 pages. On some of those the label WAS read, so the row is
+known, and the value is sitting on that row; what failed was the cell rectangle,
+not the reading.
+
+The pass binds only when two independent signals agree: the **row** from the
+printed anchor (geometry, as the project requires) and the **locus** from the
+value's own printed prefix (nomenclature, the s12 decision).
+
+### The first version was wrong, and an adversarial review is what caught it
+
+The first version bound **458 cells**, and the argument above was the whole
+safety case for it. A skeptical multi-agent review (31 agents, every claimed
+defect independently refuted before being kept) confirmed **eleven** defects.
+Two of them destroyed the argument:
+
+**"On the anchor's row" was a stripe across the whole page.** There was no
+distance cap and no direction. Measured on that version's own binds: the gap
+from the label reached 69 anchor heights, **87% of bound boxes sat past the
+`max_gap=20` that `DEFAULT_RULE` enforces on the very same pages**, and twelve
+boxes were to the LEFT of their own label, which no rule in this pipeline
+reads. `_candidates` states the reason the cap exists: a gap wide enough to
+reach a second allele from the anchor is wide enough to reach the next column,
+"which is exactly how a value gets bound to the wrong locus."
+
+**It published the case the project reserves for a human.** Two loci on one
+printed band is a normal layout. With `HLA-A`'s cell blank and `A*24` sitting
+inside `HLA-B`'s printed cell, `resolve_locus` refuses that box — "value names
+A but the anchor is B; geometry and text disagree" — because when geometry and
+text disagree, neither wins. The first version resolved it. A matching prefix
+does not establish which cell a box came from, and the claim that "geometry
+supplies the row" was never checked against ownership.
+
+Also confirmed: a star-less token (`A24` parses WITH a prefix) was skipped
+rather than tainting the row, hiding it from `MAX_VALUES` so a row of three
+tokens could bind two; the comparison-sheet guard — the only thing between the
+pass and the right gene of the WRONG PERSON — returned an empty set on a query
+error, failing open; the two-loci exclusivity check was provably unreachable
+dead code that looked like a safety gate; and the OCR connection was never
+closed.
+
+The 458 writes were **reverted from the database**, not amended in place.
+
+### What survives
+
+With the gates the mainline actually enforces — right of the label, within
+`MAX_GAP` measured from the previous cell in the chain, not owned by a nearer
+label, star-less tokens tainting the row, the sheet guard failing closed —
+the pass binds **80 cells**: A 19, B 21, C 8, DRB1 24, DQB1 8.
+
+**83% of what the first version wrote does not survive this project's own
+rules.** That is the measurement worth keeping, and it is an argument for
+reviewing a rule adversarially before its output is believed, not after.
+
+**Accuracy is still unmeasured.** The 561 labels score identically before and
+after: 310 correct, 9 contradicted. None of the 80 cells is labelled. A stratum
+(`anchor_row`) now draws from it so the next round can settle it.
+
+### A provenance defect in both passes
+
+The same review found that neither pass wrote `value_boxes`, `anchor_box` or
+`raw`. All **4,767** prefix-bound facts therefore had no boxes at all, so
+`review_pack.cell_crop_box` returned `None` and the review page showed a
+RESOLVED medical value **with no pixels behind it** — the identical defect that
+made 50 of round one's 220 answers unusable. Both passes now record the boxes
+they read from; the 4,767 were reset and rebound to backfill them.
+
+`prefix_bind.py` had also shipped with no tests, which for an OCR acceptance
+rule is against this repository's own test-first requirement.
+`tests/contracts/test_prefix_binding.py` now covers both — 23 cases, each
+naming a way a pass could assert something untrue, seven of them reproducing a
+probe from the review.
+
