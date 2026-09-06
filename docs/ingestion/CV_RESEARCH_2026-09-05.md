@@ -992,3 +992,78 @@ Ranked by measured cells, with what each needs:
    placebo controls, +194 documents.
 8. **DRB3/4/5 no grouped header — 12 misses.** HA-011.
 
+## s19 — working the s18 list in order: items 4 through 7
+
+The operator: "please go through your list in order and resolve them one by one
+and don't stop until you have solve all of them." Items 1-3 need a designed
+rule and are with an adversarial workflow; item 8 likewise. This records the
+four that are done.
+
+### Items 5 and 6 — the two precision gates, applied
+
+s18 left both as a 3:1 trade for the operator. The instruction to resolve all
+eight is that decision, and both strata are "ambiguous critical OCR", which the
+constitution sends to review rather than best-guessing.
+
+`scripts/precision_gates.py`:
+
+| gate | stratum | labelled error | corpus cells withdrawn |
+|---|---|---|---|
+| 1 | value repaired AND stability SPLIT | 21.1% (4 of 19) | 1,467 |
+| 2 | DRB3/4/5 from an add-on source, no cleanly spelled header | 25% (5 of 20) | 1,461 |
+
+Nothing is deleted: the value moves to `raw`, the reason names the gate, the
+source carries `precision-gate/v1` so the group can be found and restored, and
+the reviewer sees the reading as a proposal with its crop. Running it twice
+touches nothing the second time.
+
+On the 1,342 labels, exactly as predicted:
+
+| | before | after |
+|---|---|---|
+| correct | 692 | 661 |
+| **contradicted** | **14** | **5** |
+| recall on cells read | 85.1% | 81.8% |
+| **precision of what is asserted** | 98.0% | **99.2%** |
+
+Nine wrong values withdrawn for thirty-one correct ones deferred to a person.
+
+### Item 7 — the blood-group label in the recognizer's spellings
+
+s16's Tier-1 pair route, which had survived placebo controls: a damaged group
+word IMMEDIATELY followed by a damaged blood word inside one box. Adjacency is
+the whole gate — `کرده` ("done") matches the wide group pattern and sits in
+prose on 364 pages, and alone it anchors nothing.
+
+A/B over all 23,566 documents, pair route on against off: **+291 resolved, 322
+surfaced to review (label found, cell unread), 1 lost** — the verifier's own
+predicted cost, where a new anchor makes one cell doubled. Applied by
+`scripts/abo_label_repass.py` to the extracted corpus: +221 (the caption pass
+had already claimed the rest from chat) and +154 to review with the anchor
+recorded so the reviewer's crop lands on the field.
+
+ABO 45.6% → **46.5%**, RH 40.7% → **41.7%**. On the labels ABO 46 → 47
+correct, still 0 wrong.
+
+### Item 4 — the Persian OCR backlog
+
+The pass's own filter (`--min-loci 2`) reported 1,566 documents; the true
+backlog is **4,529** of 23,566 with no Persian OCR at all, and they hold 6 of
+the 17 role misses and 6 of the 50 ABO misses. `easyocr` was in no lockfile
+extra; the only environment on this machine with torch (`anaconda3/envs/AGILE`,
+CPU) had it installed and the pass is running there in resumable batches, the
+first 800 with `--min-loci 1`. It is slow on a CPU and this box powers off
+under sustained load, so it runs bounded and resumes.
+
+### Item 8, sized while the design is verified
+
+The 12 labelled misses for "no grouped DRB3/4/5 header" sit on 4 pages; on
+every one the header is unreadable to both patterns, but each page prints 1-3
+DRB3/4/5 GENE TOKENS on the row and the human confirms the row exists.
+Corpus-wide, of 9,207 no-header documents, **4,615 print the gene tokens**
+(2,734 one, 1,499 two, 371 three) and 2,156 of them resolved DRB1 on the same
+page. Anchoring the row from its own gene tokens is the ADR 0008 Decision 4
+licence with the header absent, which HA-011 says needs no spec change for
+presence — and it reads a gene from token text, so it goes through the
+adversarial workflow before a line of it ships.
+

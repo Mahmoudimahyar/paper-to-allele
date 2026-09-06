@@ -37,11 +37,13 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   HLA: recall **85.1%** of cells a person read (692/813), precision 98.0%, 14
   wrong. ROLE recall 84.4%. **ABO recall 47.9%, RH 46.9%** (precision 100%;
   50/51 misses). Round four, the hard one: HLA 81.9%, ABO 36%.
-- **The loss is segmented (s18):** comparison sheets 0% (13 misses), no-family
-  pages 64% (32 misses), ABO cell window 21 misses (direction/distance/overlap
-  — geometry the HLA rules have and `_cell` lacks). 7 of 8 allele
-  contradictions are GLYPH-REPAIRED; **repaired+SPLIT is wrong 21%** on 1,467
-  corpus cells vs 0.4% for the 44,066 clean+UNANIMOUS core.
+- **The loss is segmented (s18) and being worked in order (s19).** Done:
+  items 5+6 (`precision_gates.py`: repaired+SPLIT and damaged-header DRBX
+  add-ons withdrawn to review — **contradicted 14 -> 5, precision 99.2%**,
+  recall 81.8%), item 7 (ABO label pair route, +221). Running: item 4 (Persian
+  backlog, 4,529 docs, in `anaconda3/envs/AGILE`). In verification workflows:
+  items 1-3 (ABO cell window, comparison sheets, no-family pages) and item 8
+  (DRB3/4/5 row anchored from its gene tokens; 4,615 pages print them).
 - **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — under
   `notes`, printed by `label_score.py` (s9).
 - **Rows are read along the page's own slope** (`ocr/rows.py`): the DOMINANT
@@ -69,17 +71,15 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **A bare role word IS read** (`FORM_FIELD_BARE`, `role_repass.py`, s15):
   refusing it double-charged evidence already gated above. **ROLE 78.1%**;
   measured 8 right, 1 wrong on the labels.
-- **A stratum reporting zero looks like a signal that does not occur.** It
-  happened three times (column name, rare pooled away, common pooled away).
-  The summary now prints what each stratum is CARRIED by.
+- **A stratum reporting zero looks like a signal that does not occur** — it
+  happened three times. The pack summary now prints what each is CARRIED by.
 - **A value box unlike its page's others is wrong 5x as often** (25% vs 5%,
   `ocr/boxsize.py`); n=8, so it MARKS for review and gates nothing yet.
 - **A locus can come from the allele's printed prefix** (`prefix_bind.py`, s12)
   where the page labels no row: **4,767 cells**. HA-017 holds the wording.
-- **`anchor_row_bind.py` (s14): 80 cells, UNMEASURED.** Its first version
-  bound 458; adversarial review confirmed 11 defects and 83% failed this
-  project's own rules. **Review a write-rule adversarially BEFORE believing its
-  yield** — a later workflow refused all 28 proposals it was given (s16).
+- **`anchor_row_bind.py` (s14): 80 cells, UNMEASURED.** Its first version bound
+  458 and 83% failed the project's own rules. **Review a write-rule
+  adversarially BEFORE believing its yield** (s14, s16).
 - **Two form facts:** DPA1/DPB1 printed but never filled (HA-009); the
   letterhead disclaims its blood-group field (KI-014).
 
