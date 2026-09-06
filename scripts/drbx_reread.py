@@ -104,6 +104,22 @@ def genes_in(reading: str) -> list[str] | None:
     return out
 
 
+def _separate(boxes: list[tuple[str, list[float]]]) -> list[tuple[str, list[float]]]:
+    """The row's gene boxes, minus any that is the same printed token twice.
+
+    Two boxes count as two haplotype slots, and that is what lets the counting
+    rule certify the third gene ABSENT — so a detector that boxed one printed
+    token twice would manufacture an absence. Overlapping boxes are the same
+    token; only boxes standing apart along the row are two of them.
+    """
+    kept: list[tuple[str, list[float]]] = []
+    for field, box in sorted(boxes, key=lambda pair: pair[1][0]):
+        if any(min(box[2], other[2]) - max(box[0], other[0]) > 0 for _, other in kept):
+            continue
+        kept.append((field, box))
+    return kept
+
+
 def select_rows(con: sqlite3.Connection) -> list[dict[str, object]]:
     """Grouped rows carrying a repair, with every gene box on them."""
     rows: dict[str, dict[str, object]] = {}
@@ -118,14 +134,19 @@ def select_rows(con: sqlite3.Connection) -> list[dict[str, object]]:
     ):
         row = rows.setdefault(
             sha,
-            {"sha256": sha, "rel": rel, "frame": frame, "tilt": tilt, "boxes": {}, "flag": False},
+            {"sha256": sha, "rel": rel, "frame": frame, "tilt": tilt, "boxes": [], "flag": False},
         )
         # The box of a gene the row rule READ. A cell this pass or the S-rule
         # demoted keeps its box and loses its value, and it is exactly the one
         # that needs a second reading; a cell whose box is the ink region of an
         # empty slot (`drbx_ink_pass.py`) holds no gene and is not re-read.
         if boxes and value != "ABSENT" and source != "ink-certified":
-            row["boxes"][field] = json.loads(boxes)[0]  # type: ignore[index]
+            # EVERY box the row named this gene with. A row can print one gene
+            # twice, once per haplotype, and taking only the first hid the
+            # second from this pass on 224 rows — rows whose only S-for-5
+            # repair was on the box nobody re-read, so nothing could settle.
+            for box in json.loads(boxes):
+                row["boxes"].append((field, box))  # type: ignore[union-attr]
         if (
             repaired
             or (reason or "").startswith(HELD_REASON[:40])
@@ -166,9 +187,9 @@ def run(
         frame = None
         if row["frame"] == "ROTATE" and row["tilt"]:
             frame = PageFrame(float(row["tilt"]), int(image.shape[1]), int(image.shape[0]))
-        boxes: dict[str, list[float]] = row["boxes"]  # type: ignore[assignment]
+        boxes: list[tuple[str, list[float]]] = row["boxes"]  # type: ignore[assignment]
         crops, keys = [], []
-        for field, box in boxes.items():
+        for field, box in _separate(boxes):
             crop = prepare_crop(image, box, frame=frame, profile=CONFIRMER_PADDED)
             if crop is not None and crop.pixels.size:
                 crops.append(Image.fromarray(crop.pixels))

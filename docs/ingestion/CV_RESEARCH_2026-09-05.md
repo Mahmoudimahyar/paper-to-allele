@@ -319,7 +319,30 @@ UNKNOWN, and the skeptics killed every proposal to widen the header grammar:
 merging adjacent same-line boxes before matching gains 75 cells and de-resolves
 more, and accepting a truncated header is refused by design.
 
-**So the remaining work is not an engine.** It is HA-012 (the NOT_TESTED
-policy, which decides the largest bucket in the pipeline), HA-014 (the nine
-contradictions), and HA-011 (the DRB3/4/5 grammar). The reviewer's next round of
-labels is worth more than any recognizer.
+**Two proposals did survive, and neither is an engine.** Both are cells the
+pipeline threw away rather than misread, and both were reproduced independently
+before being built:
+
+* **the template places a label where the page prints no ruling.** 2,439 cells
+  had a template fit inside `MAX_TEMPLATE_RESIDUAL` and were refused only for
+  the absence of a printed line. The band now comes from the label's own height
+  (`TEMPLATE_BAND_HEIGHTS`), which is safe on measurement rather than hope: the
+  row pitch of these templates is a median 3.35-3.38 label heights, so a band
+  of plus or minus 1.5 spans nine tenths of a row and two never touch, and the
+  path runs only under the family rule where a value from a wrong row names
+  another locus and gate 2 refuses it. What is refused outright is a placement
+  the page's own grid contradicts — a ruling around the VALUE that excludes the
+  label, 31 of 491 against 4 of the 1,698 the ruled path already binds.
+  **+458 cells.**
+* **a row that prints one gene twice discarded the second box.** `drbx.py` kept
+  one box per gene, so on 4,115 rows the second was lost, and on 224 of them it
+  carried the only S-for-5 repair — the token the re-read pass exists to settle.
+  Every box is kept now, and two boxes count as two haplotype slots only when
+  they stand apart along the row, because one printed token boxed twice would
+  manufacture an absence. Rows reading one gene in two slots went from 12 to
+  218.
+
+**Everything else is still HA-012** (the NOT_TESTED policy, which decides the
+largest bucket in the pipeline), **HA-014** (the nine contradictions) and
+**HA-011**. The reviewer's next round of labels is worth more than any
+recognizer.

@@ -68,7 +68,7 @@ repaired to `3` — there is no comparable evidence base.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from kidneymatch.ocr.anchors import Box, ResolutionStatus
@@ -167,6 +167,12 @@ class DrbxFact:
     gene_box: Box | None = None
     raw_text: str | None = None
     repaired: bool = False
+    # Every box on the row that named THIS gene, `gene_box` first. A row can
+    # print one gene twice, once per haplotype, and until this existed the
+    # second box was discarded: 4,115 rows corpus-wide, and on 224 of them the
+    # discarded box was the only one carrying the S-for-5 repair, so the
+    # re-read pass never saw it and the row could certify nothing.
+    gene_boxes: tuple[Box, ...] = ()
     tokens_on_row: int = 0
     reason: str = ""
     rule_id: str = RULE_ID
@@ -356,9 +362,17 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
     facts: dict[str, DrbxFact] = {}
     for gene, box, repaired in named:
         if gene in facts:
-            # A duplicated gene means both haplotypes carry it. That is
-            # legitimate, but copy number is not emitted: it would be derived
-            # from a correlation rather than from ground truth.
+            # A duplicated gene means both haplotypes carry it. Copy number is
+            # still not emitted — it would be derived from a correlation rather
+            # than from ground truth — but the second BOX is kept now. It is a
+            # printed token like any other, and discarding it hid it from every
+            # pass that re-reads a gene box.
+            first = facts[gene]
+            facts[gene] = replace(
+                first,
+                gene_boxes=(*first.gene_boxes, box),
+                repaired=first.repaired or repaired,
+            )
             continue
         facts[gene] = DrbxFact(
             gene=gene,
@@ -368,6 +382,7 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             gene_box=box,
             raw_text=(box.text or "").strip(),
             repaired=repaired,
+            gene_boxes=(box,),
             tokens_on_row=len(named),
         )
 

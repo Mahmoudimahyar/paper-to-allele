@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from drbx_reread import genes_in  # noqa: E402
+from drbx_reread import _separate, genes_in  # noqa: E402
 
 
 def test_a_named_gene_is_read() -> None:
@@ -67,3 +67,37 @@ def test_a_leading_hla_prefix_does_not_hide_the_ambiguity() -> None:
     """Stripping `HLA` must not let the `S` through as a letter of the prefix."""
     assert genes_in("HLA-DRBS") is None
     assert genes_in("HLA-DRB3") == ["DRB3"]
+
+
+def test_two_gene_boxes_standing_apart_are_two_haplotype_slots() -> None:
+    """A row may print one gene twice, once per haplotype.
+
+    Until the box of a duplicated gene was kept, only the first survived: on
+    4,115 rows corpus-wide the second was discarded, and on 224 of them it
+    carried the only S-for-5 repair, so this pass never saw the token it exists
+    to settle.
+    """
+    left = [0.30, 0.50, 0.38, 0.52]
+    right = [0.60, 0.50, 0.68, 0.52]
+    assert _separate([("DRB5", right), ("DRB5", left)]) == [("DRB5", left), ("DRB5", right)]
+
+
+def test_one_printed_token_boxed_twice_is_one_slot() -> None:
+    """Two slots is what certifies the third gene ABSENT, so a detector that
+    boxed one token twice would manufacture an absence."""
+    box = [0.30, 0.50, 0.38, 0.52]
+    overlapping = [0.32, 0.50, 0.40, 0.52]
+    assert _separate([("DRB5", box), ("DRB5", overlapping)]) == [("DRB5", box)]
+
+
+def test_boxes_come_back_in_reading_order() -> None:
+    """Left to right, so the crops and their genes stay in step."""
+    a = [0.10, 0.50, 0.18, 0.52]
+    b = [0.40, 0.50, 0.48, 0.52]
+    c = [0.70, 0.50, 0.78, 0.52]
+    order = [field for field, _ in _separate([("DRB4", c), ("DRB3", a), ("DRB5", b)])]
+    assert order == ["DRB3", "DRB5", "DRB4"]
+
+
+def test_an_empty_row_separates_to_nothing() -> None:
+    assert _separate([]) == []

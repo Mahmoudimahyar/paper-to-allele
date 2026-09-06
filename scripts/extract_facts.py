@@ -79,7 +79,7 @@ from kidneymatch.ocr.geometry import (  # noqa: E402
     unrectify_box,
 )
 from kidneymatch.ocr.glyphs import canonical_locus_label  # noqa: E402
-from kidneymatch.ocr.lattice import Lattice  # noqa: E402
+from kidneymatch.ocr.lattice import Lattice, RowBand  # noqa: E402
 from kidneymatch.ocr.lattice import lattice_for as build_lattice  # noqa: E402
 from kidneymatch.ocr.lattice import load_rulings as load_stored_rulings  # noqa: E402
 from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
@@ -268,6 +268,14 @@ def row_slope_for(
 # when the page fits that template this well (a fraction of the labels'
 # spread; `assign_prototype` accepts up to 0.04) — a row off is a row wrong.
 MAX_TEMPLATE_RESIDUAL = 0.04
+
+# Where the template places a label and the page prints NO ruling around it,
+# the band is taken from the label's own height instead. Measured: the row
+# pitch of these templates is a median 3.35-3.38 label heights, so a band of
+# plus/minus 1.5 spans nine tenths of one row and two adjacent bands never
+# touch. It is not a tuned yield knob either — 1.0 gives 479 cells, 1.5 gives
+# 491 and 2.0 gives 476.
+TEMPLATE_BAND_HEIGHTS = 1.5
 # The virtual label box: the page's median label size, centred where the
 # template puts the label.
 _LABEL_SIZE_FALLBACK = (0.08, 0.025)
@@ -280,6 +288,32 @@ def _label_size(boxes: list[Box]) -> tuple[float, float]:
     widths = sorted(b.x1 - b.x0 for b in labels)
     heights = sorted(b.height for b in labels)
     return widths[len(widths) // 2], heights[len(heights) // 2]
+
+
+def _grid_contradicts(
+    lattice: Lattice,
+    boxes: list[Box],
+    xc: float,
+    yc: float,
+    label_h: float,
+    band: RowBand,
+) -> bool:
+    """Does the page's own grid say this placement is on the wrong row?
+
+    No ruling around the label is not evidence against the placement; a ruling
+    around the VALUE that excludes the label is. Measured over the 491 cells
+    this fallback reaches, 31 are contradicted that way against 4 of the 1,698
+    the ruled path already binds — a rate 24 times higher — and on two of them
+    the contradicting row holds a different printed locus label. Those are the
+    cells where the template fit is good across the page and wrong here.
+    """
+    for box in boxes:
+        if not (band.top <= box.centre_y <= band.bottom) or box.x0 <= xc:
+            continue
+        theirs = lattice.row_band(box.centre_x, box.centre_y, label_h)
+        if theirs is not None and not theirs.contains_y(yc):
+            return True
+    return False
 
 
 def bind_in_lattice(
@@ -327,8 +361,19 @@ def bind_in_lattice(
             px, py = prototype.positions[locus]
             xc, yc = (px - fit.dx) / fit.scale, (py - fit.dy) / fit.scale
             band = lattice.row_band(xc, yc, label_h)
+            ruled = band is not None
             if band is None:
-                continue
+                # The template places the label on a page that prints no ruling
+                # there. The placement is still evidence — the fit residual is
+                # inside `MAX_TEMPLATE_RESIDUAL` and the form prints its locus
+                # on every value, so a value from the wrong row names another
+                # locus and gate 2 refuses it. So the label's own height gives
+                # the band. What is NOT allowed is a placement the page's own
+                # grid contradicts, which `_grid_contradicts` measures.
+                half = TEMPLATE_BAND_HEIGHTS * label_h
+                band = RowBand(yc - half, yc + half)
+                if _grid_contradicts(lattice, boxes, xc, yc, label_h, band):
+                    continue
             anchor = Box(xc - label_w / 2, yc - label_h / 2, xc + label_w / 2, yc + label_h / 2, "")
             if frame is not None and back is not None and not frame.is_identity:
                 # This box was drawn on the LEVEL page; provenance names the
@@ -340,7 +385,12 @@ def bind_in_lattice(
                     placed,
                     reason=(
                         f"label unread; placed by the form's template ({prototype.prototype_id}) "
-                        "and the ruled row" + (f"; {placed.reason}" if placed.reason else "")
+                        + (
+                            "and the ruled row"
+                            if ruled
+                            else "and its own label height, the page printing no ruling there"
+                        )
+                        + (f"; {placed.reason}" if placed.reason else "")
                     ),
                 )
                 bound.add(locus)
@@ -553,7 +603,10 @@ def extract(
             reason=fact.reason,
             rule_id=fact.rule_id,
             anchor_box=_box(fact.header_box),
-            value_boxes=_boxes([fact.gene_box] if fact.gene_box else []),
+            # Every box on the row that named this gene, not only the first:
+            # a row can print one gene twice, and the second box is what a
+            # re-read pass needs to count the second haplotype slot.
+            value_boxes=_boxes(list(fact.gene_boxes) or ([fact.gene_box] if fact.gene_box else [])),
         )
 
     reading = read_form_role(persian, latin)

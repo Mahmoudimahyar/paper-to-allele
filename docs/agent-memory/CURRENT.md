@@ -28,15 +28,14 @@ labels entirely.
   calibrated on photographs (3°/0.7). 6,511 ROTATE / 14,139 STRAIGHT / 2,916
   UNCERTAIN; 1,591 levelled (KI-024). A tilt from stored boxes is biased.
 - **Recognizers, against the labels** (67 cells, `ENGINE_BENCH_2026-09-05.md`):
-  **PP-OCRv6-medium 65 exact**, shipped pipeline 57, v5-server 55, Qwen3-VL 52,
-  Tesseract 32, ours 14. No pair agreed on a wrong value, which licenses the
-  two-engine gates.
+  **PP-OCRv6 65 exact**, shipped 57, v5-server 55, Qwen3-VL 52, ours 14. No pair
+  agreed on a wrong value, which licenses the two-engine gates.
 - **The decode and the confirmers.** `confirm_pass.py` has three targets;
   `promote_proposals.py` promotes CONFIRMED proposals — never on a LOW page,
   re-judged with admissibility, withdrawn when an equal-or-better reader
   disagrees. Crops stay axis-aligned; the upright ablation was a wash.
-- **The DRB3/4/5 row prints gene names** (22,017 vs 75 bare numbers); grammar v2
-  waits on HA-011. `drbx_reread.py` takes the digit only when it IS one.
+- **The DRB3/4/5 row prints gene names**; grammar v2 waits on HA-011.
+  `drbx_reread.py` takes the digit only when it IS one, and now sees BOTH boxes of a row printing one gene twice.
 - **The printed table is read as a grid (`ocr/lattice.py`):** rulings place a
   label the recognizer could not read (**+2,272**) and the second DRB3/4/5 slot,
   which ink certifies ABSENT when it is paper (**4,540 genes**).
@@ -44,7 +43,7 @@ labels entirely.
 - **Role resolves on 7,521 documents** (55% of those typed on 3+ loci).
 - **Accuracy is unvalidated (KI-012); the binding constraint.**
   The reviewer's 220-cell export scored **84 correct** as the pack showed it and
-  **118 correct / 86 correct abstentions / 6 missed / 1 partial / 9
+  **121 correct / 86 correct abstentions / 3 missed / 1 partial / 9
   contradicted** now. All nine contradictions are HA-014, cells marked
   NOT_PRINTED where the page evidence says otherwise; the page had shown no crop
   for 50 of the 220. The blind golden corpus waits on a person.
@@ -68,7 +67,8 @@ labels entirely.
   recognition is 3.3% of the loss, resolution is flat from 500 to 1,300 px, and
   **84.3% of refused cells never got a box from any engine**. The two biggest
   refusals hold no box at all, and 77% of the second is measured blank paper.
-  The remaining work is HA-012, HA-014 and HA-011, not an engine.
+  Two non-engine survivors were built (+458 template-band cells; the DRB3/4/5
+  duplicate gene box). Everything else is HA-012, HA-014 and HA-011.
 - **Two reading refusals get a second opinion (`reread_refused.py`):** an
   inadmissible first field and a candidate that does not parse. Both engines
   must state the SAME value. **+2,926 cells**, resumable by its own table.

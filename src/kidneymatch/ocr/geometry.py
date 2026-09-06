@@ -161,4 +161,8 @@ def restore_drbx(fact: DrbxFact, back: dict[int, Box]) -> DrbxFact:
         fact,
         header_box=None if header is None else back.get(id(header), header),
         gene_box=None if gene is None else back.get(id(gene), gene),
+        # Every box the row named this gene with, restored the same way: a
+        # duplicated gene keeps both, and provenance must name the boxes as
+        # stored rather than the levelled copies the rules worked on.
+        gene_boxes=tuple(back.get(id(box), box) for box in fact.gene_boxes),
     )
