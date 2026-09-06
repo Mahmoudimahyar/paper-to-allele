@@ -67,7 +67,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from kidneymatch.hla.vocabulary import load_vocabulary  # noqa: E402
 from kidneymatch.ocr.crops import CONFIRMER_PADDED, prepare_crop  # noqa: E402
 from kidneymatch.ocr.geometry import PageFrame  # noqa: E402
-from kidneymatch.ocr.glyphs import parse_allele_value  # noqa: E402
+from kidneymatch.ocr.glyphs import parse_allele_values  # noqa: E402
 
 LOCI = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
 REREAD_VERSION = "reread-refused/v1+ppocrv6+ppocrv5"
@@ -118,29 +118,46 @@ def classify_refusal(reason: str | None) -> tuple[str, str] | None:
     return None
 
 
-def agreed_value(reading: str, second: str, locus: str, refused: str, vocabulary) -> str | None:
-    """The value both recognizers state, or None when they settle nothing.
+def agreed_values(
+    reading: str, second: str, locus: str, refused: str, vocabulary
+) -> tuple[str, ...]:
+    """Every value BOTH recognizers state, or empty when they settle nothing.
 
     Every condition here is one an original reading would have had to pass.
+
+    A reading can state two: some forms print both alleles of a locus in one
+    box (`A*24,*02`, 1,819 tokens on 890 documents), and the single-value
+    parser this used to call returned None for all of them — so a box the
+    resolver had already refused, and both engines then read correctly, still
+    settled nothing.
     """
     first = _admissible(reading, locus, refused, vocabulary)
-    if first is None or first != _admissible(second, locus, refused, vocabulary):
-        return None
+    if not first or first != _admissible(second, locus, refused, vocabulary):
+        return ()
     return first
 
 
-def _admissible(reading: str, locus: str, refused: str, vocabulary) -> str | None:
-    parsed = parse_allele_value((reading or "").strip())
-    if parsed is None:
-        return None
-    if parsed.locus_prefix and parsed.locus_prefix.upper() != locus.upper():
-        return None
-    text = parsed.text()
-    if refused and refused in (parsed.first_field, text, (parsed.raw or "").strip()):
-        return None
-    if not vocabulary.covers(locus) or not vocabulary.is_admissible(locus, parsed.first_field):
-        return None
-    return text
+def agreed_value(reading: str, second: str, locus: str, refused: str, vocabulary) -> str | None:
+    """The single value both recognizers state, kept for the contract tests."""
+    found = agreed_values(reading, second, locus, refused, vocabulary)
+    return found[0] if len(found) == 1 else None
+
+
+def _admissible(reading: str, locus: str, refused: str, vocabulary) -> tuple[str, ...]:
+    values = parse_allele_values((reading or "").strip())
+    if not values:
+        return ()
+    out: list[str] = []
+    for parsed in values:
+        if parsed.locus_prefix and parsed.locus_prefix.upper() != locus.upper():
+            return ()
+        text = parsed.text()
+        if refused and refused in (parsed.first_field, text, (parsed.raw or "").strip()):
+            return ()
+        if not vocabulary.covers(locus) or not vocabulary.is_admissible(locus, parsed.first_field):
+            return ()
+        out.append(text)
+    return tuple(out)
 
 
 def select_cells(con: sqlite3.Connection) -> list[dict[str, object]]:
@@ -241,11 +258,9 @@ def run(
             readings, seconds = read(crops), read_second(crops)
         taken: list[str] = []
         for reading, second in zip(readings, seconds, strict=True):
-            value = agreed_value(
-                reading, second, str(cell["field"]), str(cell["refused"]), vocabulary
+            taken.extend(
+                agreed_values(reading, second, str(cell["field"]), str(cell["refused"]), vocabulary)
             )
-            if value is not None:
-                taken.append(value)
         if not dry_run:
             con.execute(
                 "INSERT OR REPLACE INTO reread_refused VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -269,7 +284,7 @@ def run(
         if len(taken) > MAX_VALUES:
             tally[f"{cell['refusal']}: more than two agreed values; the refusal stands"] += 1
             continue
-        complete = len(taken) == len(crops)
+        complete = len(taken) >= len(crops)
         where = "whole cell" if complete else "part of the cell"
         tally[f"{cell['refusal']}: re-read {where}, {len(taken)} value(s)"] += 1
         if dry_run:
