@@ -123,6 +123,19 @@ FAMILY_RULE = ValueRule(
     require_prefix=True,
 )
 
+# The relation for a form whose locus labels are COLUMN HEADERS, with each
+# value in the cell beneath its own label. `ocr/layout.py` decides that from the
+# page's geometry rather than from a family, because the property is visible
+# without recognising the form: the labels stand side by side on one printed
+# line instead of stacked down one column.
+#
+# The tolerances are the default's, turned through ninety degrees. `max_gap` is
+# a vertical reach in label heights, and 3 is ample — on the labelled example
+# the value sits between three and four heights under its header — because the
+# gate that keeps this honest is not the distance but `align_overlap`: a value
+# must stand in its label's own column, measured along the page's column lean.
+BELOW_RULE = ValueRule(direction="below", align_overlap=0.3, max_gap=3.0, max_values=2)
+
 # The columns `extract` produces, in order. Named explicitly so that a column
 # added by a later pass (`decode_pass.py` adds `stability`) cannot silently
 # break re-extraction.

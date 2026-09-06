@@ -232,13 +232,42 @@ neither replaces the other and `page_ocr_bind.py` takes the union — our own
 reading always stands, and the whole page is asked only about cells the
 pipeline left unresolved, under every gate the resolver applies.
 
-**Still open, and specified.** One note reads "this lab report has totally
-different structure. Instead of writing the loci and then the alleles in front
-of it, it writes each allele in the cell under the loci." That page is a
-column-header form: read whole, it prints `HLA-A`, `HLA-B` and `HLA-C` side by
-side on one line with each value in the same column directly beneath, and both
-alleles of a locus share one token separated by a period. It needs two things
-this round did not build: a per-document reading direction, so `direction`
-is measured from the page rather than assumed to be `right`, and a value
-grammar for the paired token. Our own detector gave that page 38 boxes and
-missed `HLA-B` entirely; the whole-page read finds all three headers.
+## 10. Reading the structure, in the order the reviewer set out
+
+The last note was "this lab report has totally different structure. Instead of
+writing the loci and then the alleles in front of it, it writes each allele in
+the cell under the loci", and the method came with it:
+
+> "first we need to know how much is the tilt of the image, in another word we
+> need to know the slope. Then we need to find the loci names. Then we should
+> detect the orientations of these loci names. Are they on the same row meaning
+> if we draw a horizontal line with the same slope as other horizontal lines in
+> the image, it can reach another loci name or we need to make the vertical
+> line to achieve that? how about alleles, if we draw a horizontal line from
+> the loci can we reach the respective alleles?"
+
+`ocr/layout.py` is that, in that order. It needs one thing the geometry did not
+have: rows and columns do NOT share a slope once boxes are normalised. A page
+turned by theta prints rows at `tan(theta) * width / height` and columns at
+`-tan(theta) * height / width`, which on a portrait page differ five-fold, so
+`ocr/rows.py` now returns both and `ValueRule` carries both.
+
+On the seven noted pages the reading is unanimous and correct:
+
+| page | loci sharing a line | loci sharing a column | direction |
+|---|---|---|---|
+| the six ordinary forms | 0–3 | 6–36 | right |
+| "totally different structure" | 3 | 0 | **below** |
+
+That page then resolves. `BELOW_RULE` reads down the column, sheared by the
+column lean; the printed cell ends where the next header begins, which is what
+`_candidates` and `_value_beyond_the_chain` now honour, because rows on a
+header form are evenly spaced and no distance cap separates a value from the
+label of the row beneath it. HLA-A and HLA-B bind with both alleles each, from
+the paired token the value grammar learned in s9. HLA-C abstains: its cell
+holds three asterisks and nothing else, which is the right answer.
+
+The direction is only ever read from the page, and `right` is what a page keeps
+whenever the evidence does not clearly say otherwise — 149 of the 150 pack
+pages. A form read the wrong way round binds one locus's value to another,
+which is the failure this project exists to prevent.

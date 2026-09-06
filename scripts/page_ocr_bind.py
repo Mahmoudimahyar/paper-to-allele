@@ -47,17 +47,19 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from extract_facts import (  # noqa: E402
+    BELOW_RULE,
     DEFAULT_RULE,
     FAMILY_RULE,
     frame_for,
     load_geometry,
     load_rulings,
-    row_slope_for,
 )
 from page_ocr_pass import ENGINE_VERSION as PAGE_ENGINE  # noqa: E402
 
 from kidneymatch.hla.vocabulary import load_vocabulary  # noqa: E402
 from kidneymatch.ocr.anchors import Box, ResolutionStatus, resolve_locus  # noqa: E402
+from kidneymatch.ocr.layout import reading_direction  # noqa: E402
+from kidneymatch.ocr.rows import page_slopes  # noqa: E402
 
 EV = "facts/v1"
 LOCI = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
@@ -65,6 +67,11 @@ SOURCE = "page-ocr+wholepage"
 REASON = (
     "our detector drew no usable box in this cell; the locus label and its value were both "
     "found by a second detector reading the whole page, and every binding gate ran on them"
+)
+BELOW_REASON = (
+    "read from the whole page as a COLUMN of a form whose locus labels are headers: the "
+    "labels stand side by side on one printed line and the value sits in its label's own "
+    "column beneath it"
 )
 
 
@@ -108,6 +115,19 @@ def unresolved(con: sqlite3.Connection, shas: set[str]) -> dict[str, list[str]]:
     return out
 
 
+def slopes_for(document: Document, rulings, frame) -> tuple[float, float]:
+    """This page's row fall and column lean, from its own stored rulings."""
+    stored = rulings.get(document.sha256)
+    if stored is None:
+        return 0.0, 0.0
+    width, height, horizontal, _ = stored
+    try:
+        segments = json.loads(horizontal or "[]")
+    except ValueError:
+        return 0.0, 0.0
+    return page_slopes(segments, width, height, frame) or (0.0, 0.0)
+
+
 def rule_for(con: sqlite3.Connection, sha: str):
     rule_id = (
         con.execute(
@@ -146,10 +166,15 @@ def run(facts_db: Path, page_db: Path, geometry_db: Path, *, dry_run: bool = Fal
         frame = frame_for(document, geometry)
         if frame is not None:
             boxes = frame.rectify(boxes)[0]
-        rule = rule_for(con, sha)
-        slope = row_slope_for(document, rulings, frame)
-        if slope:
-            rule = replace(rule, row_slope=slope)
+        rows, columns = slopes_for(document, rulings, frame)
+        # Which way does this form read? Asked of the page, not assumed: a page
+        # whose labels are column headers binds nothing at all under a rule
+        # that looks rightwards (`ocr/layout.py`).
+        layout = reading_direction(boxes, rows, columns)
+        rule = BELOW_RULE if layout.direction == "below" else rule_for(con, sha)
+        rule = replace(rule, row_slope=rows, column_slope=columns)
+        reason = BELOW_REASON if layout.direction == "below" else REASON
+        tally[f"read {layout.direction}"] += 1
         for locus in loci:
             result = resolve_locus(boxes, locus, rule, vocabulary=vocabulary)
             if result.status is not ResolutionStatus.RESOLVED or not result.values:
@@ -164,7 +189,7 @@ def run(facts_db: Path, page_db: Path, geometry_db: Path, *, dry_run: bool = Fal
                 "AND extraction_version=?",
                 (
                     " ".join(str(v) for v in result.values),
-                    REASON,
+                    reason,
                     SOURCE,
                     result.second_allele.value if result.second_allele else None,
                     now,

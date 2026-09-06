@@ -241,6 +241,13 @@ class ValueRule:
     # Zero is the behaviour of before.
     row_slope: float = 0.0
 
+    # The same page's COLUMN lean, in x per unit of y. Not the same number as
+    # `row_slope` and not derivable from it without the page's shape: rows are
+    # normalised by width over height and columns by height over width, which
+    # on a portrait page differ by more than four times. Used only by a rule
+    # reading downwards, where "the same column" is the question.
+    column_slope: float = 0.0
+
 
 @dataclass(frozen=True, slots=True)
 class LocusResolution:
@@ -368,6 +375,16 @@ def _all_locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
     return out
 
 
+def locus_anchors(boxes: list[Box]) -> list[tuple[str, Box]]:
+    """Every printed locus label on this page, with the locus it names.
+
+    Public because reading a form's LAYOUT starts from where its locus
+    labels are (`ocr/layout.py`), and that question is asked of a page
+    before any rule is chosen for it.
+    """
+    return _all_locus_anchors(boxes)
+
+
 def _anchor_is_tall(anchor: Box, boxes: list[Box]) -> bool:
     """Is this label box out of scale with the page's other labels?"""
     heights = sorted(box.height for _, box in _all_locus_anchors(boxes) if box is not anchor)
@@ -377,15 +394,20 @@ def _anchor_is_tall(anchor: Box, boxes: list[Box]) -> bool:
 
 
 def _row_lift(anchor: Box, box: Box, rule: ValueRule) -> float:
-    """How far this box's line has fallen by the time it reaches the box.
+    """How far this box's printed line has moved by the time it reaches the box.
 
+    Reading rightwards that is a fall in `y` across the width between them;
+    reading downwards it is a drift in `x` across the height between them.
     Zero on a level page and on any page whose rulings were not measurable, so
-    the comparison below is the one it always was unless the page says
-    otherwise.
+    the comparison is the one it always was unless the page says otherwise.
     """
-    if not rule.row_slope or rule.direction != "right":
+    if rule.direction == "right":
+        if not rule.row_slope:
+            return 0.0
+        return rule.row_slope * (box.centre_x - anchor.centre_x)
+    if not rule.column_slope:
         return 0.0
-    return rule.row_slope * (box.centre_x - anchor.centre_x)
+    return rule.column_slope * (box.centre_y - anchor.centre_y)
 
 
 def _aligned(anchor: Box, box: Box, rule: ValueRule) -> bool:
@@ -402,9 +424,11 @@ def _aligned(anchor: Box, box: Box, rule: ValueRule) -> bool:
         shorter = min(anchor.height, max(bottom - top, 1e-6))
         centres = abs(box.centre_y - lift - anchor.centre_y)
     else:
-        overlap = min(anchor.x1, box.x1) - max(anchor.x0, box.x0)
-        shorter = min(max(anchor.x1 - anchor.x0, 1e-6), max(box.x1 - box.x0, 1e-6))
-        centres = abs(box.centre_x - anchor.centre_x)
+        drift = _row_lift(anchor, box, rule)
+        left, right = box.x0 - drift, box.x1 - drift
+        overlap = min(anchor.x1, right) - max(anchor.x0, left)
+        shorter = min(max(anchor.x1 - anchor.x0, 1e-6), max(right - left, 1e-6))
+        centres = abs(box.centre_x - drift - anchor.centre_x)
     if overlap / shorter >= rule.align_overlap:
         return True
     return rule.centre_band is not None and centres <= rule.centre_band * anchor.height
@@ -447,6 +471,13 @@ def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
         start = box.x0 if rule.direction == "right" else box.y0
         if limit is not None and start - edge > limit:
             break  # the chain is broken; anything further belongs to another cell
+        if rule.direction == "below" and looks_like_locus_label((box.text or "").strip()):
+            # Reading DOWN a column, the cell ends where the next header
+            # begins. Rows on a header form are evenly spaced, so no distance
+            # cap separates a value from the label of the row beneath it; the
+            # label itself does. Without this the chain walks to the foot of
+            # the page and the cell is refused for holding too many values.
+            break
         found.append(box)
         edge = box.x1 if rule.direction == "right" else box.y1
     return found
@@ -497,6 +528,19 @@ def _owned_by_another_anchor(
     return None
 
 
+def _next_label_below(boxes: list[Box], anchor: Box, rule: ValueRule) -> float | None:
+    """Where this label's column ends: the top of the next label beneath it."""
+    tops = [
+        box.y0
+        for box in boxes
+        if box is not anchor
+        and box.y0 > anchor.y1
+        and _aligned(anchor, box, rule)
+        and looks_like_locus_label((box.text or "").strip())
+    ]
+    return min(tops) if tops else None
+
+
 def _value_beyond_the_chain(
     boxes: list[Box], anchor: Box, found: list[Box], rule: ValueRule
 ) -> Box | None:
@@ -509,12 +553,18 @@ def _value_beyond_the_chain(
     without it publishes half a genotype.
     """
     edge = found[-1] if found else anchor
+    # Reading DOWN a column, the printed cell ends at the next header, and
+    # nothing past it is this label's second allele — it is the next row's
+    # first one. `_candidates` stops there for the same reason.
+    floor = _next_label_below(boxes, anchor, rule) if rule.direction == "below" else None
     for box in boxes:
         if box is anchor or any(box is seen for seen in found):
             continue
         if not _aligned(anchor, box, rule):
             continue
         if _distance(edge, box, rule.direction) <= 0:
+            continue
+        if floor is not None and box.y0 >= floor:
             continue
         text = (box.text or "").strip()
         if looks_like_locus_label(text) or not parse_allele_values(text):

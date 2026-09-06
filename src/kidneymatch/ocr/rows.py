@@ -112,6 +112,45 @@ def segment_angles(
     return angles
 
 
+def page_slopes(
+    segments: Sequence[Sequence[float]],
+    width: int,
+    height: int,
+    frame: PageFrame | None = None,
+) -> tuple[float, float] | None:
+    """How the printed rows fall and how the printed columns lean.
+
+    Both in normalised box coordinates, and they are not the same number. A
+    page rotated by theta prints its rows along `(cos, sin)` and its columns
+    along `(-sin, cos)`, so a row falls `tan(theta)` per unit of width and a
+    column drifts `-tan(theta)` per unit of HEIGHT. Normalising x and y
+    separately then scales them by opposite aspect ratios:
+
+        row slope     = tan(theta) * width / height   (dy per dx)
+        column slope  = -tan(theta) * height / width  (dx per dy)
+
+    On a portrait page those differ by more than a factor of four, so a form
+    whose values sit UNDER their label cannot borrow the row's number.
+
+    `None` when the page printed no measurable grid or its rulings are bimodal.
+    """
+    if width <= 0 or height <= 0:
+        return None
+    angles = segment_angles(segments, frame)
+    if len(angles) < MIN_RULINGS:
+        return None
+    dominant = dominant_angle(angles)
+    if dominant is None or abs(dominant) > MAX_ROW_SLOPE_DEG:
+        return None
+    tangent = math.tan(math.radians(dominant))
+    rows = tangent * (width / height)
+    columns = -tangent * (height / width)
+    return (
+        rows if abs(rows) >= MIN_ROW_SLOPE else 0.0,
+        columns if abs(columns) >= MIN_ROW_SLOPE else 0.0,
+    )
+
+
 def row_slope(
     segments: Sequence[Sequence[float]],
     width: int,
@@ -125,16 +164,8 @@ def row_slope(
     rows are level enough that shearing them would cost more than it gains
     (`MIN_ROW_SLOPE`).
     """
-    if width <= 0 or height <= 0:
-        return None
-    angles = segment_angles(segments, frame)
-    if len(angles) < MIN_RULINGS:
-        return None
-    dominant = dominant_angle(angles)
-    if dominant is None or abs(dominant) > MAX_ROW_SLOPE_DEG:
-        return None
-    slope = math.tan(math.radians(dominant)) * (width / height)
-    return slope if abs(slope) >= MIN_ROW_SLOPE else 0.0
+    both = page_slopes(segments, width, height, frame)
+    return None if both is None else both[0]
 
 
 def dominant_angle(angles: Sequence[float]) -> float | None:
