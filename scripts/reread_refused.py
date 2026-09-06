@@ -99,11 +99,11 @@ CREATE TABLE IF NOT EXISTS reread_refused (
     reread_version     TEXT NOT NULL,
     refusal            TEXT,
     refused            TEXT,
-    boxes              TEXT,
     readings           TEXT,
     readings_second    TEXT,
     taken              TEXT,
     created_utc        TEXT NOT NULL,
+    boxes              TEXT,
     PRIMARY KEY (sha256, field, extraction_version, reread_version)
 );
 """
@@ -263,7 +263,17 @@ def run(
             )
         if not dry_run:
             con.execute(
-                "INSERT OR REPLACE INTO reread_refused VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                # Columns NAMED, never positional. This table gained `boxes`
+                # by ALTER TABLE, which appends, while the CREATE above lists
+                # it seventh — so a positional insert wrote every value one
+                # column to the left and shifted all 5,449 stored rows. The
+                # facts themselves were never touched (those writes name their
+                # columns), but a derived fact must point at what was actually
+                # read, and for a while this pointed at the wrong thing.
+                "INSERT OR REPLACE INTO reread_refused "
+                "(sha256, field, extraction_version, reread_version, refusal, refused, "
+                "boxes, readings, readings_second, taken, created_utc) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     cell["sha256"],
                     cell["field"],

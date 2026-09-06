@@ -96,3 +96,40 @@ def test_a_geometry_refusal_is_not_a_reading_refusal() -> None:
 def test_a_locus_holds_at_most_two_alleles() -> None:
     """The cardinality gate the pass applies to what it agreed on."""
     assert MAX_VALUES == 2
+
+
+def test_the_readings_are_stored_under_named_columns() -> None:
+    """A positional insert wrote every value one column to the left.
+
+    This table gained `boxes` by ALTER TABLE, which appends it last, while the
+    CREATE statement listed it seventh. The insert was positional, so for a
+    time `readings` held the box list, `created_utc` held the values taken and
+    `boxes` held the timestamp — on all 5,449 stored rows. The facts were never
+    affected, because those writes name their columns; the provenance record
+    was, and a derived medical fact has to point at what was actually read.
+    """
+    source = (ROOT / "scripts" / "reread_refused.py").read_text(encoding="utf-8")
+    assert "INSERT OR REPLACE INTO reread_refused VALUES" not in source
+    assert "INSERT OR REPLACE INTO reread_refused " in source
+    for column in (
+        "sha256",
+        "field",
+        "extraction_version",
+        "reread_version",
+        "refusal",
+        "refused",
+        "boxes",
+        "readings",
+        "readings_second",
+        "taken",
+        "created_utc",
+    ):
+        assert column in source
+
+
+def test_the_schema_lists_boxes_where_the_migration_put_it() -> None:
+    """The CREATE must describe the table a fresh run would meet."""
+    source = (ROOT / "scripts" / "reread_refused.py").read_text(encoding="utf-8")
+    create = source.split("CREATE TABLE IF NOT EXISTS reread_refused")[1].split(");")[0]
+    order = [line.split()[0] for line in create.splitlines() if line.strip() and "(" not in line]
+    assert order.index("boxes") > order.index("created_utc")
