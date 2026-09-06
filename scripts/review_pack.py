@@ -150,6 +150,26 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ),
     ("zero_fact_refused", 10, "labels anchored but every cell refused; nothing extracted"),
     (
+        "drbx_addon",
+        22,
+        "DRB3/4/5 taken from a re-read or from the ink measure rather than the row rule. "
+        "Split by the grouped header's spelling, this holds EVERY contradiction the pipeline "
+        "has: 37/37 right on a clean header, 15/20 on a damaged one. n=20 is deciding whether "
+        "1,461 cells go to review, and that is far too few",
+    ),
+    (
+        "abo_doubled",
+        16,
+        "two DIFFERENT blood-group values in one printed cell — the 117 the two-engine collapse "
+        "refuses. Whether these are one damaged reading or genuinely two subjects is unmeasured",
+    ),
+    (
+        "abo_unreadable",
+        16,
+        "the blood-group label was found and its cell read as nothing: 2,736 documents, and 14 "
+        "of the reviewer's 29 ABO misses. Is the cell empty, or is the window in the wrong place?",
+    ),
+    (
         "upright",
         18,
         "the photograph was a quarter turn off upright; turned, the page anchors its loci and "
@@ -488,6 +508,17 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
+    if any(
+        c.source in ("drbx-reread+ppocrv6", "ink-certified")
+        for c in doc.cells.values()
+        if c.locus in DRBX_LOCI and c.status == "RESOLVED"
+    ):
+        tags.add("drbx_addon")
+    abo_reason = (doc.abo or {}).get("reason") or ""
+    if abo_reason.startswith("more than one blood-group value"):
+        tags.add("abo_doubled")
+    elif abo_reason.startswith("the blood-group field is printed but its cell"):
+        tags.add("abo_unreadable")
     if any(c.source == "upright+rotated" for c in resolved):
         tags.add("upright")
     if (doc.role or {}).get("source") == "FORM_FIELD_BARE":
@@ -556,11 +587,22 @@ def choose(
     # the reviewer's own signal drew nothing. Rarity is the property that
     # matters — a document that is one of 22 witnesses to a signal is worth far
     # more there than as one of 11,179.
+    #
+    # Rarity alone is not enough, and the mirror of that bug bit next: a COMMON
+    # stratum every one of whose documents also carries a rarer tag is pooled
+    # away entirely. `drbx_addon` holds 3,737 documents and drew ZERO, and it
+    # is the stratum deciding whether 1,461 cells go to review. So `carriers`
+    # keeps every document that bears a tag, and the one-per-stratum pass below
+    # falls back to it when a pool is empty. Exclusivity still holds: a
+    # document is chosen once, and `seen` is what enforces that.
     frequency = Counter(tag for doc in present for tag in doc.tags)
     pools: dict[str, list[Doc]] = defaultdict(list)
+    carriers: dict[str, list[Doc]] = defaultdict(list)
     for doc in present:
         doc.tags = sorted(doc.tags, key=lambda tag: (frequency[tag], STRATA_ORDER[tag]))
         pools[doc.tags[0]].append(doc)
+        for tag in doc.tags:
+            carriers[tag].append(doc)
     # Documents someone has already labelled come first and are never dropped:
     # their answers are the only ground truth the project has.
     held = [doc for doc in docs.values() if doc.short in (pin or set())]
@@ -582,6 +624,9 @@ def choose(
         # Round-robin across layout families inside one stratum, so a stratum
         # held by one printed form does not fill with that form alone.
         grouped = by_family[tag]
+        already = {d.sha256 for d in chosen}
+        for family in list(grouped):
+            grouped[family] = [d for d in grouped[family] if d.sha256 not in already]
         families = sorted(grouped, key=lambda f: (f is None, str(f)))
         taken = 0
         while taken < want and len(chosen) < n and any(grouped[f] for f in families):
@@ -594,8 +639,18 @@ def choose(
     # takes a second. A pack is a diagnostic instrument, and a signal with no
     # document in it is a signal nobody can check — which is what happened
     # when six strata were added and the weights alone starved the smallest.
-    for tag in sorted(pools, key=lambda t: (len(pools[t]), STRATA_ORDER[t])):
+    for tag, _, _ in sorted(STRATA, key=lambda e: (len(pools[e[0]]), STRATA_ORDER[e[0]])):
+        before = len(chosen)
         take(tag, 1)
+        if len(chosen) > before or not carriers[tag]:
+            continue
+        # Its own pool is empty because every document carrying this signal was
+        # pooled to a rarer one. Borrow a carrier instead: a stratum nobody can
+        # see is a question nobody can answer.
+        taken = {d.sha256 for d in chosen}
+        spare = [d for d in carriers[tag] if d.sha256 not in taken]
+        if spare and len(chosen) < n:
+            chosen.append(rng.choice(spare))
     # Then the weights, over whatever room is left.
     total_weight = sum(w for _, w, _ in STRATA)
     room = max(0, n - len(chosen))
@@ -973,12 +1028,23 @@ def build_pack(
             payload = json.loads(path.read_text(encoding="utf-8"))
             extra[str(payload.get("engine") or path.stem)] = dict(payload.get("cells", {}))
     strata_counts = Counter(str(r["primary_tag"]) for r in records)
+    # How many packed documents CARRY each signal, which is not the same as how
+    # many were pooled under it: a document belongs to its rarest stratum, and
+    # one borrowed to represent a common stratum keeps its own primary tag. The
+    # primary count alone read `drbx_addon 0` on a pack carrying 12 of them.
+    carried_counts = Counter(tag for r in records for tag in (r["tags"] or []))
     pack = {
         "schema": PACK_SCHEMA,
         "pack_id": f"{seed}-{n}-{time.strftime('%Y%m%d', time.gmtime())}",
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
         "strata": [
-            {"tag": t, "weight": w, "meaning": m, "n": strata_counts.get(t, 0)}
+            {
+                "tag": t,
+                "weight": w,
+                "meaning": m,
+                "n": strata_counts.get(t, 0),
+                "carried_by": carried_counts.get(t, 0),
+            }
             for t, w, m in STRATA
         ],
         "n_documents": len(records),
@@ -994,7 +1060,7 @@ def build_pack(
     )
     shutil.copyfile(page, out / "index.html")
     write_launcher(out, port)
-    return {t: strata_counts.get(t, 0) for t, _, _ in STRATA}
+    return {t: carried_counts.get(t, 0) for t, _, _ in STRATA}
 
 
 def write_launcher(out: Path, port: int = 8765) -> None:
@@ -1155,7 +1221,9 @@ def main() -> int:
         geometry_db=args.geometry,
         port=args.port,
     )
-    print(f"packed {sum(counts.values())} documents into {args.out}")
+    packed = json.loads((args.out / "pack.json").read_text(encoding="utf-8"))["n_documents"]
+    print(f"packed {packed} documents into {args.out}")
+    print("  (a document carries several signals, so the counts below sum to more than that)")
     for tag, count in counts.items():
         print(f"  {tag:<24}{count:>5}")
     print(f"Run serve.cmd in that directory, then label at http://localhost:{args.port} .")

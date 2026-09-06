@@ -538,6 +538,52 @@ def test_a_rare_stratum_is_not_eaten_by_a_common_one(tmp_path: Path) -> None:
     assert "repaired_glyph" in document["tags"]
 
 
+def test_no_stratum_with_members_can_draw_zero(tmp_path: Path) -> None:
+    """Twice now a stratum has silently drawn nothing, for opposite reasons.
+
+    First a RARE one was claimed by a common tag, because pooling followed the
+    order STRATA is written in. Rarity-first pooling fixed that and created the
+    mirror: a COMMON stratum whose every document also carries a rarer tag is
+    pooled away entirely. `drbx_addon` holds 3,737 documents and drew ZERO, and
+    it is the stratum deciding whether 1,461 cells go to review.
+
+    A stratum nobody can see is a question nobody can answer, so the pack must
+    give every stratum that has members at least one document.
+    """
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=40)
+    # Reproduce the exact condition: a stratum carried by EVERY document, so it
+    # is the commonest tag, so rarity-first pooling assigns every one of its
+    # documents to some rarer tag and its own pool is left empty.
+    con = sqlite3.connect(db)
+    con.execute(
+        "UPDATE fact SET status='REVIEW_REQUIRED', value=NULL, "
+        "reason='the blood-group field is printed but its cell could not be read' "
+        "WHERE field='ABO'"
+    )
+    con.commit()
+    con.close()
+    module.build_pack(db, export, tmp_path / "pack", 30, 3, PAGE)
+    pack = json.loads((tmp_path / "pack/pack.json").read_text(encoding="utf-8"))
+
+    # What the corpus HAS: every stratum any document carries at all.
+    con = sqlite3.connect(db)
+    docs = module.load_documents(con)
+    con.close()
+    available = {
+        tag
+        for doc in docs.values()
+        for tag in module.tag_document(doc, export)
+        if (export / doc.rel_path).exists()
+    }
+    # What the pack SHOWS. A borrowed document keeps its own primary tag, so
+    # the guarantee is representation, not a count against that stratum.
+    shown = {tag for d in pack["documents"] for tag in d["tags"]}
+    assert available - shown == set(), f"strata with members drew nothing: {available - shown}"
+    ids = [d["id"] for d in pack["documents"]]
+    assert len(ids) == len(set(ids)), "the borrow path packed a document twice"
+
+
 def test_the_blank_paper_stratum_reads_the_column_the_ink_pass_writes(
     tmp_path: Path,
 ) -> None:
