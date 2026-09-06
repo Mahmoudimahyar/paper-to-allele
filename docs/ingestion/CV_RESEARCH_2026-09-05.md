@@ -131,3 +131,53 @@ What the amendment does NOT permit, and what still needs a further decision:
   lives in `.env` and is read from the environment;
 * nothing is sent that a person did not put in the sample: the pass takes an
   explicit document list and refuses to walk the corpus.
+
+## 8. What Google Vision actually bought (measured 2026-09-05)
+
+150 whole pages of the review pack were read with Cloud Vision
+`DOCUMENT_TEXT_DETECTION` under the s7 permission, and `vision_compare.py` put
+its boxes and ours through the SAME binding rule, scored by `review/golden.py`
+against the reviewer's labels. DRB3/4/5 are excluded: the grouped row is read
+by `ocr/drbx.py`, not by the rule under test.
+
+**Tokenisation is not a detail; it was the whole first result.** Vision returns
+WORDS, and it puts a word boundary at punctuation: `A*24` comes back as `A`,
+`*`, `24`, and `HLA-A` as `HLA`, `-`, `A`. `canonical_locus_label` refuses a
+bare `A` on purpose and `parse_allele_value` cannot read a bare `24`, so the
+raw words scored **1 correct cell of 160**. Rejoining by measuring gaps is a
+guess and reached 10: a threshold tight enough to keep two value columns apart
+keeps `A` and `24` apart too. Vision already reports where its spaces are
+(`detectedBreak`), and using that reached 28.
+
+| boxes from | correct | partial | missed | contradicted | label anchored |
+|---|---|---|---|---|---|
+| our own detector | **62** | 2 | 19 | 3 | 138 of 160 |
+| Vision, words as returned | 1 | 0 | 84 | 0 | 93 |
+| Vision, gaps measured | 10 | 1 | 74 | 0 | 104 |
+| Vision, its own break marks | 28 | 5 | 51 | 2 | 135 |
+
+**Vision finds the printed label about as well as we do (135 against 138) and
+converts far fewer of them into a value.** Cell by cell it is correct where we
+are correct 27 times, and correct where we miss **once**. That one cell is the
+entire recall it adds, against 33 it loses. Some of the gap is ours by
+construction — the glyph repairs are calibrated on our recognizer's measured
+confusions and do nothing for Vision's — but the conclusion for this form
+family does not turn on the margin.
+
+**The result worth having is about the largest refusal in the pipeline.**
+23,719 cells are refused with "anchor found but no box at all in its cell":
+we located the printed label and never detected a value beside it. That reads
+like a detector failure and it is not. On 197 of those cells, drawn from pages
+Vision has read, **Vision boxes something in the cell 1.0% of the time**. The
+control says the test is sound: on 400 cells our pipeline resolved, Vision
+boxes something 89.0% of the time.
+
+So that bucket is paper. It agrees with `cell_ink_pass.py`, which measured
+14,162 of 24,270 empty labelled cells as ink-free, and it means the bucket is
+closed by **HA-012 and HA-009's per-laboratory NOT_TESTED policy**, not by a
+better detector. Chasing detection there is work with nothing at the end of it.
+
+**Decision: do not adopt Vision in the pipeline.** It is worse through our
+rules, it adds a cloud dependency and a per-page cost, and it sends a patient's
+whole report off the machine. `vision_pass.py` and `vision_compare.py` stay as
+measuring instruments, run deliberately, writing no fact.

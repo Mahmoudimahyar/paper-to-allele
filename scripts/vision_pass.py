@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS vision_result (
     n_boxes         INTEGER,
     boxes_json      TEXT,
     texts_json      TEXT,
+    token_boxes_json TEXT,
+    tokens_json     TEXT,
     confs_json      TEXT,
     full_text       TEXT,
     elapsed_ms      INTEGER,
@@ -181,13 +183,83 @@ def _quad(vertices: list[dict[str, int]], width: int, height: int) -> list[float
     return [round(x0, 6), round(y0, 6), round(x1, 6), round(y1, 6)]
 
 
-def parse_response(payload: dict, width: int, height: int) -> dict[str, object]:
-    """Word boxes, their texts, and the page's full text.
+# Break types Vision reports BETWEEN two of its words. Anything in this set
+# separates printed tokens; anything else (including no break at all) does not.
+SEPARATING_BREAKS = frozenset({"SPACE", "SURE_SPACE", "EOL_SURE_SPACE", "LINE_BREAK"})
 
-    `textAnnotations[0]` is the whole page in one entry; the words follow. The
-    words are what our anchor rules need, because a locus label and its value
-    are separate tokens on a printed row. A word whose polygon is unusable
-    drops its text with it, or every later box would name the wrong token.
+
+def _word_text(word: dict) -> str:
+    return "".join(symbol.get("text", "") for symbol in word.get("symbols") or [])
+
+
+def _word_break(word: dict) -> str:
+    """The break Vision reports after this word, from the word or its last symbol."""
+    at_word = ((word.get("property") or {}).get("detectedBreak") or {}).get("type", "")
+    if at_word:
+        return str(at_word)
+    symbols = word.get("symbols") or []
+    if not symbols:
+        return ""
+    last = (symbols[-1].get("property") or {}).get("detectedBreak") or {}
+    return str(last.get("type", ""))
+
+
+def printed_tokens(payload: dict, width: int, height: int) -> tuple[list[list[float]], list[str]]:
+    """Vision's words rejoined into the tokens the page actually prints.
+
+    This matters more than it sounds. Vision returns `A*24` as three words —
+    `A`, `*`, `24` — because it puts a word boundary at the punctuation, and
+    `ocr/anchors.py` requires the whole token: `canonical_locus_label` refuses
+    a bare `A` on purpose, and `parse_allele_value` cannot read a bare `24` as
+    an allele of anything. Measured on the reviewer's 20 pages, feeding the raw
+    words to the binding rule scored 1 correct cell out of 160 against our own
+    detector's 62, which measures Vision's tokenisation and not its reading.
+
+    Rejoining by geometry was tried first and is a guess: a threshold tight
+    enough to leave two columns apart leaves `A` and `24` apart too. Vision
+    already knows the answer and reports it — `detectedBreak` says whether a
+    space follows each word — so this uses that instead of measuring gaps.
+    """
+    boxes: list[list[float]] = []
+    texts: list[str] = []
+    annotation = payload.get("fullTextAnnotation") or {}
+    for page in annotation.get("pages") or []:
+        for block in page.get("blocks") or []:
+            for paragraph in block.get("paragraphs") or []:
+                run_boxes: list[list[float]] = []
+                run_text: list[str] = []
+                for word in paragraph.get("words") or []:
+                    box = _quad(
+                        (word.get("boundingBox") or {}).get("vertices") or [], width, height
+                    )
+                    if box is not None:
+                        run_boxes.append(box)
+                        run_text.append(_word_text(word))
+                    if _word_break(word) in SEPARATING_BREAKS and run_boxes:
+                        boxes.append(_enclosing(run_boxes))
+                        texts.append("".join(run_text))
+                        run_boxes, run_text = [], []
+                if run_boxes:
+                    boxes.append(_enclosing(run_boxes))
+                    texts.append("".join(run_text))
+    return boxes, texts
+
+
+def _enclosing(boxes: list[list[float]]) -> list[float]:
+    return [
+        min(b[0] for b in boxes),
+        min(b[1] for b in boxes),
+        max(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    ]
+
+
+def parse_response(payload: dict, width: int, height: int) -> dict[str, object]:
+    """Word boxes, the printed tokens they make, and the page's full text.
+
+    `textAnnotations[0]` is the whole page in one entry; the words follow. Both
+    the words and the rejoined tokens are kept: the words are what Vision
+    actually returned, and the tokens are what our rules can read.
     """
     annotations = payload.get("textAnnotations") or []
     boxes: list[list[float]] = []
@@ -198,10 +270,17 @@ def parse_response(payload: dict, width: int, height: int) -> dict[str, object]:
             continue
         boxes.append(box)
         texts.append(entry.get("description") or "")
+    token_boxes, tokens = printed_tokens(payload, width, height)
     full = (payload.get("fullTextAnnotation") or {}).get("text") or (
         annotations[0].get("description") if annotations else ""
     )
-    return {"boxes": boxes, "texts": texts, "full_text": full}
+    return {
+        "boxes": boxes,
+        "texts": texts,
+        "token_boxes": token_boxes,
+        "tokens": tokens,
+        "full_text": full,
+    }
 
 
 def google_said(problem: urllib.error.HTTPError) -> str:
@@ -358,7 +437,7 @@ def _record(
     sha, rel, width, height = row
     boxes = parsed["boxes"] if parsed else []
     con.execute(
-        "INSERT OR REPLACE INTO vision_result VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO vision_result VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             sha,
             ENGINE_VERSION,
@@ -368,6 +447,8 @@ def _record(
             len(boxes),  # type: ignore[arg-type]
             json.dumps(boxes) if parsed else None,
             json.dumps(parsed["texts"]) if parsed else None,
+            json.dumps(parsed["token_boxes"]) if parsed else None,
+            json.dumps(parsed["tokens"]) if parsed else None,
             None,
             parsed["full_text"] if parsed else None,
             int((time.monotonic() - started) * 1000),

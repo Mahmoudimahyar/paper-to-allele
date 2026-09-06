@@ -54,11 +54,24 @@ from kidneymatch.review.golden import classify  # noqa: E402
 
 EV = "facts/v1"
 VISION_ENGINE = "google-vision/v1+DOCUMENT_TEXT_DETECTION"
+# Read from the grouped row by `ocr/drbx.py`, never by the generic value rule,
+# so they are not part of a comparison OF that rule. Counted and named.
+GROUPED_DRBX = ("DRB3", "DRB4", "DRB5")
 # How far right of a label a value may sit, and how far off its line, both in
 # label heights. Deliberately generous: this asks whether a box EXISTS in the
 # cell at all, not whether the binding rule would accept it.
 CELL_REACH = 20.0
 CELL_BAND = 1.0
+
+# Vision returns WORDS; our detector returns printed tokens. Measured on the
+# reviewer's 20 pages, Vision splits `HLA-A` into `HLA` and `A`, and `A*24`
+# into `A`, `*` and `24` — 802 of its 2,940 boxes are a single character
+# against 166 of our 1,503. Feeding those straight to `ocr/anchors.py`
+# measures its tokenisation against rules written for ours, not its detection,
+# so the words are reassembled into printed tokens first: two boxes on one line
+# separated by less than a space belong to the same token.
+SAME_LINE_SHARE = 0.5  # vertical overlap, as a share of the shorter box
+SPACE_RATIO = 0.42  # a gap this many box-heights wide or more is a space
 
 
 def shape(text: str | None) -> str:
@@ -75,6 +88,59 @@ def boxes_from(rows: list[tuple[str, str]]) -> list[Box]:
     return out
 
 
+def merge_words(boxes: list[Box]) -> list[Box]:
+    """Vision's words, reassembled into the printed tokens our rules read.
+
+    Two boxes join when they share a line and the gap between them is narrower
+    than a space. That is what rebuilds `HLA-A` from `HLA`, `-`, `A`, and
+    `A*24` from `A`, `*`, `24` — and `canonical_locus_label` and
+    `parse_allele_value` both require the whole token, by design, because a
+    bare `A` is not a locus and a bare `24` is not a value.
+    """
+    if not boxes:
+        return []
+    # A line is a y-range, not its last box. Judging membership by the last box
+    # added put two tokens of one printed row into different lines whenever the
+    # row jittered by a pixel, which is most rows on a photographed page, and
+    # that is what stopped `A`, `*` and `24` from ever being rejoined.
+    lines: list[list[Box]] = []
+    spans: list[tuple[float, float]] = []
+    for box in sorted(boxes, key=lambda b: (b.y0, b.x0)):
+        for index, (top, bottom) in enumerate(spans):
+            overlap = min(box.y1, bottom) - max(box.y0, top)
+            if overlap > SAME_LINE_SHARE * min(box.height, bottom - top):
+                lines[index].append(box)
+                spans[index] = (min(top, box.y0), max(bottom, box.y1))
+                break
+        else:
+            lines.append([box])
+            spans.append((box.y0, box.y1))
+    merged: list[Box] = []
+    for line in lines:
+        run = [line[0]]
+        for box in sorted(line, key=lambda b: b.x0)[1:]:
+            gap = box.x0 - run[-1].x1
+            if gap <= SPACE_RATIO * max(box.height, run[-1].height):
+                run.append(box)
+                continue
+            merged.append(_joined(run))
+            run = [box]
+        merged.append(_joined(run))
+    return merged
+
+
+def _joined(run: list[Box]) -> Box:
+    if len(run) == 1:
+        return run[0]
+    return Box(
+        min(b.x0 for b in run),
+        min(b.y0 for b in run),
+        max(b.x1 for b in run),
+        max(b.y1 for b in run),
+        "".join((b.text or "") for b in sorted(run, key=lambda b: b.x0)),
+    )
+
+
 def our_boxes(ocr: sqlite3.Connection, sha: str) -> list[Box]:
     for rel, boxes_json, texts_json in ocr.execute(
         "SELECT rel_path, boxes_json, texts_json FROM ocr_result WHERE sha256=? AND n_boxes>0",
@@ -86,13 +152,26 @@ def our_boxes(ocr: sqlite3.Connection, sha: str) -> list[Box]:
     return []
 
 
-def vision_boxes(vision: sqlite3.Connection, sha: str) -> list[Box]:
+def vision_boxes(vision: sqlite3.Connection, sha: str, *, joined: str = "vision") -> list[Box]:
+    """Vision's boxes for one page, in the tokenisation asked for.
+
+    `vision` uses Vision's own word boundaries (`detectedBreak`), which is the
+    only honest comparison: our rules read printed tokens, and Vision knows
+    where its own spaces are. `geometry` rejoins the raw words by measuring
+    gaps, and `words` leaves them as returned; both are kept because the three
+    together are the measurement of how much the tokenisation mattered.
+    """
     row = vision.execute(
-        "SELECT boxes_json, texts_json FROM vision_result WHERE sha256=? AND engine_version=? "
-        "AND error IS NULL",
+        "SELECT boxes_json, texts_json, token_boxes_json, tokens_json FROM vision_result "
+        "WHERE sha256=? AND engine_version=? AND error IS NULL",
         (sha, VISION_ENGINE),
     ).fetchone()
-    return boxes_from([row]) if row else []
+    if not row:
+        return []
+    if joined == "vision" and row[2] and row[3]:
+        return boxes_from([(row[2], row[3])])
+    words = boxes_from([(row[0], row[1])])
+    return merge_words(words) if joined == "geometry" else words
 
 
 def rule_for(facts: sqlite3.Connection, sha: str):
@@ -139,9 +218,13 @@ def compare_labels(export: Path, facts, ocr, vision, vocabulary) -> None:
     boxes_seen: Counter[str] = Counter()
     newly_wrong: list[str] = []
     missing = 0
+    skipped_drbx = 0
     for cell_id, label in sorted(labels.items()):
         locus = pipeline.get(cell_id, ("", "?"))[1]
         if locus == "?" or cell_id not in cell_doc:
+            continue
+        if locus in GROUPED_DRBX:
+            skipped_drbx += 1
             continue
         sha = cell_doc[cell_id]["sha256"]
         theirs_boxes = vision_boxes(vision, sha)
@@ -163,6 +246,11 @@ def compare_labels(export: Path, facts, ocr, vision, vocabulary) -> None:
     print("\n== the labelled cells: our boxes against Vision's, same binding rule ==")
     if missing:
         print(f"  {missing} cells skipped: no Vision reading stored for their page")
+    if skipped_drbx:
+        print(
+            f"  {skipped_drbx} DRB3/4/5 cells skipped: the grouped row is read by "
+            "ocr/drbx.py, not by the rule under test"
+        )
     order = ["correct", "partial", "abstained", "missed", "contradicted"]
     print(f"  {'ours \\\\ vision':<16}" + "".join(f"{k:>14}" for k in order))
     for a in order:
