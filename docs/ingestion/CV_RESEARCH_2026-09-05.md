@@ -1045,15 +1045,31 @@ recorded so the reviewer's crop lands on the field.
 ABO 45.6% → **46.5%**, RH 40.7% → **41.7%**. On the labels ABO 46 → 47
 correct, still 0 wrong.
 
-### Item 4 — the Persian OCR backlog
+### Item 4 — the Persian OCR backlog: DONE
 
 The pass's own filter (`--min-loci 2`) reported 1,566 documents; the true
-backlog is **4,529** of 23,566 with no Persian OCR at all, and they hold 6 of
-the 17 role misses and 6 of the 50 ABO misses. `easyocr` was in no lockfile
-extra; the only environment on this machine with torch (`anaconda3/envs/AGILE`,
-CPU) had it installed and the pass is running there in resumable batches, the
-first 800 with `--min-loci 1`. It is slow on a CPU and this box powers off
-under sustained load, so it runs bounded and resumes.
+backlog was **4,529** of 23,566 with no Persian OCR at all, holding 6 of the 17
+role misses and 6 of the 50 ABO misses. `easyocr` is in no lockfile extra — the
+20,201 existing rows predate the repo's environment — so it was installed into
+the one environment on this machine with torch (`anaconda3/envs/AGILE`, CPU)
+and the pass run there in resumable batches at ~5s/page.
+
+**Every report document in the archive now has Persian OCR: 20,201 → 21,948
+rows, 0 errors, and `targets()` returns 0.** The 2,782 documents still without
+it carry no locus label in the Latin pass at all — advertisements and
+screenshots, which is exactly what the filter is for.
+
+Harvested by re-running the three readers over the new pages:
+
+| pass | gained |
+|---|---|
+| `role_repass.py` | 247 DONOR + 117 RECIPIENT bare, 35 + 27 anchored |
+| `abo_label_repass.py` | 138 resolved, 215 surfaced to review |
+| `caption_pass.py` | the chat re-weighed against the new form readings |
+
+**ROLE 78.1% → 79.9%** (18,404 → 18,830), ABO 46.5% → **47.1%**, RH 41.7% →
+**42.2%**. On the labels ROLE gains one correct (92 → 93) with contradictions
+unchanged at 2; ABO and RH hold at 47 and 46 correct, 0 wrong.
 
 ### Item 8, sized while the design is verified
 

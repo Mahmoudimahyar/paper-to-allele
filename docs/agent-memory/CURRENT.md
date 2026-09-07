@@ -40,8 +40,9 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **The loss is segmented (s18) and being worked in order (s19).** Done:
   items 5+6 (`precision_gates.py`: repaired+SPLIT and damaged-header DRBX
   add-ons withdrawn to review — **contradicted 14 -> 5, precision 99.2%**,
-  recall 81.8%), item 7 (ABO label pair route, +221). Running: item 4 (Persian
-  backlog, 4,529 docs, in `anaconda3/envs/AGILE`). In verification workflows:
+  recall 81.8%), item 7 (ABO label pair route, +221), item 4 (Persian backlog
+  DONE: every report document now read, 21,948 rows; ROLE -> **79.9%**). Being
+  implemented from verified specs in worktrees:
   items 1-3 (ABO cell window, comparison sheets, no-family pages) and item 8
   (DRB3/4/5 row anchored from its gene tokens; 4,615 pages print them).
 - **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — under
@@ -57,7 +58,6 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **611 pages were photographed SIDEWAYS** (s17, `upright_pass.py`): 0 of them
   anchored any locus. Turned, 425 anchor and **801 cells resolve**. The metric
   is box height>width IN PIXELS — normalised coords make it meaningless.
-- **`reread_refused.py`: both engines must state the SAME value. +2,926 cells.**
 - **A bare `A`/`B`/`C` can be a locus label** when structure says so (+106 per
   4,000). One box may print both alleles; `A*24,02` is HA-015.
 - **A pack rebuild pins labelled documents (`--keep-labelled`)** or the sample
@@ -75,8 +75,8 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   happened three times. The pack summary now prints what each is CARRIED by.
 - **A value box unlike its page's others is wrong 5x as often** (25% vs 5%,
   `ocr/boxsize.py`); n=8, so it MARKS for review and gates nothing yet.
-- **A locus can come from the allele's printed prefix** (`prefix_bind.py`, s12)
-  where the page labels no row: **4,767 cells**. HA-017 holds the wording.
+- **A locus can come from the allele's printed prefix** (`prefix_bind.py`, s12):
+  **4,767 cells**. HA-017 holds the wording.
 - **`anchor_row_bind.py` (s14): 80 cells, UNMEASURED.** Its first version bound
   458 and 83% failed the project's own rules. **Review a write-rule
   adversarially BEFORE believing its yield** (s14, s16).
