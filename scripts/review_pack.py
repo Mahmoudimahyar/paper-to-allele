@@ -89,6 +89,29 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     # load-bearing: a document usually carries several tags, and moving one
     # above another silently empties the lower pool.
     (
+        "family_tie",
+        18,
+        "the page fits one printed form but a second prototype of that form, leaning "
+        "differently, fitted nearly as well; the tie used to refuse the page and now the "
+        "form's own cell rule reads it. 987 pages, 649 cells, and 3 labelled documents — "
+        "far too few to say whether the lean argument holds",
+    ),
+    (
+        "family_loo",
+        18,
+        "the page's label stack fits a form except at ONE label, whose HLA- prefix the "
+        "recognizer boxed apart, and the fit without that label carried the form's rule. "
+        "318 pages; exactly one is labelled, and on it three cells go from missed to correct",
+    ),
+    (
+        "below_rule",
+        18,
+        "the page's locus labels are column HEADERS and the value was read from the cell "
+        "beneath its own label, not along a row. 305 pages, 370 cells, NONE of them "
+        "labelled and none read by any second detector — this stratum is the only evidence "
+        "that exists for the direction",
+    ),
+    (
         "template_band",
         22,
         "the label was unreadable and the form's template placed it where the page "
@@ -500,6 +523,17 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("zero_fact_refused" if anchored else "zero_fact_no_anchor")
     if any((c.reason or "").find("and its own label height") >= 0 for c in resolved):
         tags.add("template_band")
+    # The three answers for a page that had no layout family. Each is keyed on
+    # BOTH the rule the extraction records and the source `family_repass.py`
+    # writes, because the same reading reaches the database by two routes: a
+    # re-extraction writes the rule id with no source, and the repass writes
+    # its own source onto a cell the extraction refused.
+    if any(c.source == "family-tie" or "(tie:" in (c.rule_id or "") for c in resolved):
+        tags.add("family_tie")
+    if any(c.source == "family-loo" or "(loo:" in (c.rule_id or "") for c in resolved):
+        tags.add("family_loo")
+    if any(c.source == "below-rule" or (c.rule_id or "") == "ADR0008/below-rule" for c in resolved):
+        tags.add("below_rule")
     if any(c.source == "rerecognised+ppocrv6" for c in resolved):
         tags.add("second_reading")
     if any(c.source == "page-ocr+wholepage" for c in resolved):
