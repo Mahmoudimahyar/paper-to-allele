@@ -26,28 +26,30 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   rest on that.
 - **The confirmers.** Three `confirm_pass` targets; `promote_proposals` never
   promotes on a LOW page. **Every binding pass must write `value_boxes`** or
-  the reviewer sees a RESOLVED value with no crop (s14; happened twice).
+  the reviewer sees a RESOLVED value with no crop (s14, twice).
 - **The DRB3/4/5 row prints gene names**; grammar v2 waits on HA-011.
-  `drbx_reread.py` takes the digit only when it IS one, and sees both boxes.
 - **The printed table is read as a grid (`ocr/lattice.py`):** rulings place an
-  unreadable label (**+2,272**) and the second DRB3/4/5 slot, ink-certified
-  ABSENT when paper (**4,540 genes**). NOT_TESTED is HA-012's to answer.
+  unreadable label (**+2,272**) and the second DRB3/4/5 slot. NOT_TESTED is
+  HA-012's.
 - **Accuracy (KI-012), 1,342 labels over 4 rounds (s18). LEAD WITH RECALL,
   NOT PRECISION** — the reviewer experiences how often the answer was THERE.
   HLA: recall **85.1%** of cells a person read (692/813), precision 98.0%, 14
   wrong. ROLE recall 84.4%. **ABO recall 47.9%, RH 46.9%** (precision 100%;
   50/51 misses). Round four, the hard one: HLA 81.9%, ABO 36%.
-- **The s18 loss list, worked in order (s19-s21). SEVEN OF EIGHT DONE.**
-  5+6 `precision_gates.py` (**contradicted 14 -> 5, precision 99.2%**), 7 ABO
-  label spellings, 4 Persian backlog (21,948 rows, ROLE **79.9%**), and 1/2/8
-  merged (ABO cell window, column binding on two-person sheets, the DRB3/4/5
-  row with no readable header): +699 +621 cells, labels **664 correct, 5
-  wrong**. Item 3 (no-family pages) rejected twice, still in its worktree.
+- **The s18 loss list is DONE — all eight (s19-s22).** On the same 1,342
+  labels: HLA **666 correct, 5 wrong, precision 99.3%** (was 692/14, 98.0%);
+  recall 82.4% (was 85.1%) because items 5+6 deliberately withdrew 2,928 cells
+  to review. ROLE 93/2, ABO 48/0, RH 47/0. Coverage ROLE **79.9%**, ABO
+  **47.3%**, RH **42.4%**, HLA **67,649** value cells.
+- **3,685 cells from nine NEW sources are UNMEASURED** (s22): upright+rotated
+  801, column-bound 699, token-anchored-drbx 621, family-tie 550, below-rule
+  364, family-loo 258, family-prefix 204, column-named 108, anchor-row 80. Each
+  has a source, a stratum and a withdrawal handle; three have `MIN_DRAW`
+  floors. **Round five is what measures them.**
 - **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE** — under `notes`,
   printed by `label_score.py` (s9).
-- **Rows are read along the page's own slope** (`ocr/rows.py`): the DOMINANT
-  ruling cluster, floored at 0.008. It was already measured on every tilted
-  page and thrown away by thresholds meant for rotating pixels. **+209**.
+- **Rows are read along the page's own slope** (`ocr/rows.py`): the dominant
+  ruling cluster, floored at 0.008. **+209 second alleles**.
 - **The whole page is read too** (`page_ocr_pass.py`) and our boxes again by
   PP-OCRv6 (`rerecognise_pass.py`); strictly additive.
 - **REFUSALS AND MISSES ARE DIFFERENT POPULATIONS** (s11, s17): refused cells

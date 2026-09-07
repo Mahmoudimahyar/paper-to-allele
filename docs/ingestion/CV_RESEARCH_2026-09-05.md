@@ -1360,3 +1360,89 @@ It also still justified `refuse_bare` with "765 of 765 values print their
 locus" from the pre-fix build, where the shipped extraction reads 290 pages and
 727 of 727. That is the same class of defect the first review rejected it for.
 
+## s22 — all eight items closed
+
+The s18 list is done. Item 3 was rejected twice and landed on the third pass;
+the other seven are in.
+
+| # | item | outcome |
+|---|---|---|
+| 1 | ABO cell window | merged — the cell is the label's ROW, not its line |
+| 2 | comparison sheets | merged — one person's column, under a subject-agreement gate |
+| 3 | no-family pages | merged after 2 rejections — tie, leave-one-out, prefix repair, column direction |
+| 4 | Persian OCR backlog | done — every report document read, 21,948 rows |
+| 5 | repaired+SPLIT | withdrawn to review, 1,467 cells |
+| 6 | damaged-header DRBX | withdrawn to review, 1,461 cells |
+| 7 | ABO label spellings | merged — the pair route, +221 |
+| 8 | DRB3/4/5, no readable header | merged — token route + gated widening |
+
+### Accuracy, measured on the same 1,342 labels throughout
+
+|  | start of the list | now |
+|---|---|---|
+| HLA correct | 692 | **666** |
+| HLA **wrong** | 14 | **5** |
+| HLA precision | 98.0% | **99.3%** |
+| HLA recall (of cells a person read) | 85.1% | 82.4% |
+| ROLE correct / wrong | 92 / 2 | **93 / 2** |
+| ABO correct / wrong | 46 / 0 | **48 / 0** |
+| RH correct / wrong | 45 / 0 | **47 / 0** |
+
+Recall fell and precision rose because items 5 and 6 were precision trades,
+taken deliberately: 2,928 cells withdrawn to review at roughly three correct
+readings deferred per wrong one withdrawn. **Nine of the fourteen wrong HLA
+values are gone.** Combined across all four fields the pipeline now asserts
+854 values and 7 of them disagree with a human — 99.2%.
+
+Corpus coverage: ROLE **79.9%** (from 78.1% at the start of the list), ABO
+**47.3%** (45.6%), RH **42.4%** (40.7%), HLA value cells **67,649** (65,574 at
+the start of the day, before the sideways pages).
+
+### What the nine new sources are worth, and what they are not
+
+    upright+rotated                801   sideways pages, turned
+    column-bound                   699   one person's column on a two-person sheet
+    token-anchored-drbx            621   the DRB3/4/5 row with no readable header
+    family-tie                     550   prototypes that author the same rule
+    below-rule                     364   values printed UNDER their labels
+    family-loo                     258   a stack that fits except at one label
+    family-prefix                  204   an HLA- prefix boxed apart from its locus
+    column-named+role-unconfirmed  108   named for review, no value written
+    anchor-row-prefix               80   the label read, the cell rectangle wrong
+
+**3,685 cells, and almost none of them measured.** These rules were aimed at
+populations four review rounds had barely sampled: 276 comparison sheets scored
+0 correct on every labelled cell before this, 479 no-header DRB3/4/5 pages had
+no labels at all, and the left-out fit and the column direction hold zero
+labelled pages between them. Each ships with its own `source`, its own review
+stratum and a withdrawal handle, and three of them carry a `MIN_DRAW` floor so
+the pack cannot quietly stop sampling them.
+
+The honest position is that precision is now 99.3% on what a person has
+checked, and 3,685 cells sit outside anything a person has checked. That is
+what round five is for.
+
+### What the process cost and returned
+
+Eight items produced, across four workflows: 28 design proposals of which the
+verifiers refused 28; four implementations of which the reviewers refused four;
+one of those refused twice more. Every rejection was a measurement, not an
+opinion — a dry run against the live stores, a constructed counterexample, a
+docstring compared against what the shipped gates produce.
+
+Three findings are worth carrying forward more than the cells they earned:
+
+* **two people published as one genotype**, caught by building the page rather
+  than reading the rule — a header row over a donor row and a recipient row,
+  where every gate passed and the cardinality was exactly right;
+* **a provenance map keyed on `id()` of objects already garbage** — 43 cells
+  with the anchor crop and the value crops in different frames, and a recycled
+  address able to hand a live box someone else's provenance, differently on
+  each run;
+* **a promotion gate written as a weight share**, which two unrelated merges
+  silently took below the number it names.
+
+None of the three is visible by reading the diff. All three were found by
+running the code against the corpus and comparing what it did with what it
+said.
+
