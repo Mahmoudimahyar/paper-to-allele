@@ -318,3 +318,122 @@ yet; the review pack's `mid_res` stratum measures it (HA-008).
 - **Blocking now?** Not extraction. Yes for MATCH-ABO-001: a blood group that
   may belong to the other person on the page must not gate a match.
 
+## HA-019 — the blood-group cell window: three decisions only a person can make
+
+- **Status:** OPEN. Not blocking extraction; blocking promotion of the
+  centre-band readings, blocking a settled answer on strict-never-worse, and
+  blocking the placebo gate the acceptance for this rule was written around,
+  which the shipped rule does not meet at one shift and cannot.
+- **What shipped:** `documents/abo.py` admits a value that misses its label's
+  LINE when the page's own rulings put it in the label's ROW
+  (`AboRescue.BAND`), and, on a page that rules nothing, when it sits within
+  0.75 label heights ABOVE the label's centre behind six gates
+  (`AboRescue.CENTRE`). Both routes refuse a token contradicted by a partial
+  printed in the label's own cell.
+- **The numbers, and which layer each belongs to.** These were confused in the
+  first version of this entry and the confusion is the reason it was rejected:
+  a `read_abo` count is not a published value.
+  - *reading level*, `scripts/abo_window_check.py` over 23,485 documents, raw
+    frame: **93 gain a reading (42 band, 51 centre), 0 values change, 1 is
+    LOST**, and 12 review reasons become specific. Levelled frame: 88 (44
+    band, 44 centre) — the pair is the frame discriminator.
+  - *facts level*, dry run of `scripts/abo_label_repass.py` against the live
+    stores: **31 newly published centre, 13 newly published band, 12 rows the
+    caption alone had answered re-attributed to the form, and 13 band
+    candidates written as REVIEW items carrying a crop**.
+  - `scripts/abo_repass.py` writes 34 more rows from a rescued reading (17
+    band, 17 centre); 4 documents are resolved by the grid that are not
+    resolved without it.
+  - On the store with both passes applied the group is **42 band ABO rows (29
+    RESOLVED, 13 REVIEW_REQUIRED) and 38 centre ABO rows**, plus 57 RH rows.
+  - 1,287 HLA cell labels: **unchanged** (616 correct / 513 abstained / 121
+    missed / 19 partial / 18 contradicted before and after). No ABO or RH cell
+    is labelled, so this rule cannot move that score in either direction.
+- **Decision 1 — strict-never-worse.** The one lost document is a cell the
+  pipeline resolves today on ONE engine's Rh sign, while the other engine's
+  box, a third of a line away, reads the opposite sign. The rescue makes the
+  cell doubled and sends it to a person. The mainline binder keeps the strict
+  reading in the equivalent case. Which is right is a policy question: is a
+  cross-engine sign disagreement over one field a reason to withdraw a shipped
+  value, or is the strict reading privileged because the window was designed
+  around it? The code currently withdraws it.
+- **Decision 2 — the centre band has no human check.** NO labelled document is
+  among the centre-band gains. 35 of 35 with a caption agree on the letter and
+  33 of 33 on the sign, but a caption is the poster's claim, not an independent
+  reading.
+- **Decision 3 — the placebo gate this rule fails, and why it cannot pass it.**
+  The acceptance asks that a translated anchor or a size-matched decoy "must
+  not exceed the shipped counts by more than +2 admissions".
+  `scripts/abo_window_check.py --placebo translated|decoy|direction` now gates
+  on exactly that — every extra admission, not only ones whose value differs —
+  prints the leak and the published leak beside it, and exits non-zero when a
+  gate fails. Measured over the live stores:
+
+  | placebo | reach | leak | leak that would be PUBLISHED |
+  |---|---|---|---|
+  | -1.0h | +202 | +1 | 0 |
+  | +1.0h | +10 | +4 | 0 |
+  | -1.5h / +1.5h | +1 / +1 | +1 / +1 | 0 / **1** |
+  | -2.0h / +2.0h | 0 / 0 | 0 / 0 | 0 |
+  | -3.0h / +3.0h | +1 / 0 | +1 / 0 | 0 |
+  | decoy (140,380 candidates) | +33 | +2 | **1** |
+  | wrong direction | 0 | 0 | 0 |
+
+  Three of these fail the gate as worded and the tool says so. The ±1.0h
+  failures are structural: `_MAX_BAND_HEIGHTS` is 2.0, so a label moved one of
+  its own heights is still inside its own printed row, and a rule whose cell IS
+  the row is required to find the same cell there. The collapse to +1 at 1.5h
+  and to 0 at 2.0h is the signature of a rule that follows a printed row rather
+  than one that merely reaches. The decoy reach fails for a different reason:
+  +2 absolute admissions is not a meaningful bar over 140,380 candidates, and
+  the statistic that answers the question is the RATE — **0.024% of decoys
+  admit a rescued value against 0.764% of printed field labels, 32.5x**.
+  - Two entries in that table are the residual risk and they are real: at a
+    +1.5h label displacement, and at one decoy in 140,380, the band route
+    admits a value that DIFFERS from the true read and two engines agree on it,
+    so `reconcile_abo` publishes it. Nothing in the rule can tell a mis-placed
+    label from a correctly placed one; that is what a placebo measures.
+  - **What is asked of a person:** approve the ±1.0h deviation as a measured
+    property of a row-based cell rule, or require a tighter `_MAX_BAND_HEIGHTS`
+    (which costs band gains and has not been measured at any other value), and
+    say whether the two published leaks above are acceptable at those rates.
+  - Not reproduced and not claimed: the pinned "~0.04%/decoy vs ~0.56%/anchor
+    (12.7x)". The decoy population it was measured over (45,670) was never
+    defined in reproducible terms; the definition used here — every Persian box
+    within 20% of the label's height whose text is not itself a blood-group
+    value, promoted one at a time — gives 140,380, and its own numbers are
+    printed above. Re-reading the band at the TOKEN's x rather than the
+    anchor's (the reviewer's residual) was measured and NOT shipped: it costs 5
+    of the 42 band gains and changes no leak (+1.0h leak stays 4, -1.0h rises
+    to 2).
+- **What to do about the centre route:** read at least 20 of its documents.
+  They carry the stratum `abo_centre_rescue`, which is FIRST in
+  `scripts/review_pack.py::STRATA` and weighted 100 of 559 for exactly this
+  reason: `choose` takes one document per stratum and then
+  `round(room * weight / total) - 1` more, so at the default `--n 150` it draws
+  **21** (measured against the live store). The band route is weighted 12 and
+  draws 3 a pack, so its 13 uncorroborated candidates need about five packs, or
+  a raised weight, if they are wanted sooner. Promote a route only at >= 95%
+  agreement; withdraw it otherwise. Both weights should come down once a round
+  has answered them.
+- **Also worth a person's eye:** the per-family offsets are tight (FORM#1
+  -0.72..-0.63h over 42 documents), which reads as a fixed template relation
+  rather than drift. The principled replacement for a generic band on unruled
+  pages is an ADR 0007 per-family ABO relation.
+- **Find them:** `SELECT sha256, rule_id, status FROM fact WHERE field='ABO'
+  AND rule_id LIKE 'abo/anchored-cell+%' AND extraction_version='facts/v1'`.
+  Every pass that publishes one of these writes that string —
+  `extract_facts.py`, `abo_label_repass.py` and `abo_repass.py` all call
+  `documents.abo.rule_id_for`, and the RH row beside it carries the same
+  marker. A page is marked only when the box the value was READ FROM was
+  rescue-admitted, so the group holds no page the rule did not change.
+- **One more false sentence removed on the way past.** A row the caption pass
+  answered and a repass later re-read from the form kept
+  `engine_version='caption-abo/v1'` — the reader of a chat message, named
+  beside a value that came off a photograph. Both repasses now write the
+  recognizer the boxes came from. Measured on the live store: 281 ABO rows
+  said the form while naming the caption reader before, 0 after.
+- **Secret?** No. The pages are PHI and stay in the local, gitignored store.
+- **Blocking now?** Not extraction. Yes for treating a centre-band blood group
+  as something a match may rest on, and yes for calling this rule's acceptance
+  passed while three placebo gates are failing.

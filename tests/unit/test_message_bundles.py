@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
+
 from kidneymatch.ingestion.bundles import (
     BundleType,
     Confidence,
@@ -24,7 +25,6 @@ from kidneymatch.ingestion.bundles import (
     build_bundles,
     suggest_adjacent_links,
 )
-
 from kidneymatch.ingestion.telegram_html import MediaReference, TelegramMessageSource
 
 pytestmark = pytest.mark.task("HIST-002")
