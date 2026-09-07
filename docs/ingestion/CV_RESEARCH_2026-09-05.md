@@ -1083,3 +1083,75 @@ licence with the header absent, which HA-011 says needs no spec change for
 presence — and it reads a gene from token text, so it goes through the
 adversarial workflow before a line of it ships.
 
+## s20 — items 1, 2, 3 and 8: four builds, four rejections, and what they caught
+
+The four remaining items were designed by one workflow, adversarially verified
+by a second, implemented in isolated worktrees by a third and reviewed there by
+a fourth. **Every one of the four builds was rejected**, each on measurements
+the reviewer reproduced against the live stores. That is the process paying for
+itself, and the defects are worth recording whether or not the branches land.
+
+### The one that matters most: two people published as one genotype
+
+Item 3 wires `BELOW_RULE` into extraction so a form printing its alleles UNDER
+column headers can be read. The reviewer built the counterexample the design
+missed: a header row `HLA-A | HLA-B | HLA-C` over a donor row and a recipient
+row, one prefixed allele each. The branch resolves **A, B and C each with two
+values — one from each person** — and publishes them as a single genotype.
+
+Nothing in the shipped gates sees it. The cardinality gate counts two boxes and
+two alleles, which is exactly `max_values`. `refuse_bare` passes because both
+values print their own locus. The ownership gate passes because both boxes are
+in the header's own column. `is_comparison_sheet` was measured at **0 of 305**
+on these very pages, and the Persian role words fire on 10 of 305 while 76
+pages carry ROLE UNKNOWN.
+
+The verifier had required a gate for exactly this — refuse a two-box BELOW cell
+when a page ruling crosses between the two value boxes, measured cost 0 of 199
+— and it was not implemented. This is the wrong-person failure this project
+names as its worst, reached by a rule that was verified in design and then lost
+its guard in the build.
+
+### The other three
+
+**Item 1 (the ABO cell window).** The corroboration half of the safety case is
+dead code: `reconcile_abo` accepts caption claims and no production caller
+passes any, so the pinned "30 published / 13 to review" ships as 17 / 28, and
+14 documents whose chat states the same letter are downgraded anyway. Worse,
+the partial-contradiction gate exists on one route and not the other: 3 pages
+publish a rescued value over a contradicting sign printed in the label's own
+cell, and 2 of those would publish a POSITIVE Rh over a printed `-` the moment
+the caption branch is wired in.
+
+**Item 2 (comparison sheets).** The dry run does not reproduce its own pin: 241
+pages bound against ~305. The cause is a straddle gate whose midline falls
+inside a `Frequency` column, so wide OCR boxes holding an 11-digit identifier or
+a percentage read as "a value straddles the midline". It refuses 85 pages
+(pinned: 5), 64 of which bind cleanly without those boxes — and it writes
+`this page prints donor and recipient columns for two subjects` into the review
+queue for all of them. **224 of the 252 review cells assert two people on the
+evidence of an ID number.** A false provenance statement in a medical queue is
+worse than the missing yield.
+
+**Item 8 (the DRB3/4/5 row).** The widened-header route writes 194 RESOLVED
+cells — 75 of them ABSENT, a clinical negative — through the same code path as
+strict headers, so `source` is NULL and `rule_id` is the ordinary one. Nothing
+in the store distinguishes a widened-header page from a strict one: the review
+pack cannot sample them and the group cannot be withdrawn. 16 of those pages
+rest on a `3`-for-`5` glyph substitution with no measurement behind it, where
+the sibling `S`-for-`5` rule has one. Separately, the token route's own stratum
+tags on a `source` string that only the one-off pass sets, so it empties
+silently at the next re-extraction — the third time this session a stratum has
+been built that reports zero without being empty.
+
+### What this says about the method
+
+Every one of these was caught by measurement, not by reading: the reviewer ran
+the pass against the live stores, built the counterexample, and compared the
+shipped numbers with the docstrings. Three of the four rejections are about
+something written into the repo or the queue that the code does not do —
+a yield, a provenance, a guarantee. The fourth is a wrong-value path.
+
+None of the four is merged. A fix round is applying the reviews' required fixes
+in the same worktrees, to be re-reviewed against the same measurements.
+
