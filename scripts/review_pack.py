@@ -133,16 +133,27 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         20,
         "a comparison sheet with only ONE column filled: the values were bound to the person "
         "named by the heading above that column, checked against the document's own role fact "
-        "(`column-bound`). It reverses s12's flat refusal of these pages under s12-b, the role "
-        "agreement is the whole wrong-person defence, and 61% of it rests on a caption claim",
+        "(`column-bound`, 276 documents / 699 cells). It reverses s12's flat refusal of these "
+        "pages under s12-b, the role agreement is the whole wrong-person defence, and 54% of it "
+        "rests on a caption claim and 30% on a bare printed role word",
     ),
     (
         "column_named",
         14,
         "the same geometry, but nothing was resolved: either no independent role confirms the "
-        "person (`column-named+role-unconfirmed`, 60 documents) or the page genuinely holds two "
-        "(`column-bind-refused`, 29). Both now carry the tokens and the header box where the "
-        "reviewer previously saw no crop at all, and the question asked of them is the ROLE",
+        "person (`column-named+role-unconfirmed`, 50 documents / 108 cells) or the page itself "
+        "prints two (`column-bind-refused` with `rule_id='column/two-subjects'`, 15 documents / "
+        "26 cells). Both now carry the tokens and the header box where the reviewer previously "
+        "saw no crop at all, and the question asked of them is the ROLE",
+    ),
+    (
+        "column_crowded",
+        10,
+        "the same sheet, refused because the column that should be empty is not blank — but what "
+        "is in it is a date, a frequency or an identifier, not anything shaped like a typing "
+        "(`rule_id='column/other-column-unread'`, 25 documents / 53 cells). Kept apart from "
+        "`column_named` on purpose: these pages do NOT assert a second subject, and the pass "
+        "cannot tell the form's own printing from a second person's values",
     ),
     ("review_refused", 15, "boxes sat on the row but the resolver refused the cell"),
     ("unread_second", 10, "a second allele the pipeline could not read"),
@@ -464,6 +475,10 @@ def odd_value_box(resolved: list[Cell]) -> bool:
 # there is never sampled, and `zero_fact_refused` ("labels anchored but every
 # cell refused") is not even true of a page that anchors nothing.
 COLUMN_SOURCES = frozenset({"column-bound", "column-named+role-unconfirmed", "column-bind-refused"})
+# The sub-marker inside `column-bind-refused`: a column that is not blank and
+# holds nothing shaped like a typing. A separate stratum, because the answer a
+# reviewer gives it is a different answer.
+COLUMN_UNREAD_RULE = "column/other-column-unread"
 
 
 def tag_document(doc: Doc, export: Path) -> list[str]:
@@ -552,7 +567,14 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("anchor_row")
     if any(c.source == "column-bound" for c in resolved):
         tags.add("column_bound")
-    if any(c.source in ("column-named+role-unconfirmed", "column-bind-refused") for c in hla):
+    # Keyed on `rule_id`, not only on `source`: the refusal family shares one
+    # source so the whole group stays withdrawable, and the rule id is what
+    # separates a page that prints two subjects from one this pass merely could
+    # not certify. `column_bind.py` writes both on every run, so a
+    # re-extraction that re-runs the pass reproduces both strata.
+    if any(c.rule_id == COLUMN_UNREAD_RULE for c in hla):
+        tags.add("column_crowded")
+    elif any(c.source in ("column-named+role-unconfirmed", "column-bind-refused") for c in hla):
         tags.add("column_named")
     if odd_value_box(resolved):
         tags.add("odd_box")
@@ -701,12 +723,13 @@ def cell_crop_box(cell: Cell, width: int, height: int) -> tuple[int, int, int, i
     boxes = list(cell.value_boxes)
     if cell.anchor_box and not (cell.source in COLUMN_SOURCES and cell.value_boxes):
         # On a comparison sheet the "anchor" is the column HEADING, and it sits
-        # a long way above the row. Measured over the 131 named cells, unioning
-        # it in gives a strip 6.8 header heights tall at 0.12 page widths, 59%
-        # of which contain one to three OTHER loci's rows — unreadable at the
-        # 58px the page shows a crop at, and an invitation to read the wrong
-        # row. The heading is still stored, and `highlight()` draws and zooms
-        # to it on the full image, which is where it can actually be read.
+        # a long way above the row. Measured over the 807 cells this pass
+        # writes on a bound or named page, unioning it in gives a strip with a
+        # median height of 5.7 header heights (p90 12.1) at 0.11 page widths,
+        # 60% of which swallow at least one OTHER locus's row — unreadable at
+        # the 58px the page shows a crop at, and an invitation to read the
+        # wrong row. The heading is still stored, and `highlight()` draws and
+        # zooms to it on the full image, which is where it can be read.
         boxes.append(cell.anchor_box)
     if not boxes:
         return None

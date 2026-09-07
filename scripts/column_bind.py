@@ -59,13 +59,33 @@ tests in `tests/contracts/test_column_binding.py` reproduce them.
   Rewriting the second column of the twelve real two-people pages into shapes
   the corpus actually produces — `*02,*24`, `'02,'24`, `02,24`, `*02:01,*24:02`,
   none of which `parse_allele_values` accepts — bound five of them. A box in
-  the other column's band counts as content when it parses, carries a star
-  variant beside a digit, or holds two digits at all. The same predicate
-  applies to a box straddling the midline;
-* **every refusal for two subjects is review work with a crop.** Four gates
-  reach it, not one; all four write `REVIEW_REQUIRED` with the tokens and the
-  header pair, so 29 pages enter the queue with pixels behind them rather than
-  three;
+  the other column counts as content when it parses, carries a star variant
+  beside a digit, or holds two digits at all;
+* **...and a COLUMN is not a half-page.** That predicate is asked of the boxes
+  reaching the value band left-aligned under the VACANT heading — the same test
+  the bound values themselves must pass, `ALIGN` header heights, applied to a
+  box's whole span rather than to its left edge. Asked instead of everything on
+  the far side of the midline it fires on the `Frequency` column this template
+  prints BETWEEN the two headings: 77 of 450 pages, against 20 for the column
+  test. Mirroring the filled column into the vacant one still refuses 276 of
+  276 bound pages, so nothing was given up for that;
+* **...and it does not stop at the band's lower edge** (P2 fix 5b). A
+  fully-qualified token below 16 header heights already refuses the page; an
+  unqualified allele-shaped one did not, and 31 of the 241 pages an earlier
+  build bound carried one in the column it had called empty. Below the table
+  the two-digit clause is the wrong instrument — it matches every date and
+  telephone number, on 217 of those 241 pages — so what is looked for there is
+  the shape a typing has: something the parser reads, or a star before a digit;
+* **every refusal is review work with a crop, and says which kind it is.** Six
+  gates reach the queue and they do not all mean the same thing. 15 pages / 26
+  cells are refused because the PAGE prints two subjects — a third role word,
+  two columns of values, a typing in the vacant column — and carry
+  `TWO_SUBJECT_REASON` under `rule_id='column/two-subjects'`. 25 pages / 53
+  cells are refused because the vacant column is not blank and what is in it is
+  a date, a frequency or an 11-digit identifier: those carry `CROWDED_REASON`
+  under `rule_id='column/other-column-unread'`, because asserting a second
+  subject over a reference number is a false statement about a patient's
+  record. `review_pack` samples the two as separate strata;
 * **a token that names a locus but is not strictly qualified TAINTS it.** A
   star-less `A24`, a repaired `DOB1*03`, a `DRB1+15`, or a bare `DRB1*` stub
   whose digits were never read: each is a value of that locus the pass cannot
@@ -76,33 +96,55 @@ tests in `tests/contracts/test_column_binding.py` reproduce them.
 * **the subject-agreement gate.** Sliding every token under the OTHER heading
   bound 333 pages with 272 flipped people when this gate was off, and four
   (unflipped) with it on. It is the whole wrong-person defence, and it is
-  weaker than "independent" suggests: measured over the binds it rests on
-  `CAPTION_CLAIM` for 61%, on the bare-role-word tier `FORM_FIELD_BARE` for
-  25%, and on a strong printed field for 15%, against a 4:273 real-world
-  contradiction residue. So the ROLE fact's source is written into `rule_id`
-  and named in the reason: each group can be withdrawn on its own, and the
-  operator can ship strong sources only (40 pages / 96 cells) if they prefer.
+  weaker than "independent" suggests: measured over the 276 binds it rests on
+  `CAPTION_CLAIM` for 150 of them (54%), on the bare-role-word tier
+  `FORM_FIELD_BARE` for 84 (30%), and on a strong printed field for 42 (15%),
+  against a 4:276 real-world contradiction residue. So the ROLE fact's source
+  is written into `rule_id` and named in the reason: each group can be
+  withdrawn on its own, and the operator can ship the strong tier alone.
 
 ## When there is no independent role
 
-The geometry can be perfect and the document still have no ROLE fact. Sixty
+The geometry can be perfect and the document still have no ROLE fact. Fifty
 pages are in that state. They are NEVER resolved — the naming rests entirely on
-the OCR of one English word, `swap_roles` flips it 60 of 60 times, and no page
-carries a Persian role word on that row to corroborate it. Instead the cells
+the OCR of one English word, sliding the tokens under the other heading flips
+it on every page it is tried on, and no page carries a Persian role word on
+that row to corroborate it. Instead the cells
 move from UNKNOWN "no anchor on this document" to REVIEW_REQUIRED with the
 tokens boxed and the header box stored, under `column-named+role-unconfirmed`,
 so a reviewer sees the crop the pipeline was previously showing them nothing
 for. The reason deliberately does NOT name the role: `tools/hla_review.html`
 prints it beside the Role select the reviewer is meant to answer independently.
 
-## What it is worth, and what it is not
+## What it is worth
 
-Measured by the verifying session on the real 450 sheets: 305 pages / 665 cells
-(A ~220, DRB1 ~211, DQB1 ~155), zero overlap with any already-RESOLVED cell, 29
-two-subject pages into review with crops, 60 pages named. B binds only because
-`glyphs.py` now parses the Bw4/Bw6 tail this template prints after the B pair.
-On the 1,342 human labels the bind set gains three correct cells and no
-contradiction.
+Every number here is from THIS code, `--dry-run`, against the live stores with
+every connection forced read-only. The 450 sheets are fully accounted for:
+276 + 50 + 15 + 25 + 84 = 450.
+
+* **276 pages bind, 699 cells** — A 219, DRB1 216, DQB1 146, B 118. Applied to
+  a copy of the database: 699 rows written, every one RESOLVED, every one
+  UNKNOWN "no anchor on this document" beforehand, and no already-RESOLVED
+  cell anywhere in the database changed;
+* **50 pages / 108 cells named** for review with no value (A 39, DRB1 33,
+  DQB1 24, B 12);
+* **15 pages / 26 cells** refused as two subjects the page itself prints, and
+  **25 pages / 53 cells** because the vacant column is not blank and this pass
+  cannot read what is in it;
+* **84 pages refused outright**, the largest groups being 31 for a value not
+  aligned under its heading and 29 for a typing-shaped box below the band;
+* **89 printed rows on 77 pages get no crop** because the second allele is
+  printed without its own star — said in each cell's own reason, not left in
+  this docstring;
+* on the human labels (1,287 from four rounds, 774 of them judged), **616 to
+  618 correct, 121 to 119 missed, 18 to 18 contradicted**, nothing lost. Both
+  gains are a cell the pipeline had missed entirely, one A and one B.
+
+B binds only because `glyphs.py` now parses the Bw4/Bw6 tail this template
+prints after the B pair. That parser change on its own is provably inert on the
+mainline: a full corpus extraction with it, compared by `refresh_facts.compare`
+against a full corpus extraction without it, moves 0 RESOLVED cells on every
+one of the eleven loci, swaps no value, and gains or drops no second allele.
 
 ## Where it runs
 
@@ -118,10 +160,13 @@ repair. `extract_facts.py`'s own comparison-sheet downgrade is untouched.
 ## What it is NOT
 
 Not measured, and stated so the next reader does not assume otherwise: pixels
-cannot certify the other column blank — mirroring a known printed column found
-it on only 5-6 of 12 controls, and four bind pages carry one row of unread ink
-there at the weakest printed-token level. A second column no engine boxed at
-ALL is gated by ROLE agreement alone.
+cannot certify the other column blank. A second column no engine boxed at ALL
+is gated by ROLE agreement alone, and that agreement is 54% a caption claim.
+
+Nor is `withdraw_stale` symmetric. A withdrawn cell keeps `source='column-bound'`
+with status REVIEW_REQUIRED, so `unanchored()` will never offer it again and it
+cannot be re-bound when the role fact recovers. That is a yield and repair
+question rather than a safety one, and it is not answered here.
 """
 
 from __future__ import annotations
@@ -189,9 +234,32 @@ STRICT_STARS = "*'\""
 # The mainline string, reused verbatim so `review_pack`'s comparison_sheet
 # handling and any query written against it keep matching.
 TWO_SUBJECT_REASON = "this page prints donor and recipient columns for two subjects"
+# ...and this is what the same refusal says when the page does NOT print that.
+# The emptiness predicate is deliberately wider than the parser, so it also
+# catches the form's own printing: an 11-digit identifier, a date, a frequency.
+# 22 of the 40 pages refused for a non-empty column hold nothing shaped like a
+# typing, and writing `TWO_SUBJECT_REASON` on them puts a claim about a
+# patient's record into the medical review queue that the page does not
+# support. They are still review work — the page bound nothing and a reviewer
+# with the crop can settle it — under a reason that says what was seen.
+CROWDED_REASON = (
+    "the column that must be empty on this comparison sheet is not blank: a box there holds "
+    "digits this pass cannot read as a typing, so it cannot tell a second person's values from "
+    "the form's own printing"
+)
 NAMED_REASON = (
     "values printed under one header of a comparison table; the header word is boxed beside "
     "them and the other column holds nothing; no independent role reading confirms the person"
+)
+# Said on the cell, not left in a docstring: a reviewer looking at this page
+# will see a printed row that the pipeline proposed nothing for, and the reason
+# they are owed is why. `parse_allele_values` refuses `A*02,24` because it
+# cannot tell a pair from one two-field allele, so the row is not boxed here
+# and is not a proposal at all.
+UNBOXED_ROW_CLAUSE = (
+    "; {n} further printed row(s) in this column are not boxed here, because the second allele "
+    "is printed without its own star and the parser will not guess between a pair and one "
+    "two-field value"
 )
 WORK_REASON_PREFIX = "no anchor on this document"
 
@@ -203,6 +271,16 @@ WORK_REASON_PREFIX = "no anchor on this document"
 _STARRED = re.compile(rf"\s*[{re.escape(_STAR_VARIANTS)}]\s*[0-9A-Za-z]{{2,3}}")
 _TWO_DIGITS = re.compile(r"\d.*\d")
 _STAR_THEN_DIGIT = re.compile(r"[*\"'’`]\s*\d")
+
+# A printed pair whose SECOND allele lost its star: `A*02,24`. The parser
+# refuses it (`A*24,02` could as easily be one two-field allele), so the row is
+# never boxed and never proposed — measured below, and said out loud in
+# `NAMED_REASON` rather than left for the reviewer to notice.
+_SECOND_STAR_MISSING = re.compile(
+    rf"^\s*(?:HLA[\s\-_]*)?[A-Za-z][A-Za-z0-9]{{0,3}}\s*[{re.escape(_STAR_VARIANTS)}]"
+    rf"\s*[0-9A-Za-z]{{2,3}}(?::[0-9A-Za-z]{{2,3}})?\s*[,.;/]\s*"
+    rf"(?![{re.escape(_STAR_VARIANTS)}])[0-9]{{2,3}}\s*$"
+)
 
 # The letters before the star, as PRINTED. Compared against the locus the
 # parser named, so that a repaired prefix cannot be the only locus evidence.
@@ -229,6 +307,27 @@ def holds_a_value(text: str | None) -> bool:
     if _STARRED.match(stripped):
         return True
     if _TWO_DIGITS.search(stripped):
+        return True
+    return bool(_STAR_THEN_DIGIT.search(stripped))
+
+
+def could_be_a_typing(text: str | None) -> bool:
+    """`holds_a_value` without its bare-two-digit clause, for BELOW the table.
+
+    The band stops at 16 header heights and the bound rows end at 13.4, so
+    everything this predicate sees is page furniture or a second table: dates,
+    telephone numbers, laboratory reference numbers, a signature line. Measured
+    on the 241 pages the pass bound before this gate existed, `holds_a_value`
+    itself calls 217 of them non-empty — it is the right predicate INSIDE the
+    band, where the only thing printed is the two columns, and the wrong one
+    below it. What is left is the shape a second person's HLA typing has:
+    something the parser reads as an allele, or a star followed by a digit.
+    31 of those 241 pages carry one, and none of them binds now.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if parse_allele_values(stripped):
         return True
     return bool(_STAR_THEN_DIGIT.search(stripped))
 
@@ -286,18 +385,37 @@ class Reading:
     verdict: str  # BIND | NAME | REFUSE
     gate: str
     two_subject: bool = False
+    # Does the PAGE state a second subject, or does this pass merely fail to
+    # certify the column blank? A third role word and a second column of values
+    # are the page's own printing; an 11-digit identifier crossing an empty
+    # column is not, and the two must not be filed under the same reason.
+    two_subject_printed: bool = False
     subject: Role = Role.UNKNOWN
     side: str = ""
     header: ColumnHeaderRow | None = None
     role_source: str | None = None
     claims: dict[str, list[Box]] = field(default_factory=dict)
     evidence: dict[str, list[Box]] = field(default_factory=dict)
+    # Printed rows in the filled column that this pass does NOT box, because
+    # the second allele lost its star and the parser will not guess between a
+    # pair and one two-field value. Counted so `NAMED_REASON` can say so.
+    second_star_missing: int = 0
 
     @property
     def anchor_box(self) -> Box | None:
-        """The header PAIR, as one rectangle: the crop's proof of two columns."""
+        """The heading this cell hangs from, which is ONE word when there is one.
+
+        `highlight()` draws and zooms to this box on the full image, so a
+        rectangle spanning both headings would show the reviewer the whole
+        table and tell them nothing about which column the value came from
+        (P2 fix 4). A cell that names a subject stores that subject's heading;
+        only a refusal that is ABOUT both columns — no subject was settled —
+        stores the pair, because there the two columns are the finding.
+        """
         if self.header is None:
             return None
+        if self.subject in (Role.DONOR, Role.RECIPIENT):
+            return self.header.header_for(self.subject)
         pair = (self.header.donor, self.header.recipient)
         return Box(
             x0=min(b.x0 for b in pair),
@@ -321,6 +439,16 @@ def _lifted_gap(box: Box, header: ColumnHeaderRow, slope: float) -> float:
     centre_x = (header.donor.centre_x + header.recipient.centre_x) / 2
     lift = slope * (box.centre_x - centre_x)
     return (box.centre_y - lift - header.centre_y) / header.height
+
+
+def _reaches_column(box: Box, heading: Box, height: float) -> bool:
+    """Does this box's x-span reach the value band left-aligned under a heading?
+
+    The same `ALIGN` tolerance the alignment gate applies to a value's left
+    edge, applied instead to a box's whole span — so it answers "could this box
+    contain something printed in that column", not "which column is it in".
+    """
+    return box.x0 <= heading.x0 + ALIGN * height and box.x1 >= heading.x0 - ALIGN * height
 
 
 def _one_row(boxes: list[Box], slope: float) -> bool:
@@ -359,6 +487,7 @@ def read_columns(
         return _refuse(
             "more than two subjects on the header row",
             two_subject=True,
+            two_subject_printed=True,
             header=headers[0],
             evidence=_by_locus(
                 [b for b in boxes if qualified(b.text)]
@@ -387,11 +516,34 @@ def read_columns(
         return _refuse("a fully qualified value lies outside the header's band", header=header)
 
     in_band = [b for b in boxes if BAND[0] <= _lifted_gap(b, header, slope) <= BAND[1]]
-    straddling = [b for b in in_band if b.x0 < header.midline < b.x1 and holds_a_value(b.text)]
+    # A box straddles when it reaches BOTH columns' value bands. That is the
+    # only shape that can be two people's values merged into one OCR box, and
+    # it is not what `x0 < midline < x1` asks: `midline` is halfway between the
+    # two headings' LEFT edges, and on a `Recipient | Frequency | Donor |
+    # Frequency` template that point lies inside the FREQUENCY column. Keyed on
+    # it, this gate fired on 85 of 450 pages and 9 of them had a box reaching
+    # both value bands; the other 76 were furniture crossing an empty column —
+    # median width 13.7 header heights, 67 of 112 boxes "other text with two
+    # digits", 10 an 11-digit identifier — and each was written into the
+    # medical review queue as evidence of a second subject. The CONTENT
+    # predicate is unchanged (P4 fix 1, verbatim); what changed is where a box
+    # has to be before that predicate is asked about it. Nothing is dropped: a
+    # box reaching the VACANT column's band only is judged by the emptiness
+    # gate below, on the same band test, under a reason that is true; and none
+    # of the nine reaching both is itself typing-shaped, so all nine are filed
+    # under `column/other-column-unread` rather than as two subjects.
+    straddling = [
+        b
+        for b in in_band
+        if holds_a_value(b.text)
+        and _reaches_column(b, header.donor, header.height)
+        and _reaches_column(b, header.recipient, header.height)
+    ]
     if straddling:
         return _refuse(
-            "a value box straddles the midline",
+            "a value box reaches both columns",
             two_subject=True,
+            two_subject_printed=any(could_be_a_typing(b.text) for b in straddling),
             header=header,
             evidence=_by_locus([b for b, _, _ in strict] + straddling),
         )
@@ -401,18 +553,59 @@ def read_columns(
         return _refuse(
             "both columns hold values",
             two_subject=True,
+            two_subject_printed=True,
             header=header,
             evidence=_by_locus([b for b, _, _ in strict]),
         )
     subject = next(iter(sides))
     filled = header.header_for(subject)
-    other = [b for b in in_band if header.role_at(b.x0) is not subject and holds_a_value(b.text)]
+    vacant = header.header_for(Role.DONOR if subject is Role.RECIPIENT else Role.RECIPIENT)
+    # "In the other column" is the SAME test the alignment gate applies to the
+    # values this pass binds — reach the band left-aligned under that heading —
+    # and not `role_at`, which splits the page in half at the midline and so
+    # puts the whole `Frequency` column, and everything else printed between
+    # the two headings, in one subject's column or the other. Judged by the
+    # half-plane this gate fired on 77 of 450 pages once the midline straddle
+    # gate stopped absorbing them, and it was the same false statement in a
+    # different reason. `_reaches_column` is the WIDER of the two tests the
+    # page's own values must pass: a box need only reach the band, not begin
+    # inside it, so a second person's value boxed a little off its column is
+    # still caught.
+    other = [
+        b for b in in_band if _reaches_column(b, vacant, header.height) and holds_a_value(b.text)
+    ]
     if other:
         return _refuse(
             "the other column is not empty",
             two_subject=True,
+            two_subject_printed=any(could_be_a_typing(b.text) for b in other),
             header=header,
             evidence=_by_locus([b for b, _, _ in strict] + other),
+        )
+
+    # ...and emptiness does not stop at the band's lower edge. A fully-qualified
+    # token below it already refuses the page (the cliff, above); an UNQUALIFIED
+    # allele-shaped one did not, and that is the same class the emptiness
+    # predicate exists for. Measured: 31 of the 241 pages that bound before this
+    # gate carry, in the column the pass called empty, a box below 16 header
+    # heights that parses as an allele or prints a star before a digit. Each is
+    # a candidate second person's typing, so the page is refused rather than
+    # bound. It is refused, not filed as a two-subject page: at a median 30.5
+    # header heights below the heading these are as often a date or a reference
+    # number as a typing, and asserting a second subject over one would be the
+    # same false statement the midline gate used to write.
+    below_band = [
+        b
+        for b in boxes
+        if _lifted_gap(b, header, slope) > BAND[1]
+        and _reaches_column(b, vacant, header.height)
+        and could_be_a_typing(b.text)
+    ]
+    if below_band:
+        return _refuse(
+            "the column that must be empty holds a typed value below the header's band",
+            header=header,
+            subject=subject,
         )
 
     if any(abs(b.x0 - filled.x0) > ALIGN * header.height for b, _, _ in strict):
@@ -446,6 +639,12 @@ def read_columns(
     if not _in_template_order(claims):
         return _refuse("the loci are not in this template's vertical order", header=header)
 
+    unboxed = sum(
+        1
+        for b in in_band
+        if header.role_at(b.x0) is subject and _SECOND_STAR_MISSING.match((b.text or "").strip())
+    )
+
     if role_resolved and role is subject:
         return Reading(
             "BIND",
@@ -455,6 +654,7 @@ def read_columns(
             header=header,
             role_source=role_source,
             claims=dict(claims),
+            second_star_missing=unboxed,
         )
     if role_resolved:
         return _refuse(
@@ -469,6 +669,7 @@ def read_columns(
         side=side,
         header=header,
         claims=dict(claims),
+        second_star_missing=unboxed,
     )
 
 
@@ -493,6 +694,10 @@ def _no_qualified_token(boxes: list[Box], headers: list[ColumnHeaderRow], slope:
         return _refuse(
             "neither column holds a fully qualified value and both hold typed ones",
             two_subject=True,
+            two_subject_printed=all(
+                any(could_be_a_typing(b.text) for b in in_band if header.role_at(b.x0) is side)
+                for side in sides
+            ),
             header=header,
             evidence=_by_locus(in_band),
         )
@@ -610,12 +815,23 @@ def rule_id_for(reading: Reading) -> str:
 
 
 def bind_reason(reading: Reading) -> str:
-    return (
+    reason = (
         f"the values sit under the {reading.subject.value} heading of a comparison table's "
         f"{reading.side} column and the other column holds nothing; the document's own role "
         f"fact ({reading.role_source or 'NONE'}) names the same person, and the locus is the "
         "value's own printed prefix (CV_RESEARCH s12-b)"
     )
+    return reason + _unboxed_clause(reading)
+
+
+def named_reason(reading: Reading) -> str:
+    return NAMED_REASON + _unboxed_clause(reading)
+
+
+def _unboxed_clause(reading: Reading) -> str:
+    if not reading.second_star_missing:
+        return ""
+    return UNBOXED_ROW_CLAUSE.format(n=reading.second_star_missing)
 
 
 def _write(
@@ -744,7 +960,12 @@ def run(facts: Path, ocr_db: Path, geometry_db: Path, *, dry_run: bool) -> Count
             tally[f"refused: {reading.gate}"] += 1
             continue
         if reading.verdict == "REFUSE":
-            tally[f"two subjects: {reading.gate}"] += 1
+            printed = reading.two_subject_printed
+            tally[
+                f"two subjects, and the page prints them: {reading.gate}"
+                if printed
+                else f"the empty column is not blank, and not a typing: {reading.gate}"
+            ] += 1
             wrote = 0
             for locus, found in sorted(reading.evidence.items()):
                 if locus not in loci:
@@ -760,22 +981,35 @@ def run(facts: Path, ocr_db: Path, geometry_db: Path, *, dry_run: bool) -> Count
                     value=None,
                     raw=" ".join((b.text or "").strip() for b in found),
                     second=None,
-                    reason=f"{TWO_SUBJECT_REASON}; {reading.gate}",
-                    rule_id="column/two-subjects",
+                    reason=(
+                        f"{TWO_SUBJECT_REASON}; {reading.gate}"
+                        if printed
+                        else f"{CROWDED_REASON}; {reading.gate}"
+                    ),
+                    rule_id="column/two-subjects" if printed else "column/other-column-unread",
                     source=REFUSED_SOURCE,
                     anchor=reading.anchor_box,
                     value_boxes=found,
                     now=now,
                 )
-            tally["cells sent to review with a crop"] += wrote
+            tally[
+                "cells sent to review, two subjects"
+                if printed
+                else "cells sent to review, the empty column is not blank"
+            ] += wrote
             if not wrote:
-                tally["two subjects, but no cell to file the refusal at"] += 1
+                tally["refused, but no cell to file the refusal at"] += 1
             if not dry_run:
                 con.commit()
             continue
 
         binding = reading.verdict == "BIND"
         tally["pages bound" if binding else "pages named, role unconfirmed"] += 1
+        if reading.second_star_missing:
+            tally["printed rows left unboxed; the second allele has no star"] += (
+                reading.second_star_missing
+            )
+            tally["pages with such a row, which their reason now says"] += 1
         for locus, found in sorted(reading.claims.items()):
             if locus not in loci:
                 tally["claimed, but that cell is not ours to answer"] += 1
@@ -796,7 +1030,7 @@ def run(facts: Path, ocr_db: Path, geometry_db: Path, *, dry_run: bool) -> Count
                 value=" ".join(values) if binding else None,
                 raw=" ".join((b.text or "").strip() for b in found),
                 second=("READ" if len(values) > 1 else "UNREAD") if binding else None,
-                reason=bind_reason(reading) if binding else NAMED_REASON,
+                reason=bind_reason(reading) if binding else named_reason(reading),
                 rule_id=rule_id_for(reading),
                 source=SOURCE if binding else NAMED_SOURCE,
                 anchor=reading.anchor_box,
@@ -815,7 +1049,23 @@ def main() -> int:
     parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
     parser.add_argument("--ocr", type=Path, default=ROOT / "data/derived/ocr_pass.sqlite")
     parser.add_argument("--geometry", type=Path, default=ROOT / "data/derived/geometry.sqlite")
-    parser.add_argument("--dry-run", action="store_true", help="count, change nothing")
+    # Counting is the DEFAULT here, unlike `prefix_bind.py` and
+    # `anchor_row_bind.py`. This pass reverses a recorded operator decision
+    # (`CV_RESEARCH_2026-09-05.md` s12) on 450 pages of real patient facts, so
+    # a bare `python scripts/column_bind.py` must not commit one of them; the
+    # write is a thing the operator asks for by name.
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="count, change nothing (the default)",
+    )
+    parser.add_argument(
+        "--write",
+        dest="dry_run",
+        action="store_false",
+        help="commit the binds; reverses s12 on this corpus, so it is opt-in",
+    )
     args = parser.parse_args()
     tally = run(args.facts, args.ocr, args.geometry, dry_run=args.dry_run)
     print(f"{'would bind' if args.dry_run else 'bound'} one person's column on a comparison sheet")

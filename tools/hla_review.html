@@ -637,7 +637,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     // above with no crop behind them; now the tokens are boxed and the row is
     // there to be read, which is VALUE. Named here rather than left to fall
     // through, so the default cannot drift when the wording changes.
-    if (/values printed under one header of a comparison table|prints donor and recipient columns/.test(why)) return 'VALUE';
+    if (/values printed under one header of a comparison table|prints donor and recipient columns|column that must be empty on this comparison sheet/.test(why)) return 'VALUE';
     return 'VALUE';                                       // boxes are there: read them
   }
   function fmtVotes(votes) {

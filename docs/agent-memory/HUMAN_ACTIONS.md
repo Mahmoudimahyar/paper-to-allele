@@ -24,10 +24,11 @@ Never put secret values in this file.
   a printed column heading naming the subject. Both groups are withdrawable on
   their own — `source='prefix-bound'`, `source='column-bound'` — and the
   column-bound facts additionally record in `rule_id` which ROLE source gated
-  them (`CAPTION_CLAIM` 61%, `FORM_FIELD_BARE` 25%, strong printed field 15%),
-  so the operator may withdraw the weakest tier alone rather than all of it.
-- **Two further points for the same wording pass, both measured:** 8 of the
-  bound pages label one or two OTHER loci, which s12's phrase "a page that
+  them (measured over the 276 binds the shipped code makes: `CAPTION_CLAIM` 150
+  = 54%, `FORM_FIELD_BARE` 84 = 30%, a strong printed field 42 = 15%), so the
+  operator may withdraw the weakest tier alone rather than all of it.
+- **Two further points for the same wording pass, both measured:** 5 of the 276
+  bound pages label one or three OTHER loci, which s12's phrase "a page that
   labels no row" does not cover — the fence is per-locus in both passes, and
   either the wording says so or a page-level anchor fence is wanted instead;
   and `find_anchors` does not see a bare `DRB1*` box as a label (the star stops
@@ -37,8 +38,10 @@ Never put secret values in this file.
 
 
 ### HA-019 — A page that pictures two people has no way to be recorded
-- **Needed by:** nothing today; 29 comparison sheets are refused to review
-  because of it, and every future two-subject form will be.
+- **Needed by:** nothing today; 15 comparison sheets that PRINT two subjects
+  are refused to review because of it (a further 25 are refused because a
+  column that should be blank is not, which is a different question and carries
+  a different reason), and every future two-subject form will be.
 - **Why:** `fact` is keyed `(sha256, field, extraction_version)` with no
   subject column, and ENTITY-001's "a conflicting blood group or role blocks a
   link rather than weakening it" is written for one subject per document. So

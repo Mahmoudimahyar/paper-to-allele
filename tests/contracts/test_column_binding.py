@@ -200,11 +200,90 @@ def test_the_same_shapes_refuse_with_no_role_fact_at_all(vocabulary) -> None:
     assert found.verdict == "REFUSE" and found.two_subject
 
 
-def test_a_box_straddling_the_midline_refuses_the_page(vocabulary) -> None:
-    wide = at("01,02", 0.34, ROWS["A"], w=0.20)
+def test_a_box_reaching_both_columns_refuses_the_page(vocabulary) -> None:
+    """One OCR box over both people's values: the shape this gate exists for.
+
+    It has to REACH both columns' value bands. Keyed on the midline instead —
+    halfway between the two headings' left edges — the gate fired on 85 of the
+    450 real sheets and only 9 of them held a box reaching both bands; the
+    midline of a `Recipient | Frequency | Donor | Frequency` template lies
+    inside the FREQUENCY column, so the wide boxes printed there crossed it.
+    """
+    wide = at("01,02", RECIPIENT_X - 0.02, ROWS["A"], w=0.45)
     found = read(sheet(extra=[wide]), vocabulary)
     assert found.verdict == "REFUSE" and found.two_subject
-    assert found.gate == "a value box straddles the midline"
+    assert found.gate == "a value box reaches both columns"
+
+
+@pytest.mark.parametrize("text", ["01,02", "12/07/2024", "1234567890123", "AB12CDEF"])
+def test_a_wide_box_between_the_columns_is_not_a_second_subject(vocabulary, text: str) -> None:
+    """The placebo for the gate above, and the defect it was written for.
+
+    A box lying wholly between the two value bands is the Frequency column, an
+    identifier, a date — page furniture, median width 13.7 header heights
+    against a header pitch of 11.1 to 51.8. Under the midline test 76 pages of
+    furniture were written into the medical review queue asserting "this page
+    prints donor and recipient columns for two subjects", which is a false
+    statement about a patient's record. Content alone cannot separate them:
+    `holds_a_value` says yes to every one of these four, by design.
+    """
+    assert holds_a_value(text)
+    middle = at(text, 0.34, ROWS["A"], w=0.20)
+    found = read(sheet(extra=[middle]), vocabulary)
+    assert found.verdict == "BIND" and not found.two_subject
+
+
+def test_a_second_persons_value_off_its_alignment_is_still_caught(vocabulary) -> None:
+    """The emptiness test reaches WIDER than the alignment gate the bound
+    values themselves must pass: a box need only reach the band, not begin
+    inside it, so a second typing boxed a little off its column still refuses.
+    """
+    off = at("*01,*02", RECIPIENT_X + 2.9 * HEADER_H, ROWS["A"])
+    found = read(sheet(extra=[off]), vocabulary)
+    assert found.verdict == "REFUSE" and found.two_subject
+    assert found.gate == "the other column is not empty"
+
+
+def test_only_a_printed_second_subject_is_reported_as_one(vocabulary) -> None:
+    """The defect this split exists for. `holds_a_value` is deliberately wider
+    than the parser, so the emptiness gates also catch the form's own printing;
+    writing "this page prints donor and recipient columns for two subjects"
+    over an 11-digit identifier puts a false claim about a patient's record
+    into the medical review queue. Measured on the corpus: of the 40 pages
+    refused for a column that is not blank, 15 hold something shaped like a
+    typing and 25 hold only digits — masks `ddddddddddd`, `dddd`, `XXX.d.d`.
+    """
+    typing = read(sheet(extra=[at("*01,*02", RECIPIENT_X, ROWS["A"])]), vocabulary)
+    assert typing.two_subject and typing.two_subject_printed
+
+    identifier = read(sheet(extra=[at("1234567890123", RECIPIENT_X, ROWS["A"])]), vocabulary)
+    assert identifier.two_subject and not identifier.two_subject_printed
+    assert identifier.evidence, "still review work, and still with the boxes"
+
+
+def test_the_two_reasons_and_their_rule_ids_are_distinct() -> None:
+    """Each group has to be findable and withdrawable on its own."""
+    source = Path(column_bind.__file__).read_text(encoding="utf-8")
+    assert 'rule_id="column/two-subjects" if printed else "column/other-column-unread"' in source
+    assert column_bind.CROWDED_REASON != column_bind.TWO_SUBJECT_REASON
+    assert "two subjects" not in column_bind.CROWDED_REASON
+
+
+def test_a_third_role_word_is_printed_evidence_whatever_the_boxes_hold(vocabulary) -> None:
+    """A third role word and a second column of qualified values are the PAGE
+    saying it, not this pass failing to certify a column blank."""
+    third = at("Donor", 0.80, HEADER_Y, w=0.10, h=HEADER_H)
+    found = read_columns(
+        header_boxes(extra=[third]) + [at(t, DONOR_X, ROWS[k]) for k, t in FILLED.items()],
+        vocabulary,
+        0.0,
+        role=Role.DONOR,
+        role_resolved=True,
+    )
+    assert found.two_subject_printed
+
+    both = read(sheet(extra=[at(t, RECIPIENT_X, ROWS[k]) for k, t in FILLED.items()]), vocabulary)
+    assert both.gate == "both columns hold values" and both.two_subject_printed
 
 
 def test_a_third_role_word_on_the_header_row_refuses_the_page(vocabulary) -> None:
@@ -240,7 +319,7 @@ def test_every_two_subject_refusal_carries_the_boxes_to_crop(vocabulary) -> None
     for boxes in (
         sheet(extra=[at(t, RECIPIENT_X, ROWS[k]) for k, t in FILLED.items()]),
         sheet(extra=[at("*01,*02", RECIPIENT_X, ROWS["A"])]),
-        sheet(extra=[at("01,02", 0.34, ROWS["A"], w=0.20)]),
+        sheet(extra=[at("01,02", RECIPIENT_X - 0.02, ROWS["A"], w=0.45)]),
     ):
         found = read(boxes, vocabulary)
         assert found.two_subject and found.evidence
@@ -380,6 +459,94 @@ def test_the_other_column_is_not_empty_when_it_holds_this(text: str) -> None:
 @pytest.mark.parametrize("text", ["", "   ", "Frequency", "Donor", "A"])
 def test_the_other_column_is_empty_when_it_holds_this(text: str) -> None:
     assert not holds_a_value(text)
+
+
+# --- emptiness does not stop at the band's lower edge (P2 fix 5b) ------------
+
+
+@pytest.mark.parametrize("text", ["*01,*02", "'01,'02", "*02", "*02:01"])
+def test_an_unqualified_typing_below_the_band_refuses_the_page(vocabulary, text: str) -> None:
+    """The hole P2 fix 5(b) names. A FULLY QUALIFIED token below the band
+    already refuses the page (the cliff); an unqualified allele-shaped one sat
+    in the column the pass called empty and nothing looked at it. Measured: 31
+    of the 241 pages the pass bound before this gate carried one.
+    """
+    below = at(text, RECIPIENT_X, HEADER_Y + 30.5 * HEADER_H)
+    found = read(sheet(extra=[below]), vocabulary)
+    assert found.verdict == "REFUSE" and not found.claims
+    assert found.gate == "the column that must be empty holds a typed value below the header's band"
+
+
+@pytest.mark.parametrize("text", ["12/07/2024", "44887766", "1398/04/21"])
+def test_a_date_or_a_number_below_the_band_is_not_a_typing(vocabulary, text: str) -> None:
+    """The placebo for the gate above, and the reason it does not simply reuse
+    `holds_a_value`. Below the band there is no table — the bound rows end at
+    13.4 header heights and these boxes sit at a median 30.5 — so the
+    two-digit clause matches every date, telephone number and reference number
+    on the page: 217 of the 241 bound pages carry one. What the gate looks for
+    below the band is the shape a typing has.
+    """
+    assert holds_a_value(text) and not column_bind.could_be_a_typing(text)
+    below = at(text, RECIPIENT_X, HEADER_Y + 30.5 * HEADER_H)
+    assert read(sheet(extra=[below]), vocabulary).verdict == "BIND"
+
+
+def test_below_band_content_in_the_bound_column_does_not_refuse(vocabulary) -> None:
+    """The gate is about the column that must be EMPTY. The subject's own
+    column carries the page's footer as often as anyone's."""
+    below = at("*01,*02", DONOR_X, HEADER_Y + 30.5 * HEADER_H)
+    assert read(sheet(extra=[below]), vocabulary).verdict == "BIND"
+
+
+# --- the crop points at ONE heading ------------------------------------------
+
+
+def test_a_bound_cell_anchors_on_its_own_heading_not_the_pair(vocabulary) -> None:
+    """`highlight()` zooms to `anchor_box` on the full image. A rectangle
+    spanning both headings shows the reviewer the whole table and says nothing
+    about which column the value came from."""
+    found = read(sheet(), vocabulary)
+    anchor = found.anchor_box
+    assert anchor is not None
+    assert (anchor.x0, anchor.x1) == (DONOR_X, DONOR_X + 0.10)
+    assert anchor.x0 > found.header.midline
+
+    named = read(sheet(column="recipient"), vocabulary, role=Role.RECIPIENT)
+    assert named.anchor_box.x0 == RECIPIENT_X
+
+
+def test_a_two_subject_refusal_still_anchors_on_the_pair(vocabulary) -> None:
+    """There the two columns ARE the finding, and no subject was settled."""
+    extra = [at(t, RECIPIENT_X, ROWS[k]) for k, t in FILLED.items()]
+    found = read(sheet(extra=extra), vocabulary)
+    assert found.anchor_box.x0 == RECIPIENT_X
+    assert found.anchor_box.x1 == DONOR_X + 0.10
+
+
+# --- the rows this pass prints nothing for ----------------------------------
+
+
+def test_the_reason_states_the_rows_that_get_no_crop(vocabulary) -> None:
+    """P2 fix 1. `parse_allele_values` refuses `A*02,24` — it cannot tell a
+    printed pair from one two-field allele — so that row is boxed by nothing
+    and proposed as nothing. A reviewer looking at the page sees a printed row
+    the pipeline was silent about, and the reason has to say why. Measured on
+    the corpus: 89 such rows on 77 of the 326 pages this pass writes to.
+    """
+    extra = [at("B*35,51", DONOR_X, ROWS["B"])]
+    found = read(sheet(extra=extra), vocabulary)
+    assert found.verdict == "BIND" and found.second_star_missing == 1
+    assert "without its own star" in column_bind.bind_reason(found)
+
+    named = read(sheet(extra=extra), vocabulary, role=Role.UNKNOWN, role_resolved=False)
+    assert "without its own star" in column_bind.named_reason(named)
+    assert column_bind.named_reason(named).startswith(column_bind.NAMED_REASON)
+
+
+def test_a_page_with_no_such_row_says_nothing_about_one(vocabulary) -> None:
+    found = read(sheet(), vocabulary)
+    assert found.second_star_missing == 0
+    assert column_bind.named_reason(found) == column_bind.NAMED_REASON
 
 
 # --- naming the column where no role fact exists (never a value) ------------
@@ -717,9 +884,11 @@ def test_the_new_sources_have_their_own_strata_above_review_refused() -> None:
     assert "column_bound" in order and "column_named" in order
     assert order.index("column_bound") < order.index("review_refused")
     assert order.index("column_named") < order.index("review_refused")
+    assert "column_crowded" in order
+    assert order.index("column_crowded") < order.index("review_refused")
 
 
-def _cell(module, locus, status, source, boxes=((0.1, 0.1, 0.2, 0.2),)):
+def _cell(module, locus, status, source, boxes=((0.1, 0.1, 0.2, 0.2),), rule_id=None):
     return module.Cell(
         locus=locus,
         status=status,
@@ -728,7 +897,7 @@ def _cell(module, locus, status, source, boxes=((0.1, 0.1, 0.2, 0.2),)):
         repaired=False,
         second_allele=None,
         reason=None,
-        rule_id=None,
+        rule_id=rule_id,
         stability=None,
         source=source,
         anchor_box=None,
@@ -768,3 +937,69 @@ def test_a_bound_column_is_tagged_and_a_refusal_is_not_miscounted(tmp_path: Path
     refused = _doc(module, [_cell(module, "A", "REVIEW_REQUIRED", "column-bind-refused")])
     tags = module.tag_document(refused, tmp_path)
     assert "review_refused" not in tags and "zero_fact_refused" not in tags
+
+
+def test_the_unread_column_group_has_a_stratum_of_its_own(tmp_path: Path) -> None:
+    """The marker is the RULE ID, not just the source: the whole refusal family
+    shares `column-bind-refused` so it stays withdrawable as one group, and the
+    rule id is what separates a page that prints two subjects from one this
+    pass merely could not certify blank. `column_bind.py` writes both on every
+    run, so a re-extraction reproduces both strata rather than losing one."""
+    module = review_pack()
+    assert module.COLUMN_UNREAD_RULE == "column/other-column-unread"
+    crowded = _doc(
+        module,
+        [
+            _cell(
+                module,
+                "A",
+                "REVIEW_REQUIRED",
+                "column-bind-refused",
+                rule_id=module.COLUMN_UNREAD_RULE,
+            )
+        ],
+    )
+    tags = module.tag_document(crowded, tmp_path)
+    assert "column_crowded" in tags
+    assert "column_named" not in tags, "the two answers are different answers"
+    assert "review_refused" not in tags and "zero_fact_refused" not in tags
+
+    two = _doc(
+        module,
+        [
+            _cell(
+                module,
+                "A",
+                "REVIEW_REQUIRED",
+                "column-bind-refused",
+                rule_id="column/two-subjects",
+            )
+        ],
+    )
+    assert "column_named" in module.tag_document(two, tmp_path)
+
+
+def test_every_reason_this_pass_writes_is_named_in_the_review_page() -> None:
+    """`defaultStateFor` decides what the reviewer's answer starts as. A reason
+    the page does not name falls through to the same default by accident, and
+    an accident drifts the next time the wording moves. All three reasons this
+    pass writes are named on purpose, and VALUE is right for all three: on
+    these pages the tokens ARE boxed, which is the whole point of the pass."""
+    import re as _re
+
+    page = (ROOT / "tools/hla_review.html").read_text(encoding="utf-8")
+    body = page.split("function defaultStateFor(cell)")[1].split("\n  }")[0]
+    routes = [
+        (_re.compile(pattern), state)
+        for pattern, state in _re.findall(r"if \(/(.+?)/\.test\(why\)\) return '(\w+)'", body)
+    ]
+    assert routes, "the page no longer routes reasons by regex; re-read it"
+
+    for reason in (
+        column_bind.NAMED_REASON,
+        column_bind.TWO_SUBJECT_REASON,
+        column_bind.CROWDED_REASON,
+    ):
+        named = [state for pattern, state in routes if pattern.search(reason)]
+        assert named, f"the page names no route for this reason: {reason[:48]}"
+        assert named[0] == "VALUE", reason[:48]
