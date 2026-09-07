@@ -827,7 +827,8 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     # A repaired value from one of those findings carries TWO signals, and the
     # rarer stratum would otherwise swallow the other: `choose` pools a
     # document by its rarest tag, and every one of these tags is rarer than
-    # `repaired_glyph` (11,179 documents). Marked rather than gated, the way
+    # `repaired_glyph` (11,555 documents once this pass has run; 11,442 before,
+    # measured on the live store). Marked rather than gated, the way
     # `ocr/boxsize.py` marks an odd box.
     if any(c.repaired for c in new_rule):
         tags.add("new_rule_repaired")

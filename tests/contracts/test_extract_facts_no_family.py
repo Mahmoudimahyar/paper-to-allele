@@ -4,7 +4,7 @@ Written before the code. 11,210 of 23,566 documents carry no family, and the
 review of that population found three separate reasons and one measured fix
 each:
 
-* **A tie between prototypes that are one form under lean** — 987 pages fit
+* **A tie between prototypes that are one form under lean** — 983 pages fit
   inside `MAX_RESIDUAL` and were refused only because a second prototype fitted
   nearly as well. Assigning the best when the tied prototypes author one rule
   and print one row order gains 651 cells against the default rule.
