@@ -1,0 +1,45 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "demo-pack",
+      "runtimeExecutable": "C:/Users/Mahyar/kidneymatch/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8790",
+        "--directory",
+        "C:/Users/Mahyar/AppData/Local/Temp/claude/C--Users-Mahyar-kidneymatch/ed993788-5b53-4211-ac34-1780efaedda2/scratchpad/demo_disagree"
+      ],
+      "port": 8790
+    },
+    {
+      "name": "disagree-pack",
+      "runtimeExecutable": "C:/Users/Mahyar/kidneymatch/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8766",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/Mahyar/kidneymatch/data/review/hla_pack_disagree"
+      ],
+      "port": 8766
+    },
+    {
+      "name": "round5-pack",
+      "runtimeExecutable": "C:/Users/Mahyar/kidneymatch/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8767",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/Mahyar/kidneymatch/data/review/hla_pack_r5"
+      ],
+      "port": 8767
+    }
+  ]
+}

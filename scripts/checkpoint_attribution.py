@@ -49,6 +49,9 @@ DRBX = ("DRB3", "DRB4", "DRB5")
 HLA = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
 GEOMETRY_VERSION = "rulings/v3+lsd+sweep"
 TILT_DEG = 1.5
+# What `checkpoint_guards.py` calls level. A page whose re-measured residual is
+# at or above this was NOT levelled, however the frame is stamped.
+LEVEL_TOLERANCE_DEG = 0.5
 
 CHECKPOINTS = (
     "1 orientation",
@@ -176,12 +179,30 @@ def page_context(
     shas: set[str],
 ) -> dict[str, dict]:
     ctx: dict[str, dict] = defaultdict(dict)
-    for sha, frame, tilt, band, sheet in con.execute(
-        f"SELECT sha256, frame, tilt_deg, quality_band, comparison_sheet FROM document "
+    # `orientation` and `residual_slope_deg` are what `checkpoint_guards.py`
+    # measured and stored (W1). They are preferred over the live stores below
+    # precisely because they are the guard: the residual of a levelled page is
+    # re-measured from the rotated image, so it can catch a levelling bug that
+    # `page_geometry.theta_deg` — the angle the pipeline INTENDED to remove —
+    # cannot. Absent (the guard has not run), the live stores still answer.
+    stored = {row[1] for row in con.execute("PRAGMA table_info(document)")}
+    guard = (
+        ", orientation, residual_slope_deg, residual_source"
+        if "orientation" in stored
+        else ", NULL, NULL, NULL"
+    )
+    for sha, frame, tilt, band, sheet, verdict, residual, residual_source in con.execute(
+        f"SELECT sha256, frame, tilt_deg, quality_band, comparison_sheet{guard} FROM document "
         f"WHERE extraction_version=? AND sha256 IN ({','.join('?' * len(shas))})",
         (EV, *shas),
     ):
         ctx[sha].update(frame=frame, tilt_deg=tilt, quality_band=band, comparison_sheet=bool(sheet))
+        if verdict is not None:
+            ctx[sha]["orientation"] = verdict
+        if residual is not None:
+            ctx[sha]["residual_slope_deg"] = float(residual)
+        if residual_source is not None:
+            ctx[sha]["residual_source"] = residual_source
     if geo is not None:
         for sha, decision, theta in geo.execute(
             f"SELECT sha256, decision, theta_deg FROM page_geometry WHERE geometry_version=? "
@@ -200,7 +221,27 @@ def page_context(
         c = ctx[sha]
         theta = c.get("theta")
         c["tilted"] = theta is not None and abs(theta) >= TILT_DEG
-        c["tilt_unlevelled"] = bool(c["tilted"]) and c.get("frame") != "ROTATE"
+        residual = c.get("residual_slope_deg")
+        # ONLY a page the pipeline actually levelled can be "still tilted", and
+        # only its residual was re-measured from the rotated image. On a page
+        # never levelled the same column holds the angle the row reader carries
+        # by design, and 4,920 pages carry 0.5-1.5 deg of it; reading those as
+        # a levelling failure moved 32 labelled failures off their real
+        # checkpoint onto tilt when this was first wired in.
+        levelled = c.get("residual_source") == "remeasured-after-levelling"
+        if residual is None:
+            c["levelling"] = "not measured"
+        elif levelled:
+            c["levelling"] = "level" if abs(residual) < LEVEL_TOLERANCE_DEG else "STILL TILTED"
+        else:
+            c["levelling"] = "not levelled (by design)"
+        if levelled:
+            # The measured residual outranks the intention: a page the pipeline
+            # levelled that came back over tolerance IS still tilted, whatever
+            # its frame says. That is the regression W1 exists to surface.
+            c["tilt_unlevelled"] = abs(float(residual)) >= LEVEL_TOLERANCE_DEG
+        else:
+            c["tilt_unlevelled"] = bool(c["tilted"]) and c.get("frame") != "ROTATE"
     return ctx
 
 
@@ -310,6 +351,7 @@ def run(exports: list[Path], facts: Path, geometry: Path | None, upright: Path |
         for key in (
             "orientation",
             "tilted",
+            "levelling",
             "tilt_unlevelled",
             "geometry",
             "comparison_sheet",
@@ -336,6 +378,7 @@ def run(exports: list[Path], facts: Path, geometry: Path | None, upright: Path |
         for key in (
             "orientation",
             "tilted",
+            "levelling",
             "tilt_unlevelled",
             "geometry",
             "comparison_sheet",
@@ -359,7 +402,14 @@ def run(exports: list[Path], facts: Path, geometry: Path | None, upright: Path |
     for cp, counter in sorted(per_locus.items(), key=lambda kv: -sum(kv[1].values()))[:6]:
         print(f"  {cp}: " + ", ".join(f"{loc} {n}" for loc, n in counter.most_common()))
     print("\npage context — share among failing cells vs among all labelled cells:")
-    for key in ("orientation", "tilted", "geometry", "comparison_sheet", "quality_band"):
+    for key in (
+        "orientation",
+        "tilted",
+        "levelling",
+        "geometry",
+        "comparison_sheet",
+        "quality_band",
+    ):
         vals = sorted({v for k, v in context_all if k == key})
         parts = []
         for v in vals:

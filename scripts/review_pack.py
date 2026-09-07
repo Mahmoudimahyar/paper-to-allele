@@ -259,6 +259,15 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "the only thing that can measure whether the row was the right row",
     ),
     (
+        "drbx_gate2_repromoted",
+        20,
+        "precision gate 2 withdrew this DRB3/4/5 call for damage elsewhere on the page, and "
+        "W2(c) gave it back because the call itself does not rest on a repaired gene token. "
+        "1,113 cells on 556 pages; 21 have been read by a person (18 right, 3 wrong, all "
+        "three of the wrong resting on a repaired token). The other 1,092 are unmeasured, "
+        "and an ABSENT here is a clinical negative. Cut with `--only drbx_gate2_repromoted`",
+    ),
+    (
         "second_allele_reread",
         20,
         "the cell was RESOLVED with ONE allele and no second; the rest of its ruled row held "
@@ -875,6 +884,14 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         # after any full re-extraction this stratum would have drawn zero — the
         # exact failure this module's own header warns about.
         tags.add("token_anchored_drbx")
+    if any("drbx-gate2-repromote/v1" in (c.source or "") for c in doc.cells.values()):
+        # W2(c): a DRB3/4/5 call precision gate 2 withdrew and the token test
+        # gave back. 1,113 cells on 556 pages, of which 21 have ever been read
+        # by a person (18 right, 3 wrong, all three resting on a repaired
+        # token). Those pages ARE reachable through `repaired_glyph` and
+        # `confirmer_contradicted`, but only incidentally: without a stratum of
+        # its own, no pack can be asked to measure the decision itself.
+        tags.add("drbx_gate2_repromoted")
     if any("second-allele-reread/v1" in (c.source or "") for c in doc.cells.values()):
         # W3(a): an allele appended to a cell that already had one, read from
         # the rest of the row. Nothing labelled has measured it.

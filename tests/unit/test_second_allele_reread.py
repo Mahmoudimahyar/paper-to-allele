@@ -138,3 +138,80 @@ def test_a_crop_too_small_to_hold_a_glyph_is_refused() -> None:
     m = load()
     image = np.zeros((100, 200), dtype=np.uint8)
     assert m.crop(image, (0.0, 0.0, 0.01, 0.01)) is None
+
+
+# --- the undo, which was shipped untested and was wrong --------------------
+
+
+def store():
+    import sqlite3
+
+    con = sqlite3.connect(":memory:")
+    con.execute(
+        "CREATE TABLE fact (sha256 TEXT, field TEXT, extraction_version TEXT, status TEXT,"
+        " value TEXT, raw TEXT, second_allele TEXT, reason TEXT, source TEXT,"
+        " value_boxes TEXT, created_utc TEXT DEFAULT '',"
+        " PRIMARY KEY (sha256, field, extraction_version))"
+    )
+    return con
+
+
+def written(con, module, sha, original, added):
+    """A row exactly as `run` writes it: the value sorted, `raw` naming the addition."""
+    import json
+
+    con.execute(
+        "INSERT INTO fact VALUES (?,?,?,'RESOLVED',?,?,'READ',?,?,?,'')",
+        (
+            sha,
+            "A",
+            "facts/v1",
+            " ".join(sorted([original, added])),
+            added,
+            module.REASON,
+            f"OCR|{module.TAG}",
+            json.dumps([[0, 0, 1, 1], [2, 0, 3, 1]]),
+        ),
+    )
+
+
+def test_undo_removes_the_allele_it_added_not_the_last_one() -> None:
+    """`A*24` + `A*02` stores `A*02 A*24`. Stripping the last element strips the
+    ORIGINAL and keeps the addition — silently corrupting the fact it claims to
+    restore. Measured on the shipped code before this test existed."""
+    m = load()
+    con = store()
+    written(con, m, "p1", "A*24", "A*02")  # the addition sorts FIRST
+    written(con, m, "p2", "A*02", "A*24")  # ... and here it sorts last
+    undone, skipped = m.undo(con)
+    assert (undone, skipped) == (2, [])
+    rows = dict(con.execute("SELECT sha256, value FROM fact"))
+    assert rows["p1"] == "A*24", "undo kept the added allele and dropped the original"
+    assert rows["p2"] == "A*02"
+    assert all(
+        raw is None and state == "UNREAD"
+        for raw, state in con.execute("SELECT raw, second_allele FROM fact")
+    )
+
+
+def test_undo_refuses_a_row_that_does_not_say_what_it_added() -> None:
+    """Four cells were written before `raw` recorded the addition. Position
+    cannot recover it, so undo leaves them alone and says so."""
+    m = load()
+    con = store()
+    written(con, m, "p1", "A*24", "A*02")
+    con.execute("UPDATE fact SET raw=NULL WHERE sha256='p1'")
+    undone, skipped = m.undo(con)
+    assert (undone, skipped) == (0, [("p1", "A")])
+    assert con.execute("SELECT value FROM fact").fetchone()[0] == "A*02 A*24"
+
+
+def test_undo_touches_nothing_this_pass_did_not_write() -> None:
+    m = load()
+    con = store()
+    con.execute(
+        "INSERT INTO fact VALUES ('p9','A','facts/v1','RESOLVED','A*01 A*02',NULL,'READ',"
+        "'another rule','prefix-bound',NULL,'')"
+    )
+    assert m.undo(con) == (0, [])
+    assert con.execute("SELECT value FROM fact").fetchone()[0] == "A*01 A*02"

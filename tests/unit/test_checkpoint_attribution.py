@@ -121,3 +121,33 @@ def test_boxes_are_read_in_every_shape_a_pass_stored() -> None:
     assert m.parse_boxes('{"x0": 1, "y0": 2, "x1": 3, "y1": 4}') == [(1.0, 2.0, 3.0, 4.0)]
     assert m.parse_boxes("not json") == []
     assert m.parse_boxes(None) == []
+
+
+def test_only_a_page_that_was_levelled_can_be_charged_to_tilt() -> None:
+    """W1 stores a residual for EVERY page: re-measured after levelling on the
+    1,591 it levels, and the page's own angle on the 21,975 it does not. Reading
+    the second as a levelling failure charged 32 labelled failures to tilt that
+    belong to their own checkpoint — 4,920 pages carry 0.5-1.5 deg by design."""
+    m = load()
+    levelled_and_tilted = {
+        "residual_slope_deg": 0.9,
+        "residual_source": "remeasured-after-levelling",
+        "tilt_unlevelled": True,
+    }
+    assert (
+        m.checkpoint_for(
+            Outcome.MISSED, "UNKNOWN", "no anchor on this document", "A", 2, 0, levelled_and_tilted
+        )
+        == "2 tilt"
+    )
+    never_levelled = {
+        "residual_slope_deg": 0.9,
+        "residual_source": "measured-not-levelled",
+        "tilt_unlevelled": False,
+    }
+    assert (
+        m.checkpoint_for(
+            Outcome.MISSED, "UNKNOWN", "no anchor on this document", "A", 2, 0, never_levelled
+        )
+        == "3 layout: label not found"
+    ), "a page the pipeline never levelled is not a levelling failure"

@@ -252,11 +252,17 @@ def run(
             continue
         merged = " ".join(sorted([*(value or "").split(), text]))
         con.execute(
-            "UPDATE fact SET value=?, second_allele='READ', reason=?, source=?, "
+            "UPDATE fact SET value=?, raw=?, second_allele='READ', reason=?, source=?, "
             "value_boxes=?, created_utc=? WHERE sha256=? AND field=? AND extraction_version=? "
             "AND second_allele='UNREAD'",
             (
                 merged,
+                # WHICH allele this pass added. The value is stored sorted, so
+                # the added one is not necessarily last and `undo` must not
+                # infer it from position: on `A*24` + `A*02` that would strip
+                # the ORIGINAL and keep the addition. `raw` is NULL on every
+                # cell this pass targets, so it is free to say so.
+                text,
                 REASON,
                 f"{source}|{TAG}" if source else TAG,
                 json.dumps([*value_boxes, list(region)]),
@@ -276,20 +282,34 @@ def run(
 
 
 def undo(con: sqlite3.Connection) -> int:
-    """Take the second allele back off every cell this pass wrote."""
+    """Take the second allele back off every cell this pass wrote.
+
+    Returns `(undone, skipped)`. A cell is skipped rather than guessed at when
+    `raw` does not name the allele that was added.
+    """
+    skipped: list[tuple[str, str]] = []
     rows = con.execute(
-        "SELECT sha256, field, value, source, value_boxes FROM fact "
+        "SELECT sha256, field, value, raw, source, value_boxes FROM fact "
         "WHERE extraction_version=? AND source LIKE ?",
         (EV, f"%{TAG}"),
     ).fetchall()
-    for sha, field, value, source, boxes_json in rows:
+    undone = 0
+    for sha, field, value, raw, source, boxes_json in rows:
         parts = (value or "").split()
+        if not raw or raw not in parts:
+            # A row written before this pass recorded WHICH allele it added
+            # (four cells, 2026-09-07). Position cannot recover it, and a guess
+            # would strip the original and keep the addition, so this refuses.
+            # A full re-extraction rewrites the cell and is the clean path.
+            skipped.append((sha, field))
+            continue
+        parts.remove(raw)
         boxes = json.loads(boxes_json or "[]")
         con.execute(
-            "UPDATE fact SET value=?, second_allele='UNREAD', source=?, value_boxes=? "
+            "UPDATE fact SET value=?, raw=NULL, second_allele='UNREAD', source=?, value_boxes=? "
             "WHERE sha256=? AND field=? AND extraction_version=?",
             (
-                " ".join(parts[:-1]) or None,
+                " ".join(parts) or None,
                 (source or "").replace(f"|{TAG}", "").replace(TAG, "") or None,
                 json.dumps(boxes[:-1]) if len(boxes) > 1 else None,
                 sha,
@@ -297,8 +317,9 @@ def undo(con: sqlite3.Connection) -> int:
                 EV,
             ),
         )
+        undone += 1
     con.commit()
-    return len(rows)
+    return undone, skipped
 
 
 def main() -> int:
@@ -312,7 +333,13 @@ def main() -> int:
     args = parser.parse_args()
     if args.undo:
         con = sqlite3.connect(args.facts)
-        print(f"undone: {undo(con):,} cells back to one allele")
+        undone, skipped = undo(con)
+        print(f"undone: {undone:,} cells back to one allele")
+        if skipped:
+            print(
+                f"skipped {len(skipped):,} written before the added allele was recorded; "
+                "a re-extraction rewrites those cells"
+            )
         return 0
     tally = run(
         args.facts,
