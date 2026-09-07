@@ -29,10 +29,13 @@ ARTIFACTS = ROOT / ".artifacts" / "verify"
 # invoked this script. Falls back to the current interpreter otherwise.
 USE_UV = bool(shutil.which("uv")) and (ROOT / "uv.lock").is_file()
 
-# The active phase (MVP-HIST) needs the historical-ingestion parser deps.
-# CI, bootstrap and this script must agree; tests/contracts enforces that.
-EXTRA = "hist"
-PREFIX = ["uv", "run", "--frozen", "--extra", EXTRA] if USE_UV else []
+# The gate checks code that imports from four extras: the historical parser
+# (`hist`), py-ard (`hla`) and OpenCV/NumPy (`image`, `ocr`). CI, bootstrap and
+# this script must agree; tests/contracts enforces that. HA-021, decided
+# 2026-09-07: the smallest set that matches what `src/` imports.
+EXTRAS = ("hist", "hla", "image", "ocr")
+EXTRA_ARGS = [arg for extra in EXTRAS for arg in ("--extra", extra)]
+PREFIX = ["uv", "run", "--frozen", *EXTRA_ARGS] if USE_UV else []
 
 
 def step(*args: str) -> list[str]:

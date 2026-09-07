@@ -171,19 +171,25 @@ _VALUE = re.compile(
     re.VERBOSE,
 )
 
-# Both alleles of one locus printed in ONE box, each carrying its own star:
-# `A*24,*02`. Measured over the corpus, 1,819 such tokens on 890 documents,
-# commonest as `A*##,*##`, `DRB1*##,*##` and `B*##,*##`. The second star is
-# what makes it unambiguous, and it is why nothing looser is accepted here:
-# `A*24,02` has one star, and whether that is two alleles or the two-field
-# `A*24:02` written with a comma is a question about the form, not about the
-# glyphs — 1,025 tokens on 491 documents wait on that answer rather than being
-# guessed at (HA-015).
+# Both alleles of one locus printed in ONE box: `A*24,*02`, or `A*24,02`.
+# Measured over the corpus, 1,819 starred tokens on 890 documents, commonest as
+# `A*##,*##`, `DRB1*##,*##` and `B*##,*##`; and 1,025 one-star tokens on 491
+# documents. The one-star form was held back (HA-015) because from the glyphs
+# alone `A*24,02` could be two alleles or the two-field `A*24:02` written with
+# a comma. The operator settled it from the forms themselves (2026-09-07): a
+# COMMA between two numbers separates two alleles of the locus, so `A*24,02` is
+# A*24 and A*02. Only the comma carries that decision — a period, semicolon or
+# slash still needs the second star, because a period is what a colon becomes
+# under OCR damage and `A*24.02` must not turn into a second allele.
 _PAIR = re.compile(
     rf"""^
     (?P<first>.+?)
-    \s*[,.;/]\s*
-    (?P<second>[{re.escape(_STAR_VARIANTS)}]\s*[0-9A-Za-z]{{2,3}}(?::[0-9A-Za-z]{{2,3}})?[NLSQCA]?)
+    (?:
+        \s*[,.;/]\s*
+        (?P<second>[{re.escape(_STAR_VARIANTS)}]\s*[0-9A-Za-z]{{2,3}}(?::[0-9A-Za-z]{{2,3}})?[NLSQCA]?)
+      | \s*,\s*
+        (?P<bare>[0-9]{{2,3}}(?::[0-9]{{2,3}})?[NLSQCA]?)
+    )
     $""",
     re.VERBOSE,
 )
@@ -217,7 +223,7 @@ _PAIR = re.compile(
 # The epitopes themselves are dropped: they are serology, not alleles. Keeping
 # them as a consistency gate against the pair's implied Bw group is real
 # evidence the parser throws away, and it is recorded as a human decision
-# (HA-018) rather than taken here.
+# (HA-023) rather than taken here.
 #
 # The tail group is `+` rather than `{1,2}` and the count is checked in code:
 # with a bounded repeat the non-greedy `pair` simply swallows the surplus tail
@@ -345,13 +351,13 @@ def _pair_with_a_bw_tail(stripped: str) -> list[AlleleValue]:
 def parse_allele_values(token: str) -> list[AlleleValue]:
     """Every allele this ONE box states: usually one, sometimes a printed pair.
 
-    A cell that prints `A*24,*02` holds both of a locus's alleles in a single
-    box, and reading it as one value or as none loses half the genotype. The
-    pair is split only when the SECOND part carries its own star, which is what
-    separates it from `A*24,02` — that could as easily be a two-field allele
-    written with a comma, and guessing between them would either invent a
-    second allele or silently upgrade the resolution of the first, both of
-    which this project forbids.
+    A cell that prints `A*24,*02` or `A*24,02` holds both of a locus's alleles
+    in a single box, and reading it as one value or as none loses half the
+    genotype. The starred form was always split. The one-star form was held
+    for a person (HA-015), because from the glyphs alone it could be the
+    two-field `A*24:02` with a comma for a colon; the operator settled it from
+    the forms on 2026-09-07 — the comma separates two alleles — and only the
+    comma carries that ruling. `A*24.02` still needs the second star.
     """
     stripped = (token or "").strip()
     single = parse_allele_value(stripped)
@@ -363,11 +369,17 @@ def parse_allele_values(token: str) -> list[AlleleValue]:
     first = parse_allele_value(found.group("first"))
     if first is None or first.locus_prefix is None:
         # Without a locus on the first half there is nothing to carry over, and
-        # a bare pair of numbers names no gene.
-        return []
-    second = parse_allele_value(f"{first.locus_prefix}{found.group('second')}")
+        # a bare pair of numbers names no gene. The tail path gets its turn
+        # first: `B*35,*51,Bw4` matches `_PAIR` with `Bw4` as a bare half.
+        return _pair_with_a_bw_tail(stripped)
+    starred = found.group("second")
+    second = parse_allele_value(
+        f"{first.locus_prefix}{starred}"
+        if starred
+        else f"{first.locus_prefix}*{found.group('bare')}"
+    )
     if second is None or second.locus_prefix != first.locus_prefix:
-        return []
+        return _pair_with_a_bw_tail(stripped)
     return [first, second]
 
 

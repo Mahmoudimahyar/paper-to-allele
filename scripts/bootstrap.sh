@@ -14,7 +14,7 @@ if [[ "$PY_MINOR" != "3.12" ]]; then
   exit 2
 fi
 
-uv sync --python 3.12 --extra hist
+uv sync --python 3.12 --extra hist --extra hla --extra image --extra ocr
 uv run python scripts/sync_agent_skills.py --check
 uv run python scripts/docs_lint.py
 uv run python scripts/spec_lint.py

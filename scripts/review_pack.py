@@ -914,6 +914,62 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     return [t for t, _, _ in STRATA if t in tags]
 
 
+def prior_labels(sources: list[Path]) -> tuple[dict[str, dict], dict[str, dict]]:
+    """The reviewer's earlier answers: per cell and per document. Later rounds win.
+
+    A cell answer is `{"state", "alleles", "unsure", "note"}`; a document answer
+    is `{"role", "abo", "rh"}`. Used by `--disagreements-only`, which builds a
+    pack of exactly the documents where the pipeline now disagrees with one of
+    these, so the reviewer can re-check the disagreeing cells — and only those —
+    against the crop. Labels are the scarcest thing this project has, and a
+    label that was wrong costs twice: once as a false miss, once as a rule tuned
+    to reproduce it.
+    """
+    cells: dict[str, dict] = {}
+    documents: dict[str, dict] = {}
+    for source in sources:
+        try:
+            payload = json.loads(Path(source).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        notes = payload.get("notes") or {}
+        for cell_id, answer in (payload.get("cells") or {}).items():
+            if not isinstance(answer, dict):
+                continue
+            cells[cell_id] = {
+                "state": answer.get("state"),
+                "alleles": list(answer.get("alleles") or []),
+                "unsure": bool(answer.get("unsure")),
+                "note": notes.get(cell_id) or "",
+            }
+        for short, answer in (payload.get("documents") or {}).items():
+            if isinstance(answer, dict):
+                documents.setdefault(short, {}).update(
+                    {k: v for k, v in answer.items() if k in ("role", "abo", "rh") and v}
+                )
+    return cells, documents
+
+
+def disagreement(cell: Cell, prior: dict | None) -> bool:
+    """Does the pipeline's CURRENT reading disagree with the reviewer's answer?
+
+    Scored with the golden rule (`review/golden.classify`), so "disagrees" here
+    is exactly `missed`, `partial` or `contradicted` in `label_score.py`; an
+    abstention the reviewer also abstained on, or a correct value, is agreement.
+    """
+    if not prior or not prior.get("state"):
+        return False
+    from kidneymatch.review.golden import CellLabel, LabelState, Outcome, classify
+
+    try:
+        label = CellLabel(state=LabelState(prior["state"]), alleles=tuple(prior["alleles"]))
+    except (ValueError, TypeError):
+        return False
+    values = tuple(part.split("*")[-1] for part in (cell.value or "").split() if part)
+    outcome = classify(label, (cell.status, cell.locus, values, cell.second_allele))
+    return outcome in (Outcome.MISSED, Outcome.PARTIAL, Outcome.FALSE_ACCEPTANCE)
+
+
 def pinned_shas(sources: list[Path]) -> set[str]:
     """The 16-character document ids a labeller has already answered cells on.
 
@@ -1325,7 +1381,13 @@ def write_pack_files(out: Path, pack: dict[str, object]) -> None:
     (out / "pack.js").write_text("window.PACK = " + text + ";\n", encoding="utf-8")
 
 
-def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object], dict[str, object]]:
+def pack_document(
+    doc: Doc,
+    export: Path,
+    out: Path,
+    prior_cells: dict[str, dict] | None = None,
+    prior_docs: dict[str, dict] | None = None,
+) -> tuple[dict[str, object], dict[str, object]]:
     """Copy the image, cut the crops, and return (record, pipeline_cells)."""
     from PIL import Image
 
@@ -1378,6 +1440,10 @@ def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object],
                 "anchor_box": cell.anchor_box,
                 "value_boxes": cell.value_boxes,
                 "suggestions": suggestions,
+                # The reviewer's earlier answer, and whether the pipeline now
+                # disagrees with it. Present only in a disagreements pack.
+                "prior_label": (prior_cells or {}).get(cell_id),
+                "disagrees": disagreement(cell, (prior_cells or {}).get(cell_id)),
             }
         )
         pipeline[cell_id] = {
@@ -1408,6 +1474,21 @@ def pack_document(doc: Doc, export: Path, out: Path) -> tuple[dict[str, object],
         "role": doc.role,
         "abo": doc.abo,
         "rh": doc.rh,
+        # The reviewer's earlier whole-page answers, with a flag per field where
+        # the pipeline now disagrees. NOT_PRINTED / UNREADABLE / UNKNOWN answers
+        # describe the page, not the person, so they never count as disagreement.
+        "prior_doc": (prior_docs or {}).get(doc.short),
+        "doc_disagrees": {
+            field: bool(
+                (prior_docs or {}).get(doc.short, {}).get(field)
+                and (prior_docs or {})[doc.short][field]
+                not in ("NOT_PRINTED", "UNREADABLE", "UNKNOWN")
+                and (getattr(doc, field) or {}).get("status") == "RESOLVED"
+                and str((getattr(doc, field) or {}).get("value") or "").upper()
+                != str((prior_docs or {})[doc.short][field]).upper()
+            )
+            for field in ("role", "abo", "rh")
+        },
         # Filled by `attach_messages` when a source database is at hand.
         "messages": [],
         "caption_claim": None,
@@ -1430,9 +1511,39 @@ def build_pack(
     geometry_db: Path | None = None,
     port: int = 8765,
     only: str | None = None,
+    prior_cells: dict[str, dict] | None = None,
+    prior_docs: dict[str, dict] | None = None,
+    disagreements_only: bool = False,
 ) -> dict[str, int]:
     con = sqlite3.connect(facts_db)
     docs = load_documents(con)
+    if disagreements_only:
+        # Exactly the documents where the pipeline now disagrees with an earlier
+        # answer — a cell (missed / partial / contradicted) or a whole-page
+        # field — and nothing else. `n` becomes that count; the strata are not
+        # consulted, because this pack is not a sample of anything.
+        wanted: set[str] = set()
+        for doc in docs.values():
+            for locus, cell in doc.cells.items():
+                if disagreement(cell, (prior_cells or {}).get(f"{doc.short}:{locus}")):
+                    wanted.add(doc.short)
+                    break
+            else:
+                for field in ("role", "abo", "rh"):
+                    want = (prior_docs or {}).get(doc.short, {}).get(field)
+                    got = getattr(doc, field) or {}
+                    if (
+                        want
+                        and want not in ("NOT_PRINTED", "UNREADABLE", "UNKNOWN")
+                        and got.get("status") == "RESOLVED"
+                        and str(got.get("value") or "").upper() != str(want).upper()
+                    ):
+                        wanted.add(doc.short)
+                        break
+        docs = {sha: d for sha, d in docs.items() if d.short in wanted}
+        pin = set(wanted)
+        n = len(wanted)
+        print(f"disagreements only: {n} documents carry a cell or field the pipeline now disputes")
     attach_signals(docs, con, geometry_db)
     con.close()
     if drop:
@@ -1446,7 +1557,9 @@ def build_pack(
     records: list[dict[str, object]] = []
     pipeline: dict[str, object] = {}
     for doc in chosen:
-        record, cells = pack_document(doc, export, out)
+        record, cells = pack_document(
+            doc, export, out, prior_cells=prior_cells, prior_docs=prior_docs
+        )
         records.append(record)
         pipeline.update(cells)
     attach_messages(records, source_db)
@@ -1582,6 +1695,15 @@ def main() -> int:
         help="directory of <engine>.json files {engine, cells:{cell_id: text}} to show as well",
     )
     parser.add_argument(
+        "--disagreements-only",
+        nargs="+",
+        type=Path,
+        metavar="EXPORT",
+        help="build a pack of ONLY the documents where the pipeline now disagrees with an "
+        "answer in these golden-labels/v1 exports; every cell carries the earlier answer "
+        "and a `disagrees` flag so the reviewer re-checks just those",
+    )
+    parser.add_argument(
         "--keep-labelled",
         type=Path,
         nargs="*",
@@ -1636,6 +1758,9 @@ def main() -> int:
     if not args.facts.exists():
         print(f"missing {args.facts}; run scripts/extract_facts.py first")
         return 2
+    prior_cells, prior_docs = prior_labels(
+        list(args.keep_labelled or []) + list(args.disagreements_only or [])
+    )
     pin = pinned_shas(list(args.keep_labelled or []))
     if pin:
         print(f"pinning {len(pin)} already-labelled documents into the sample")
@@ -1656,6 +1781,9 @@ def main() -> int:
         geometry_db=args.geometry,
         port=args.port,
         only=args.only,
+        prior_cells=prior_cells,
+        prior_docs=prior_docs,
+        disagreements_only=bool(args.disagreements_only),
     )
     packed = json.loads((args.out / "pack.json").read_text(encoding="utf-8"))["n_documents"]
     print(f"packed {packed} documents into {args.out}")

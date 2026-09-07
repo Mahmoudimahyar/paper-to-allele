@@ -185,6 +185,29 @@ def _rh_from(text: str) -> str:
     return "UNKNOWN"
 
 
+# A request word vetoes a group mention only from inside the same clause. The
+# clause is what the writer bounded with punctuation or a line break: "my group
+# is O+, looking for a donor" asks for a donor in its second clause and states
+# O+ in its first. Distance cannot tell those apart — "looking for" sits as
+# close to "O+" in that sentence as it does in "looking for O+" — but the comma
+# can. A caption with no punctuation at all is one clause, and keeps the veto.
+_CLAUSE_BREAK = re.compile(r"[\n\r،,;؛.!؟?]+")
+
+
+def _request_beside(cleaned: str, matched: str) -> bool:
+    """Is a request word in the same clause as THIS group mention?"""
+    start = cleaned.find(matched)
+    if start < 0:
+        return bool(_REQUEST.search(cleaned))  # cannot place it; keep the old veto
+    clause_start = 0
+    for brk in _CLAUSE_BREAK.finditer(cleaned):
+        if brk.end() <= start:
+            clause_start = brk.end()
+        else:
+            return _REQUEST.search(cleaned[clause_start : brk.start()]) is not None
+    return _REQUEST.search(cleaned[clause_start:]) is not None
+
+
 def read_caption_abo(text: str) -> CaptionAbo:
     """Read a blood group from a caption, or refuse.
 
@@ -230,7 +253,14 @@ def read_caption_abo(text: str) -> CaptionAbo:
             CaptionTier.REFUSED,
             reason="the caption gives one group with both Rh signs",
         )
-    if _REQUEST.search(cleaned):
+    # A request word VETOES the group only from inside the same clause. It used
+    # to veto from anywhere in the message, which read "my group is O+, looking
+    # for a donor" as a request for O+. The operator's decision (D1-b,
+    # 2026-09-07): the chat is a source of record, so a statement in one clause
+    # stands even when another clause asks for something. A request that names
+    # the group in the same breath is still refused, because that request
+    # describes someone else.
+    if any(_request_beside(cleaned, matched) for _, _, matched in found):
         return CaptionAbo(
             None,
             "UNKNOWN",

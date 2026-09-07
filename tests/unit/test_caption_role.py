@@ -197,3 +197,25 @@ def test_a_request_still_refuses_every_new_spelling() -> None:
 
 def test_both_roles_in_one_caption_is_still_unreadable() -> None:
     assert read_caption_role("اهدای کننده و گیرنده").role is Role.UNKNOWN
+
+
+# --- D1-b: a request elsewhere in the message does not veto a statement ------
+
+
+def test_a_statement_stands_when_another_clause_asks_for_something() -> None:
+    """ "My group is O+, looking for a donor" states O+; the request is about
+    a donor, not about the group. It used to be refused as a request for O+."""
+    from kidneymatch.documents.caption import CaptionTier, read_caption_abo
+
+    claim = read_caption_abo("گروه خونی من O+ است، دنبال اهدا کننده هستم")
+    assert claim.tier is CaptionTier.STATEMENT
+    assert claim.group == "O"
+    assert claim.rh == "POSITIVE"
+
+
+def test_a_request_that_names_the_group_is_still_refused() -> None:
+    """ "I need O+" describes someone else; the request word sits beside the group."""
+    from kidneymatch.documents.caption import CaptionTier, read_caption_abo
+
+    claim = read_caption_abo("نیازمند گروه خونی O+ هستم")
+    assert claim.tier is CaptionTier.REFUSED

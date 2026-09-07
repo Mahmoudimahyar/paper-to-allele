@@ -88,9 +88,14 @@ def test_every_entry_point_builds_the_same_environment() -> None:
     bootstrap = (ROOT / "scripts/bootstrap.sh").read_text(encoding="utf-8")
     verify = (ROOT / "scripts/verify_repo.py").read_text(encoding="utf-8")
 
-    assert "--extra hist" in ci, "CI does not install the active phase's parser deps"
-    assert "--extra hist" in bootstrap, "bootstrap does not install them"
-    assert 'EXTRA = "hist"' in verify, "verify_repo does not route steps through them"
+    # HA-021 (decided 2026-09-07): the gate checks code importing from four
+    # extras, and all three installers must name the same four.
+    for extra in ("hist", "hla", "image", "ocr"):
+        assert f"--extra {extra}" in ci, f"CI does not install the `{extra}` extra"
+        assert f"--extra {extra}" in bootstrap, f"bootstrap does not install the `{extra}` extra"
+    assert 'EXTRAS = ("hist", "hla", "image", "ocr")' in verify, (
+        "verify_repo does not route steps through the same extras"
+    )
 
 
 def test_the_active_phase_dependencies_are_importable() -> None:

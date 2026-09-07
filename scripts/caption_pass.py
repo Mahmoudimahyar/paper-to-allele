@@ -164,9 +164,10 @@ def run(facts: Path, source: Path, *, dry_run: bool) -> Counter[str]:
         return tally
     con = sqlite3.connect(facts)
     printed = {
-        sha: (status, value)
-        for sha, status, value in con.execute(
-            "SELECT sha256, status, value FROM fact WHERE field='ABO' AND extraction_version=?",
+        sha: (status, value, source)
+        for sha, status, value, source in con.execute(
+            "SELECT sha256, status, value, source FROM fact WHERE field='ABO' "
+            "AND extraction_version=?",
             (EV,),
         )
     }
@@ -174,7 +175,14 @@ def run(facts: Path, source: Path, *, dry_run: bool) -> Counter[str]:
     for sha, said in sorted(texts.items()):
         if sha not in printed:
             continue
-        status, value = printed[sha]
+        status, value, source = printed[sha]
+        if "sheet-review/v1" in (source or ""):
+            # A person withdrew the printed group because the page carries two
+            # people (D4-b, `sheet_abo_review.py`). The chat has the same
+            # problem — it cannot say WHOSE group it states — so the
+            # withdrawal stands and the claim is only counted.
+            tally["withdrawn on a two-person page; the chat cannot say whose"] += 1
+            continue
         group, rh, why = claim_for(said)
         if group is None:
             tally[

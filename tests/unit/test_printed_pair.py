@@ -5,13 +5,13 @@ corpus there are 1,819 such tokens on 890 documents, commonest as `A*##,*##`,
 `DRB1*##,*##` and `B*##,*##`. Read as one value they lose half a genotype; read
 as none they lose all of it.
 
-The line these tests hold is the SECOND star. `A*24,*02` states two alleles and
-nothing else. `A*24,02` does not: it is either two alleles written without
-repeating the star, or the two-field allele `A*24:02` written with a comma
-instead of a colon, and there is no way to tell from the glyphs. Guessing
-either way breaks a rule this project states outright — invent a second allele,
-or promote a first-field reading to a second field. So 1,025 tokens on 491
-documents stay unread until a person settles what that form means (HA-015).
+`A*24,*02` states two alleles and nothing else. `A*24,02` could, from the
+glyphs alone, be two alleles written without repeating the star OR the
+two-field allele `A*24:02` written with a comma for a colon, so 1,025 tokens on
+491 documents were held for a person (HA-015). The operator read the forms and
+settled it on 2026-09-07: a COMMA between two numbers separates two alleles.
+Only the comma carries that ruling — a period is what a colon becomes under
+damage, so `A*24.02` still needs the second star.
 """
 
 from __future__ import annotations
@@ -48,10 +48,21 @@ def test_an_hla_prefix_does_not_hide_the_pair() -> None:
     assert named("HLA-B*35,*51") == ["B*35", "B*51"]
 
 
-def test_one_star_with_a_separator_stays_unread() -> None:
-    """`A*24,02`: two alleles, or `A*24:02` with the wrong separator? Unknown."""
-    assert parse_allele_values("A*24,02") == []
-    assert parse_allele_values("DRB1*15,01") == []
+def test_one_star_with_a_comma_is_two_alleles_by_decision() -> None:
+    """`A*24,02`: the operator read the forms — a comma separates two alleles
+    (HA-015, decided 2026-09-07). The first half's locus carries to the second."""
+    assert named("A*24,02") == ["A*24", "A*02"]
+    assert named("DRB1*15,01") == ["DRB1*15", "DRB1*01"]
+    both = parse_allele_values("DQB1*03,06:02")
+    assert [v.text() for v in both] == ["DQB1*03", "DQB1*06:02"]
+
+
+def test_only_the_comma_carries_that_decision() -> None:
+    """A period is what a colon becomes under damage: `A*24.02` may be the
+    two-field `A*24:02`, so without the second star it stays unread."""
+    assert parse_allele_values("A*24.02") == []
+    assert parse_allele_values("A*24;02") == []
+    assert parse_allele_values("A*24/02") == []
 
 
 def test_a_pair_with_no_locus_on_the_first_half_names_no_gene() -> None:
@@ -115,10 +126,11 @@ def test_case_insensitivity_stops_at_the_tail() -> None:
 
 
 def test_the_forms_the_pair_already_refused_are_still_refused_with_a_tail() -> None:
-    """The tail widens nothing else. A single allele stays single, and the
-    one-star form stays unread until a person settles what it means (HA-015)."""
+    """The tail widens nothing else. A single allele stays single, and a pair
+    with no locus on its first half names no gene. The one-star form under a
+    tail reads as two alleles now, by the same decision as without one (HA-015)."""
     assert parse_allele_values("B*35,Bw6") == []
-    assert parse_allele_values("B*35,51,Bw4") == []
+    assert named("B*35,51,Bw4") == ["B*35", "B*51"]
     assert parse_allele_values("B35,*51,Bw4") == []
     assert parse_allele_values("*35,*51,Bw4") == []
 

@@ -4,7 +4,28 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-024 — Caption blood groups on a two-person page
+- **Needed by:** any use of 153 ABO and 136 Rh values.
+- **Why:** D4-b (2026-09-07) sent the 66 PRINTED blood groups on comparison
+  sheets to review, because `fact` has no subject and a group on a page that
+  carries two people cannot be recorded for either. 153 ABO and 136 Rh values
+  on comparison sheets come from the CHAT instead (`source='CAPTION_CLAIM'`)
+  and stand RESOLVED. The chat says what the poster's group is; on a page that
+  pictures two people it does not say which of them the poster is. It is the
+  same attribution problem, and the operator scoped D4-b to the printed 66.
+- **Decision required:** (a) send these to review too, one statement
+  (`UPDATE fact … WHERE source='CAPTION_CLAIM' AND field IN ('ABO','RH')` joined
+  to `comparison_sheet=1`), losing 153/136 resolved values; or (b) keep them,
+  on the reasoning that a poster who writes "my group is O+" beside a two-person
+  sheet is the recipient's side far more often than not — a claim nobody has
+  measured. Recommendation: (a) until round five measures the sheet population.
+- **Secret?** No. **Blocking now?** No; blocking the tiered export's tier for
+  these 289 values.
+
 ### HA-021 — `verify_repo.py` and CI install an extra that can no longer run the suite
+- **Status:** DECIDED 2026-09-07 (D13-a) — the gate, CI and bootstrap install
+  `hist hla image ocr`, the smallest set matching what `src/` imports;
+  `test_harness_baseline` pins all four in all three places.
 - **Needed by:** every claim of the form "the gate is green". It is not, and it
   has not been for longer than this branch.
 - **Why:** `scripts/verify_repo.py` pins `EXTRA = "hist"` and CI runs
@@ -68,6 +89,9 @@ Never put secret values in this file.
 
 
 ### HA-017 — `AGENTS.md`'s locus rule now has a documented exception
+- **Status:** DECIDED 2026-09-07 (D12-a) — `AGENTS.md` and `.claude/rules/ocr.md`
+  now name the three prefix routes as the exceptions, each withdrawable by its
+  `source` (`prefix-bound`, `anchor-row-prefix`, `column-bound`).
 - **Needed by:** nothing is blocked; this is a wording debt an agent must not
   pay itself.
 - **Why:** `AGENTS.md` says "Geometry/template cell defines HLA locus; OCR text
@@ -100,7 +124,9 @@ Never put secret values in this file.
 - **Secret?** No. **Blocking now?** No.
 
 
-### HA-019 — A page that pictures two people has no way to be recorded
+### HA-022 — A page that pictures two people has no way to be recorded
+- **Renumbered** 2026-09-07 from HA-019, which two parallel merges had also given
+  to the blood-group window entry below; code cites this one as HA-022.
 - **Needed by:** nothing today; 15 comparison sheets that PRINT two subjects
   are refused to review because of it (a further 25 are refused because a
   column that should be blank is not, which is a different question and carries
@@ -119,7 +145,9 @@ Never put secret values in this file.
 - **Secret?** No. **Blocking now?** No.
 
 
-### HA-018 — Keep the printed Bw4/Bw6 epitopes as a consistency gate?
+### HA-023 — Keep the printed Bw4/Bw6 epitopes as a consistency gate?
+- **Renumbered** 2026-09-07 from HA-018, which two parallel merges had also given
+  to the two-person blood-group entry below; `glyphs.py` cites this one as HA-023.
 - **Needed by:** nothing; this is evidence currently being thrown away.
 - **Why:** `src/kidneymatch/ocr/glyphs.py` now reads `B*35,*51,Bw4,Bw6` and
   DROPS the tail, because the epitopes are serology and not alleles. But they
@@ -159,6 +187,10 @@ Never put secret values in this file.
 
 
 ### HA-015 — `A*24,02`: two alleles, or one allele at two fields?
+- **Status:** DECIDED 2026-09-07 — a comma between two numbers separates two
+  alleles (`A*24,02` = A*24, A*02). Only the comma carries it; the period,
+  semicolon and slash forms still need the second star. `parse_allele_values`
+  and `tests/unit/test_printed_pair.py` hold the rule.
 - **Needed by:** 1,025 value tokens on 491 documents that currently go unread.
 - **Why:** some forms print both alleles of a locus in ONE box. Where the
   second half carries its own star (`A*24,*02`) that is unambiguous and the
@@ -486,6 +518,7 @@ yet; the review pack's `mid_res` stratum measures it (HA-008).
   passes, and no precision figure may be quoted before it.
 
 ## HA-018 — a blood group on a page carrying two people
+- **Acted 2026-09-07 (D4-b):** the 66 PRINTED groups are in review (`sheet_abo_review.py`, `source` `LABORATORY_PRINTED|sheet-review/v1`, `--undo`). Caption-claimed groups on the same kind of page are HA-024.
 
 - **Status:** OPEN. Not blocking extraction; blocking any use of these 66 groups
   in matching.

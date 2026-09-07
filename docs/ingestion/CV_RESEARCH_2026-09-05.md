@@ -1446,3 +1446,59 @@ None of the three is visible by reading the diff. All three were found by
 running the code against the corpus and comparing what it did with what it
 said.
 
+## s23 — the operator's decisions, applied (2026-09-07)
+
+Fifteen questions went to the operator with options and a recommendation each.
+What follows is the answer, the code that carries it, and what it measurably did.
+Every new pass is dry-run by default, writes its own `source` tag, was run under a
+per-field status snapshot, and undoes itself in one statement (`--undo`).
+
+| decision | carried by | measured |
+|---|---|---|
+| **D1-b** a request word in the chat vetoes a blood group only from inside the same clause | `documents/caption.py` `_request_beside`: the clause is what the writer bounded with punctuation or a line break; "my group is O+, looking for a donor" states O+ | +19 ABO, +17 Rh from the chat; 2 unit tests |
+| **D3-a** an empty printed cell is NOT_TESTED, not a review item | `scripts/ink_drain.py`: REVIEW_REQUIRED ∧ `anchor found but no box` ∧ `cell-ink/v1` BLANK | **14,060 cells** (C 7,007, DQA1 6,881, B 65, A 60, DRB1 31, DQB1 16); not one labelled value among them |
+| **D4-b** a printed blood group on a two-person page cannot be attributed | `scripts/sheet_abo_review.py`: LABORATORY_PRINTED ABO/Rh RESOLVED on a comparison sheet → REVIEW_REQUIRED, value kept as the proposal | 66 ABO + 66 Rh on 66 pages |
+| **D6-a** a gate-1 withdrawal that two independent engines agree on comes back | `scripts/gate1_repromote.py`: ≥2 engine FAMILIES CONFIRMED with one identical reading, no CONTRADICTED, no other engine reading otherwise | **123 of 1,467** (101 by two families, 22 by three); +1 labelled correct |
+| **D9** `A*24,02` is A*24 and A*02 | `ocr/glyphs.py` `_PAIR`: a bare second half is accepted after a COMMA only; period, semicolon and slash still need the second star | `prefix_bind` **+1,144 cells** (A 307, B 343, C 205, DQB1 148, DRB1 139, DQA1 2); anchor-row route +0; +3 labelled correct |
+| **D12-a** the constitution names its exceptions | `AGENTS.md`, `.claude/rules/ocr.md`: `prefix-bound`, `anchor-row-prefix`, `column-bound` | HA-017 DECIDED |
+| **D13-a** the gate installs what the code imports | `EXTRAS = (hist, hla, image, ocr)` in `verify_repo.py`, CI (sync and mutmut), bootstrap; `test_harness_baseline` pins all four | HA-021 DECIDED |
+| **D15** a pack of only the disputed cells, the rest pre-filled | `review_pack.py --disagreements-only EXPORT…` (`prior_labels`, `disagreement` on `golden.classify`); the page seeds the earlier answers into the named drawer and badges DISAGREES with "you said / pipeline now" | **56 documents, 616 cells pre-answered, 138 disputed** (DQB1 25, DRB4 20, B 19, DRB1 19, A 18, DRB5 14, DRB3 13, C 9, DQA1 1) + 2 ROLE fields; on 8766 |
+
+The HA-018/HA-019 numbers that two parallel merges had each given to two entries
+are HA-022 (two-person page) and HA-023 (Bw4/Bw6 gate) now; the blood-group
+window entry keeps HA-019 because eleven files cite it.
+
+### Net, on the same 1,342 labels
+
+HLA **666 → 670 correct**, 118 → 114 missed, 19 partial, **5 contradicted
+(unchanged)**. ROLE 93/2, ABO 48/0, RH 47/0. Corpus: HLA value cells 67,649 →
+**68,916**; ABO 47.3 → 47.1% and RH 42.4 → 42.2% (the 66 sheet withdrawals net
+of the chat gains); review queue **45,846 → 35,391 cells, 18,132 → 14,631
+documents**; NOT_TESTED 38,987.
+
+### Four things the session found on the way
+
+* **A pass that fills what another pass withdrew is a silent reversal.** The
+  caption pass fills any ABO row that is not RESOLVED — and a printed group the
+  sheet review had just withdrawn is exactly that. Six of the 66 were overwritten
+  within the hour. `caption_pass` now leaves a `sheet-review/v1` row alone (17
+  of the 66 carry a chat group and stay in review); the six are restored. The
+  same pass writes Rh alongside ABO without looking at the Rh row's own status:
+  noted, not changed.
+* **153 ABO and 136 Rh caption claims on comparison sheets stand RESOLVED.** The
+  chat cannot say whose group it states any more than the print can. D4-b was
+  scoped to the printed 66; this is HA-024, the operator's call.
+* **D9's first `_PAIR` let a `Bw4` tail pose as a bare second allele:**
+  `8*35,*51,Bw4` matched with `Bw4` as the second half and fell through to
+  nothing. The bare branch is digits-only now and the tail path gets first
+  refusal. An existing test caught it — the argument, again, for pinning
+  behaviour the next rule will brush against.
+* **172 → 123.** The gate-1 candidate count quoted when the decision was framed
+  used a looser "none disagreeing"; the shipped rule counts an UNCONFIRMED
+  engine with a different reading as a dissent. The smaller number is the one
+  the code can defend.
+
+Still open from the decision list: **D10, D11** (explained; awaiting an
+answer), **D2-a** the tiered export, **D8-a** round five at `--n 600`, and the
+CV plan (`CV_PLAN_2026-09-07.md`).
+

@@ -28,7 +28,7 @@ If two higher-priority sources conflict, STOP, record the conflict in `docs/agen
 - Historical raw inputs are immutable and local-only.
 - Every derived medical fact must preserve provenance back to source message/document/crop.
 - OCR produces proposals, never laboratory verification.
-- Geometry/template cell defines HLA locus; OCR text alone may not assign locus.
+- Geometry/template cell defines HLA locus; OCR text alone may not assign locus. Three measured, withdrawable exceptions take the locus from the value's own printed prefix (`source` = `prefix-bound`, `anchor-row-prefix`, `column-bound`; gates in `docs/ingestion/CV_RESEARCH_2026-09-05.md` s12; HA-017, decided 2026-09-07).
 - Never infer high-resolution HLA from low-resolution typing.
 - Use the highest-quality asset physically available. If only a thumbnail exists, record `THUMBNAIL_ONLY`; never hallucinate or wait indefinitely for a missing original.
 - Ambiguous critical OCR => `REVIEW_REQUIRED`, never best-guess acceptance.

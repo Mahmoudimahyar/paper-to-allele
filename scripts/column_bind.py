@@ -31,7 +31,7 @@ anticipates subject-keyed claims, but today's `fact` table is keyed
 `(sha256, field, extraction_version)` with no subject, and ENTITY-001's "a
 conflicting blood group or role blocks a link rather than weakening it" is
 written for one subject per document. Adding a second subject is a design
-decision for a person (HA-019), not a thing this pass may assume.
+decision for a person (HA-022), not a thing this pass may assume.
 
 ## The gates, and the counterexample each one exists for
 

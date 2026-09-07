@@ -219,6 +219,15 @@ body.gated main { grid-template-columns: 1fr; }
 .docnote { flex: 1 1 100%; }
 .docnote input { width: 100%; }
 
+/* ---- a disagreements pack: the earlier answer shown, the dispute badged ---- */
+.cell.agreed { opacity: .55; }
+.cell.agreed .evid, .cell.agreed .answer .row { display: none; }
+.cell.disputed { outline: 2px solid #c0392b; outline-offset: 2px; }
+.dispute { display: inline-block; margin-left: .5em; padding: 0 .4em; border-radius: 3px;
+  background: #c0392b; color: #fff; font-size: .78em; font-weight: 600; letter-spacing: .02em; }
+.dispute-why { display: block; margin-top: .2em; font-size: .85em; color: #c0392b; }
+.pack-note { padding: .5em .8em; margin: 0 0 .6em; border-left: 4px solid #c0392b; background: #fff5f4; }
+
 /* ---- the messages posted with the photo ------------------------------- */
 /* A caption often says what the report does not — donor or recipient, and
    the blood group — so it sits between the document fields and the cells.
@@ -617,6 +626,59 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
     return pipeState === null ? 'APPROVED' : 'EDITED'; // human says no value; pipeline agreed (abstained) or not
   }
+  function seedFromPriorLabels() {
+    // Once per pack, and only in a disagreements pack: the reviewer's earlier
+    // answers become this session's labels, so every cell opens as "done" and
+    // only the disputed ones ask for a second look. Nothing already answered
+    // in this session is overwritten. `seeded` marks a carried answer so an
+    // export can tell it from one the reviewer confirmed again.
+    if (!PACK || !PACK.documents) return;
+    // Never into the anonymous drawer: the name gate has not been passed, and
+    // the named store would then "move unnamed work across" from a seed.
+    if (!document.getElementById('annotator').value.trim()) return;
+    labels.cells = labels.cells || {};
+    labels.documents = labels.documents || {};
+    let seeded = 0;
+    for (const doc of PACK.documents) {
+      for (const cell of doc.cells || []) {
+        const prior = cell.prior_label;
+        if (!prior || !prior.state || labels.cells[cell.cell_id]) continue;
+        const alleles = prior.alleles || [];
+        labels.cells[cell.cell_id] = {
+          locus: cell.locus, state: prior.state, alleles: alleles,
+          resolution: prior.state === 'VALUE'
+            ? (alleles.some(a => a.indexOf(':') !== -1) ? 'TWO_FIELD' : 'FIRST_FIELD') : null,
+          unsure: !!prior.unsure,
+          decision: cell.disagrees ? 'EDITED' : 'APPROVED',
+          pipeline_value: cell.value, pipeline_status: cell.status,
+          labelled_utc: new Date().toISOString(),
+          seeded: true,
+        };
+        seeded++;
+      }
+      const pd = doc.prior_doc;
+      if (pd && !labels.documents[doc.id]) {
+        labels.documents[doc.id] = { role: pd.role || '', abo: pd.abo || '', rh: pd.rh || '' };
+        seeded++;
+      }
+    }
+    if (seeded) save();
+  }
+
+  function disputeHtml(cell) {
+    if (!cell.disagrees) return '';
+    const p = (cell.suggestions || {}).pipeline || {};
+    const now = cell.status === 'RESOLVED'
+      ? (cell.value || '')
+      : String(cell.status || '').replace(/_/g, ' ').toLowerCase() + (p.reason ? ' — ' + p.reason : '');
+    const prior = cell.prior_label || {};
+    const was = prior.state === 'VALUE'
+      ? (prior.alleles || []).join(' ')
+      : String(prior.state || '').replace(/_/g, ' ').toLowerCase();
+    return '<span class="dispute">DISAGREES</span>'
+      + '<span class="dispute-why">you said: <b>' + esc(was) + '</b> · pipeline now: <b>' + esc(now) + '</b></span>';
+  }
+
   function defaultStateFor(cell) {
     // The pipeline already says WHY it read nothing, and the reason maps onto
     // the label states. Pre-selecting it turns ~850 of the 1,650 cells in a
@@ -1051,12 +1113,24 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + ' aria-label="allele printed beside ' + g + '"' + (ticked[g] ? '' : ' disabled') + '></label>';
     }).join('');
 
-    return '<li class="cell drbx-row ' + (dec || (legacy ? 'dirty' : '')) + '" data-cell="' + cells[0].cell_id + '"'
+    // In a disagreements pack the row is one answer, so one badge, and a line
+    // per gene the pipeline now disputes.
+    const disputedGenes = cells.filter(c => c.disagrees);
+    const rowAgreed = !disputedGenes.length && cells.some(c => ('disagrees' in c) && c.prior_label);
+    const rowDispute = !disputedGenes.length ? '' : '<span class="dispute">DISAGREES</span>'
+      + disputedGenes.map(c => {
+          const p = c.prior_label || {};
+          const now = c.status === 'RESOLVED' ? (c.value || '') : String(c.status || '').replace(/_/g, ' ').toLowerCase();
+          return '<span class="dispute-why"><b>' + esc(c.locus) + '</b> you said: <b>'
+            + esc(String(p.state || '').replace(/_/g, ' ').toLowerCase()) + '</b> · pipeline now: <b>' + esc(now) + '</b></span>';
+        }).join('');
+    return '<li class="cell drbx-row ' + (dec || (legacy ? 'dirty' : '')) + (disputedGenes.length ? ' disputed' : (rowAgreed ? ' agreed' : '')) + '" data-cell="' + cells[0].cell_id + '"'
       + ' data-cells="' + cells.map(c => c.cell_id).join(',') + '" tabindex="-1">'
       + '<div class="locus">DRB3/4/5'
       + '<span class="state">' + esc(String(anyStatus || '').replace(/_/g, ' ')) + '</span>'
       + (dec ? '<span class="verdict ' + dec + '">' + dec.toLowerCase() + '</span>' : '')
       + (legacy ? '<span class="verdict EDITED">re-confirm</span>' : '')
+      + rowDispute
       + '</div>'
       + '<div class="evid"><div class="crop">'
       + (cropCell
@@ -1215,7 +1289,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
 
     let html = '<div class="card"><div class="dochead"><div class="tags">' + tagHtml + '</div>'
       + '<div class="doclevel">'
-      + '<label>Role ' + sel('role', ['', 'DONOR', 'RECIPIENT', 'BOTH', 'UNKNOWN'], dl.role)
+      + '<label>' + ((doc.doc_disagrees || {}).role ? '<span class="dispute">DISAGREES</span> ' : '') + 'Role ' + sel('role', ['', 'DONOR', 'RECIPIENT', 'BOTH', 'UNKNOWN'], dl.role)
       + '<span class="pipehint">pipeline: ' + esc(doc.role.value || doc.role.status || '—')
       + (doc.role.source && doc.role.source !== 'NONE' ? ' (' + esc(doc.role.source) + ')' : '') + '</span>'
       // What the caption reader concluded from the posting message. Evidence
@@ -1225,10 +1299,10 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
             + esc(doc.caption_claim.role) + ' (' + esc(doc.caption_claim.tier) + ')</span>'
           : '')
       + '</label>'
-      + '<label>ABO ' + sel('abo', ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'], dl.abo)
+      + '<label>' + ((doc.doc_disagrees || {}).abo ? '<span class="dispute">DISAGREES</span> ' : '') + 'ABO ' + sel('abo', ['', 'A', 'B', 'AB', 'O', 'NOT_PRINTED', 'UNREADABLE'], dl.abo)
       + '<span class="pipehint">pipeline: ' + esc(doc.abo.value || doc.abo.status || '—')
       + srcHint(doc.abo) + '</span>' + captionCaveat(doc.abo) + '</label>'
-      + '<label>Rh ' + sel('rh', ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'], dl.rh)
+      + '<label>' + ((doc.doc_disagrees || {}).rh ? '<span class="dispute">DISAGREES</span> ' : '') + 'Rh ' + sel('rh', ['', 'POSITIVE', 'NEGATIVE', 'NOT_PRINTED', 'UNREADABLE'], dl.rh)
       + '<span class="pipehint">pipeline: ' + esc(doc.rh.value || '—')
       + srcHint(doc.rh) + '</span>' + captionCaveat(doc.rh) + '</label>'
       + '<label><input type="checkbox" data-doc="not_a_report"' + (dl.not_a_report ? ' checked' : '') + '> not a lab report</label>'
@@ -1251,10 +1325,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       // all — it is the strongest anchor on the row.
       const text = lab ? lab.alleles.join(' ')
                        : (blind || cell.kind === 'DRBX' ? '' : bodies(cell.value).join(' '));
-      html += '<li class="cell ' + (lab ? lab.decision : '') + '" data-cell="' + cell.cell_id + '" tabindex="-1">'
+      const agreedHere = ('disagrees' in cell) && !cell.disagrees && cell.prior_label;
+      html += '<li class="cell ' + (lab ? lab.decision : '') + (cell.disagrees ? ' disputed' : (agreedHere ? ' agreed' : '')) + '" data-cell="' + cell.cell_id + '" tabindex="-1">'
         + '<div class="locus">' + esc(cell.locus)
         + '<span class="state">' + esc(String(cell.status || '').replace(/_/g, ' ')) + '</span>'
         + (lab ? '<span class="verdict ' + lab.decision + '">' + lab.decision.toLowerCase() + '</span>' : '')
+        + disputeHtml(cell)
         + '</div>'
         // Not `loading="lazy"`. These are eleven small crops and they ARE the
         // row: a lazy crop that has not loaded leaves a fully answerable
@@ -1285,6 +1361,14 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     }
     html += drbxRowHtml(doc, blind);
     html += '</ul></div>';
+    if (PACK && PACK.documents && PACK.documents.some(d => 'doc_disagrees' in d)) {
+      const nCells = (doc.cells || []).filter(c => c.disagrees).length;
+      const nFields = Object.values(doc.doc_disagrees || {}).filter(Boolean).length;
+      html = '<div class="pack-note">This is a <b>disagreements pack</b>: your earlier answers are already filled in. '
+        + 'Only the <span class="dispute">DISAGREES</span> cells need a second look — <b>' + nCells + '</b> cell'
+        + (nCells === 1 ? '' : 's') + (nFields ? ' and <b>' + nFields + '</b> whole-page field' + (nFields === 1 ? '' : 's') : '')
+        + ' on this page. Change an answer only if the crop says you were wrong.</div>' + html;
+    }
     panel.innerHTML = html;
     // `toggle` does not bubble, so it cannot ride the panel's delegated handlers.
     const msgBlock = panel.querySelector('[data-msgs]');
@@ -1640,6 +1724,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       save();
       toast('Your unnamed work moved across to this name.');
     }
+    seedFromPriorLabels();
     renderDoc();
   };
 
@@ -1715,6 +1800,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     labels = load();
     labels.cells = labels.cells || {};
     labels.documents = labels.documents || {};
+    seedFromPriorLabels();
     // Resume where the last session stopped, and if that document is finished,
     // at the first one that is not. Landing on document 1 of 150 every reload
     // means hunting through a 150-row dropdown to find your place.
