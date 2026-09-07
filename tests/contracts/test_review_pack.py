@@ -906,6 +906,30 @@ def test_promoted_and_ink_certified_cells_are_strata_of_their_own(tmp_path: Path
     assert {t for t, _, _ in module.STRATA} >= {"promoted", "ink_certified"}
 
 
+def test_a_row_placed_from_geometry_alone_is_a_stratum_of_its_own(tmp_path: Path) -> None:
+    """A DRB3/4/5 row read on a page with NO readable header has nothing else
+    that can check it: no header text corroborates it and the existing labels do
+    not reach it (one labelled page of 479). The pack is the only measure, so
+    the source gets its own pool rather than being pooled away under a commoner
+    tag."""
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=3)
+    con = sqlite3.connect(db)
+    shas = [row[0] for row in con.execute("SELECT DISTINCT sha256 FROM fact ORDER BY sha256")]
+    con.execute(
+        "UPDATE fact SET source='token-anchored-drbx', status='RESOLVED', value='PRESENT', "
+        "rule_id='TOKEN_ANCHORED_DRBX/v1' WHERE sha256=? AND field='DRB4'",
+        (shas[0],),
+    )
+    con.commit()
+    docs = module.load_documents(con)
+    con.close()
+    tags = {sha: module.tag_document(docs[sha], export) for sha in shas}
+    assert "token_anchored_drbx" in tags[shas[0]]
+    assert "token_anchored_drbx" not in tags[shas[1]]
+    assert {t for t, _, _ in module.STRATA} >= {"token_anchored_drbx"}
+
+
 def test_the_page_carries_an_optional_note_on_every_answer() -> None:
     """A note outlives the answer it was written beside, so it is stored in a
     map of its own rather than inside a label: re-confirming a row, marking the

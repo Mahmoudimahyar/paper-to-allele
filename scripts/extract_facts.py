@@ -71,7 +71,12 @@ from kidneymatch.ocr.anchors import (  # noqa: E402
     resolve_document,
     resolve_in_row,
 )
-from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx  # noqa: E402
+from kidneymatch.ocr.drbx import (  # noqa: E402
+    NO_GROUPED_HEADER_REASON,
+    GeneCall,
+    resolve_grouped_drbx,
+    resolve_token_anchored_drbx,
+)
 from kidneymatch.ocr.geometry import (  # noqa: E402
     PageFrame,
     restore,
@@ -590,17 +595,44 @@ def extract(
             value_boxes=_boxes(result.value_boxes),
         )
 
-    genes = {
-        gene: restore_drbx(fact, back) for gene, fact in resolve_grouped_drbx(latin_level).items()
-    }
+    read_genes = resolve_grouped_drbx(latin_level)
+    drb1_read = loci.get("DRB1")
+    if (
+        read_genes["DRB3"].reason == NO_GROUPED_HEADER_REASON
+        and drb1_read is not None
+        and drb1_read.status is ResolutionStatus.RESOLVED
+        and not comparison
+    ):
+        # No header was read anywhere on this page. The row can still be placed
+        # from the page's own geometry — one label pitch below the DRB1 label —
+        # and a gene token standing on it read as PRESENT. Never ABSENT: the
+        # counting argument that licenses absence needs the printed enumeration,
+        # and that is exactly what was not read. The DRB1 status tested here is
+        # the FINAL one, after the lattice and the comparison-sheet downgrade,
+        # because that is the fact the page ends up carrying.
+        token_row = resolve_token_anchored_drbx(
+            latin_level, drb1_resolved=True, row_slope=row_slope, lattice=lattice
+        )
+        if token_row.facts is not None:
+            read_genes = token_row.facts
+    genes = {gene: restore_drbx(fact, back) for gene, fact in read_genes.items()}
     for gene, fact in genes.items():
+        gene_status = fact.status
+        gene_reason = fact.reason
+        if comparison and gene_status is ResolutionStatus.RESOLVED:
+            # The same guard the loci get. Two subjects on one page and the row
+            # rule cannot say whose gene the row prints. Today no comparison
+            # sheet in the corpus has a readable grouped header, so this changes
+            # nothing measurable — it fails closed for the ones that will.
+            gene_status = ResolutionStatus.REVIEW_REQUIRED
+            gene_reason = "this page prints donor and recipient columns for two subjects"
         add(
             gene,
-            fact.status.value,
-            value=fact.call.value if fact.status is ResolutionStatus.RESOLVED else None,
+            gene_status.value,
+            value=fact.call.value if gene_status is ResolutionStatus.RESOLVED else None,
             raw=fact.raw_text,
             repaired=fact.repaired,
-            reason=fact.reason,
+            reason=gene_reason,
             rule_id=fact.rule_id,
             anchor_box=_box(fact.header_box),
             # Every box on the row that named this gene, not only the first:

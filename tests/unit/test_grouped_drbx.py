@@ -354,11 +354,16 @@ def test_the_v2_header_spellings_are_recognised(text: str) -> None:
     assert calls([header, at(0.40, "DRB3"), at(0.70, "DRB4")])["DRB3"] is GeneCall.PRESENT
 
 
-@pytest.mark.parametrize("text", ["DRB3/5", "HLA-DRB3/5", "DRB3AS", "DRB35", "DR3/4/5", "DRB3/4"])
+@pytest.mark.parametrize("text", ["DRB3/5", "HLA-DRB3/5", "DRB3AS", "DRB35", "DRB3/4"])
 def test_a_four_less_token_is_a_pair_or_nothing_never_a_header(text: str) -> None:
     """`DRB3/5` names two genes on the row. Reading it as a header would make
     a second header of it and refuse the whole row; without the HLA prefix
-    and a slash-misread letter standing in for the 4, no 4-less token is one."""
+    and a slash-misread letter standing in for the 4, no 4-less token is one.
+
+    `DR3/4/5` left this list when the B slot was widened (route (c)): it prints
+    all three digits and has lost only its `B`, which is a stem misread and not
+    a partial enumeration. It is a header where the geometry corroborates one.
+    """
     from kidneymatch.ocr.drbx import GROUPED_DRBX_HEADER
 
     assert GROUPED_DRBX_HEADER.match(text) is None
@@ -459,3 +464,182 @@ def test_two_clean_tokens_still_certify_the_third_gene_absent() -> None:
     assert (
         facts["DRB5"].call is GeneCall.ABSENT and facts["DRB5"].status is ResolutionStatus.RESOLVED
     )
+
+
+# --- header W5: damage the strict pattern does not reach, and its gate -------
+#
+# Route (c), 2026-09-06. 213 boxes corpus-wide match the widening and not the
+# strict pattern, and a box the widening alone reads is a header only where the
+# page's geometry corroborates one. The measured placebos are what make that
+# gate necessary: any box in the label column at 0.6-1.3 pitches below DRB1,
+# read as a header regardless of its text, emits 1,613 PRESENT with 1.21%
+# forbidden by the page's own DRB1 — so on most no-header pages row+1 is NOT a
+# DRB3/4/5 row, and the TEXT is load-bearing. In the other direction, the same
+# looseness with the wrong digits or the wrong locus (`DR?1/2/3`, `DQ?3/4/5`)
+# matches zero boxes corpus-wide: the W5 shape is specific to this header.
+
+W5_H = 0.012
+W5_PITCH = 0.040
+
+
+def w5_label(text: str, centre_y: float, x0: float = 0.10, x1: float = 0.19) -> Box:
+    return Box(x0=x0, y0=centre_y - W5_H / 2, x1=x1, y1=centre_y + W5_H / 2, text=text)
+
+
+def w5_page(
+    header_text: str, *, header_y: float = 0.480, x0: float = 0.10, header_h: float = W5_H
+) -> list[Box]:
+    """A page whose grouped header only the widening reads, with the label
+    column that corroborates it and a gene token on its row."""
+    return [
+        w5_label("DQB1", 0.400),
+        w5_label("DRB1", 0.440),
+        Box(
+            x0=x0,
+            y0=header_y - header_h / 2,
+            x1=x0 + 0.09,
+            y1=header_y + header_h / 2,
+            text=header_text,
+        ),
+        Box(x0=0.40, y0=header_y - W5_H / 2, x1=0.46, y1=header_y + W5_H / 2, text="DRB3"),
+        w5_label("DPB1", 0.520),
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DRd3/4/5",  # the B slot read as another letter
+        "DR3/4/5",  # the B slot lost
+        "DR?3/4/5",
+        "DRI3/4/5",
+        "HLA-DRA345",
+        "HLA-DRB3445",  # a separator read as 4
+        "HLA-DRB344/5",
+        "HLA-DRB3/4/3",  # the final 5 read as 3
+        "BLA-DRB3/4/5",  # the HLA prefix read as BLA
+    ],
+)
+def test_the_widened_header_spellings_are_read_where_geometry_agrees(text: str) -> None:
+    facts = resolve_grouped_drbx(w5_page(text))
+    assert facts["DRB3"].call is GeneCall.PRESENT, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DRB3/B4/B5",  # 21 boxes, and every one of them on a DRB1 line
+        "HLA-DRB3/5",  # a printed PAIR of gene names, not a header
+        "DRB34",  # truncations: ADR 0008 Decision 4 refuses partial enumerations
+        "HLA-DRB35",
+        "HLA-DRB3/4/",
+        "DRB3/4",
+        "HLA-DRB3//5",  # the double separator: nothing at all in the 4 slot
+        "DRBS3/4/5",  # the stem's own digit misread, not a B-slot substitution
+        "DRB1*03",  # a DRB1 value
+        "DRB3*01:01",
+        "DR?1/2/3",  # the same looseness, the wrong digits: 0 boxes corpus-wide
+        "DQ?3/4/5",  # the same looseness, the wrong locus
+    ],
+)
+def test_the_widening_does_not_reach_these(text: str) -> None:
+    from kidneymatch.ocr.drbx import GROUPED_DRBX_HEADER
+
+    assert GROUPED_DRBX_HEADER.match(text) is None, text
+
+
+def test_the_widening_reaches_everything_the_strict_pattern_reads() -> None:
+    """The widened pattern must be a SUPERSET of the strict one.
+
+    `glyphs._GROUPED_DRBX` mirrors the widened pattern, and both of its uses are
+    refusals: a header-shaped box may not anchor a locus and may not be read as
+    a value. A box that is a header to `drbx.py` and a locus label to
+    `glyphs.py` is how one allele reaches three genes.
+
+    Caught by a corpus measurement, not by reading: the letter class the
+    verifier specified (`[A-RT-Za-z?]`) drops the `8` and `$` the shipped
+    pattern accepts in the B slot, and `HLA-DR83/4/5` is one of the spellings
+    that pattern was widened for in the first place.
+    """
+    from kidneymatch.ocr.drbx import GROUPED_DRBX_HEADER, STRICT_GROUPED_DRBX_HEADER
+
+    spellings = [
+        "HLA-DRB3/4/5",
+        "DRB3/4/5",
+        "HLA-DRB3/45",
+        "HLA-DRB3/4/S",
+        "HLA-DRB345",
+        "-DRB3/4/5",
+        "HLA-DRB34/5",
+        "DRB3,4,5",
+        "HLA-DR83/4/5",
+        "HLA-DRR3/4/5",
+        "DR$3/4/5",
+        "DRE3/4/5",
+        "HLA-DRH3/4/5",
+        "IILA-DRD3/4/S",
+        "HLA-DRB3145",
+        "HLA-DRB314/5",
+        "HLA-DRB3/415",
+        "HLA-DRB3AS",
+        "HLA-DRB3A/S",
+        "HLA-DRB3AUS",
+    ]
+    for text in spellings:
+        if STRICT_GROUPED_DRBX_HEADER.match(text):
+            assert GROUPED_DRBX_HEADER.match(text), text
+
+
+def test_a_widened_header_out_of_the_label_column_is_not_a_header() -> None:
+    """The column test is relative to the DRB1 LABEL, not to the page's median
+    label x0: 12,363 of 14,359 current headers pass the first, and a median-x0
+    test rejects 12,120 of them because the dominant form centres its labels."""
+    facts = resolve_grouped_drbx(w5_page("DR3/4/5", x0=0.40))
+    assert all(f.status is ResolutionStatus.UNKNOWN for f in facts.values())
+
+
+@pytest.mark.parametrize("ratio", [0.25, 0.5, 1.5, 2.0])
+def test_a_widened_header_on_the_wrong_row_is_not_a_header(ratio: float) -> None:
+    facts = resolve_grouped_drbx(w5_page("DR3/4/5", header_y=0.440 + ratio * W5_PITCH))
+    assert all(f.call is GeneCall.UNKNOWN for f in facts.values())
+
+
+def test_a_widened_header_with_no_single_DRB1_label_is_not_a_header() -> None:
+    """16 of the 213 W5 boxes have no DRB1 label at all and 15 have two. The
+    one DRB1-forbidden gene among the widened calls was on such a page."""
+    boxes = [b for b in w5_page("DR3/4/5") if (b.text or "") != "DRB1"]
+    assert all(f.call is GeneCall.UNKNOWN for f in resolve_grouped_drbx(boxes).values())
+    doubled = [*w5_page("DR3/4/5"), w5_label("DRB1", 0.700)]
+    assert all(f.call is GeneCall.UNKNOWN for f in resolve_grouped_drbx(doubled).values())
+
+
+def test_a_strict_header_needs_no_corroboration() -> None:
+    """The strict pattern reads the printed enumeration; the widening reads
+    damage, and damage is where a box that is not a header gets in."""
+    stray = [
+        Box(x0=0.55, y0=0.20, x1=0.70, y1=0.23, text="HLA-DRB3/4/5"),
+        at(0.75, "DRB4", y0=0.205),
+    ]
+    assert resolve_grouped_drbx(stray)["DRB4"].call is GeneCall.PRESENT
+
+
+def test_a_counted_token_nearer_DRB1_than_a_widened_header_goes_to_review() -> None:
+    """The leak guard. On 6 of 159 widened pages (3.8%, against 0.67% on pages
+    whose header the strict pattern reads) a counted token sat nearer the DRB1
+    label's line than the header's — a DRB1 value read as a gene name, which
+    the DRB1 concordance check cannot catch because a gene name derived from a
+    DRB1 allele agrees with DRB1 by construction. All six were two-token rows
+    writing ABSENT for the third gene."""
+    # A damaged header is often boxed tall, and its row band then reaches back
+    # over the DRB1 row: that is how the DRB1 value gets counted as a gene.
+    boxes = w5_page("DR3/4/5", header_h=0.030)
+    leaked = Box(x0=0.40, y0=0.4515, x1=0.46, y1=0.4635, text="DRB4")  # nearer DRB1's line
+    facts = resolve_grouped_drbx([*boxes, leaked])
+    assert all(f.status is ResolutionStatus.REVIEW_REQUIRED for f in facts.values())
+    assert all(f.call is GeneCall.UNKNOWN for f in facts.values())
+
+
+def test_the_leak_guard_does_not_fire_on_a_strict_header() -> None:
+    """It is the widening that is untrusted, not the row band."""
+    facts = resolve_grouped_drbx([HEADER, at(0.40, "DRB3"), at(0.70, "DRB4")])
+    assert facts["DRB3"].call is GeneCall.PRESENT

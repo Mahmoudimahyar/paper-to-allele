@@ -119,6 +119,14 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "printed gene box",
     ),
     (
+        "token_anchored_drbx",
+        20,
+        "the page printed NO readable DRB3/4/5 header and the row was placed from the page's "
+        "own label pitch, one row below DRB1; the gene is PRESENT because a token on that row "
+        "names it. 479 pages, and only one of them carries an existing label — this stratum is "
+        "the only thing that can measure whether the row was the right row",
+    ),
+    (
         "sloped_row",
         14,
         "the page's rulings slope enough that the row test follows them; the binding "
@@ -508,6 +516,12 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
+    if any(c.source == "token-anchored-drbx" for c in doc.cells.values() if c.locus in DRBX_LOCI):
+        # The row placed from geometry alone on a page whose printed enumeration
+        # was never read. Nothing else in the pipeline can say whether it was
+        # the right row: no header text corroborates it and the labels do not
+        # reach it.
+        tags.add("token_anchored_drbx")
     if any(
         c.source in ("drbx-reread+ppocrv6", "ink-certified")
         for c in doc.cells.values()

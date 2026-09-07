@@ -210,9 +210,24 @@ Never put secret values in this file.
   matching purposes until an immunologist rules (HA-004); (c) whether a
   DRB1-derived candidate set may be SHOWN to a reviewer as a hint on a bare
   number (never bound by the pipeline).
+- **Decision (d), added 2026-09-07:** whether the enumeration licence survives
+  when the header is PRINTED BUT UNREAD. `TOKEN_ANCHORED_DRBX/v1`
+  (`ocr/drbx.resolve_token_anchored_drbx`, `scripts/drbx_token_repass.py`)
+  places the row on 479 pages that carry no readable header, from the page's
+  own label pitch, and reads the gene from the token standing on it. ADR 0008
+  Decision 4 grants the licence "only because the header prints the admissible
+  set", so this extends it. What was measured in its favour: 578 of 579
+  accepted rows DO carry a box in the label column, header-shaped on 534 —
+  the enumeration is printed and merely unread. What was cut to match the
+  thinner licence: PRESENT only (no absence is ever certified on this route),
+  no S-for-5 repair, the strict `DR[B8]` stem, and twelve geometry gates. The
+  facts carry `source='token-anchored-drbx'` and their own review stratum, so
+  the group can be withdrawn in one statement if the answer is no.
 - **Secret?** No.
 - **Blocking now?** Blocks grammar v2 only; the one-row review question and
-  presence typing need no spec change.
+  presence typing need no spec change. Decision (d) does not block the route
+  from being reviewed — that is what the stratum is for — but it does block
+  treating its PRESENT calls as settled.
 
 ### HA-010 — Cloud model API keys, only if a synthetic-only comparison is wanted
 - **Needed by:** the OCR model survey's cloud rows (Claude, GPT, Gemini).
