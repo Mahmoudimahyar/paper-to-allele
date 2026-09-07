@@ -96,7 +96,12 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     # the arithmetic is written out in HA-019.
     (
         "abo_centre_rescue",
-        100,
+        # 112, not 100: HA-019 blocks promotion until 20 of these are read, and
+        # the quota is a share of the total. Two strata landed beside this one
+        # in the same session (`column_bound`, `column_named`), the total went
+        # 469 -> 603, and the same weight quietly drew 19. A quota that cannot
+        # deliver the number its gate names is a plan nobody executes.
+        112,
         "this page rules no row around the blood-group field, so nothing but distance places "
         "the value: its box missed the label's LINE and was admitted by a 0.75 label-height "
         "band above the label's centre, behind six gates. 38 documents on the live store, ZERO "
