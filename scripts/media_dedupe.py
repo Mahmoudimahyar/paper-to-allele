@@ -84,7 +84,12 @@ HASH_SIDE = 16
 MAX_DISTANCE = 4
 # The fields whose disagreement vetoes a merge. Anything a person could read off
 # the page and that the pipeline resolved.
-VETO_FIELDS = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1", "ABO", "RH")
+# ROLE is here because a page that says DONOR and a page that says RECIPIENT
+# are two people, whatever the pixels say. Leaving it out merged 37 such
+# pairs (adversarial review, 2026-09-07) — the single worst thing this pass
+# can do. It VETOES but does not corroborate: there are two role words, so
+# agreeing on one is not evidence of identity.
+VETO_FIELDS = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1", "ABO", "RH", "ROLE")
 # A locus is evidence about a person; a blood group barely is. There are four
 # ABO groups and two Rh signs, so two unrelated documents agree on both about
 # one time in eight — measured, 434 pairs would have merged on that alone.
@@ -115,6 +120,13 @@ CREATE TABLE IF NOT EXISTS media_cluster (
     PRIMARY KEY (sha256, dedupe_version)
 );
 CREATE INDEX IF NOT EXISTS media_cluster_by_id ON media_cluster (dedupe_version, cluster_id);
+CREATE TABLE IF NOT EXISTS media_provenance (
+    dedupe_version  TEXT NOT NULL PRIMARY KEY,
+    facts_fingerprint TEXT NOT NULL,
+    n_documents     INTEGER NOT NULL,
+    n_clusters      INTEGER NOT NULL,
+    created_utc     TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS media_refusal (
     sha256_a        TEXT NOT NULL,
     sha256_b        TEXT NOT NULL,
@@ -191,6 +203,29 @@ def hash_corpus(
     return tally
 
 
+def facts_fingerprint(facts: Path) -> str:
+    """What the veto was run against, so a stale clustering can be detected.
+
+    The clusters are only as good as the facts that vetoed them: re-run an
+    extraction pass and a merge this store still asserts may no longer be one
+    the current values would allow. `build_gold_db.py` refuses to use a
+    clustering whose fingerprint no longer matches.
+    """
+    import hashlib
+
+    con = sqlite3.connect(f"file:{facts.as_posix()}?mode=ro", uri=True)
+    marks = ",".join("?" * len(VETO_FIELDS))
+    digest = hashlib.sha256()
+    for row in con.execute(
+        f"SELECT sha256, field, value FROM fact WHERE extraction_version=? AND status='RESOLVED' "
+        f"AND field IN ({marks}) AND value IS NOT NULL ORDER BY sha256, field",
+        (EV, *VETO_FIELDS),
+    ):
+        digest.update(repr(row).encode())
+    con.close()
+    return digest.hexdigest()
+
+
 def resolved_fields(facts: Path) -> dict[str, dict[str, str]]:
     con = sqlite3.connect(f"file:{facts.as_posix()}?mode=ro", uri=True)
     marks = ",".join("?" * len(VETO_FIELDS))
@@ -218,7 +253,8 @@ def verdict(a: dict[str, str], b: dict[str, str]) -> tuple[bool, str]:
     disagreeing = sorted(field for field in shared if a[field] != b[field])
     if disagreeing:
         return False, f"the printed {', '.join(disagreeing)} disagree; these are two documents"
-    if len(shared) < MIN_AGREEING_FIELDS or not (shared & GENE_FIELDS):
+    corroborating = shared - {"ROLE"}
+    if len(corroborating) < MIN_AGREEING_FIELDS or not (corroborating & GENE_FIELDS):
         return False, (
             "too little agrees to corroborate the pixels: a blood group is one value in "
             "eight, and these forms look alike"
@@ -315,11 +351,20 @@ def cluster(facts: Path, out: Path, *, dry_run: bool) -> tuple[Counter[str], lis
         bad = None
         for a, b in itertools.combinations(members, 2):
             ok, reason = verdict(fields.get(a, {}), fields.get(b, {}))
-            if not ok and "disagree" in reason:
+            if not ok:
                 bad = (a, b, reason)
                 break
         if bad is not None:
-            tally["clusters DISSOLVED: a chain merged two contradicting documents"] += 1
+            # EVERY refusal, not only a contradiction. The first version
+            # dissolved on `disagree` alone, which left the corroboration gate
+            # enforced on the pairs the hash happened to compare directly and
+            # nowhere else — precisely the property union-find does not have.
+            # Worse, the store then held a refusal row and a same-cluster row
+            # for one pair, so it contradicted itself about its own decision.
+            kind = (
+                "a contradicting pair" if "disagree" in bad[2] else "a pair too thin to corroborate"
+            )
+            tally[f"clusters DISSOLVED: a chain merged {kind}"] += 1
             tally["documents released by a dissolved cluster"] += len(members)
             refusals.append(
                 (bad[0], bad[1], DEDUPE_VERSION, -1, f"cluster dissolved: {bad[2]}", now)
@@ -355,6 +400,10 @@ def cluster(facts: Path, out: Path, *, dry_run: bool) -> tuple[Counter[str], lis
                 (sha, DEDUPE_VERSION, members[0], int(sha == best), len(members), now),
             )
     con.executemany("INSERT OR REPLACE INTO media_refusal VALUES (?,?,?,?,?,?)", refusals)
+    con.execute(
+        "INSERT OR REPLACE INTO media_provenance VALUES (?,?,?,?,?)",
+        (DEDUPE_VERSION, facts_fingerprint(facts), len(shas), len(multi), now),
+    )
     con.commit()
     con.close()
     return tally, multi

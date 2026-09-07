@@ -121,6 +121,14 @@ CREATE TABLE gold_fact (
     source          TEXT,
     reason          TEXT,
     imgt_version    TEXT,
+    -- How many member documents of this profile answered the field, and how
+    -- many of them the pipeline could NOT resolve. A value read from one of
+    -- three photographs of the same paper, two of which were refused, is
+    -- weaker than one all three agreed on, and dropping that silently was a
+    -- finding of the 2026-09-07 review. It is provenance, not a review task:
+    -- the field HAS an answer, so it does not belong in `gold_review`.
+    members_answering INTEGER NOT NULL DEFAULT 1,
+    members_unresolved INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (profile_id, field)
 );
 CREATE TABLE gold_conflict (
@@ -148,6 +156,13 @@ CREATE TABLE gold_unknown (
     reason          TEXT,
     PRIMARY KEY (profile_id, field)
 );
+CREATE TABLE gold_media_conflict (
+    profile_id      TEXT NOT NULL,
+    other_profile_id TEXT NOT NULL,
+    distance        INTEGER NOT NULL,
+    reason          TEXT NOT NULL,
+    PRIMARY KEY (profile_id, other_profile_id)
+);
 CREATE TABLE gold_duplicate_candidate (
     profile_id      TEXT NOT NULL,
     other_profile_id TEXT NOT NULL,
@@ -172,10 +187,12 @@ def evidence_group(field: str, source: str | None, rule_id: str | None) -> str:
     base = (source or "").split("|")[0]
     if field in PAGE_FIELDS:
         return f"{field}:{base or 'form'}"
-    kind = "DRBX" if field in DRBX_LOCI else "HLA"
+    # Per LOCUS. Pooling the eight HLA loci into one group let a locus no label
+    # has ever tested inherit another's tier: DPA1 and DPB1 have zero labelled
+    # cells and were coming out tier A on HLA-A's record (review, 2026-09-07).
     if base:
-        return f"{kind}:{base}"
-    return f"{kind}:{(rule_id or 'row-rule').split('/')[0]}"
+        return f"{field}:{base}"
+    return f"{field}:{(rule_id or 'row-rule').split('/')[0]}"
 
 
 def tiers_from_labels(con: sqlite3.Connection, exports: list[Path]) -> dict[str, str]:
@@ -245,35 +262,87 @@ def tiers_from_labels(con: sqlite3.Connection, exports: list[Path]) -> dict[str,
     return out
 
 
-def clusters(dedupe: Path | None) -> tuple[dict[str, str], dict[str, str]]:
-    """`(sha -> cluster_id, cluster_id -> representative sha)`, or empty."""
+class StaleDeduplication(RuntimeError):
+    """The clustering is missing, or was vetoed against different facts."""
+
+
+def clusters(dedupe: Path | None, facts: Path, *, allow_none: bool) -> tuple[dict, dict]:
+    """`(sha -> cluster_id, cluster_id -> representative sha)`.
+
+    Raises rather than returning empty. A build that quietly finds no clusters
+    produces a database with every duplicate still in it and no sign that
+    anything is wrong — it looks exactly like a corpus with no duplicates. The
+    fingerprint is checked too: the clusters are only as good as the values
+    that vetoed them, so an extraction pass run since the clustering invalidates
+    it. `--allow-no-dedupe` is the deliberate way to say so out loud.
+    """
     if dedupe is None or not dedupe.exists():
-        return {}, {}
+        if allow_none:
+            return {}, {}
+        raise StaleDeduplication(
+            f"no clustering at {dedupe}; run scripts/media_dedupe.py first, or pass "
+            "--allow-no-dedupe to build a database that keeps every duplicate"
+        )
     con = sqlite3.connect(f"file:{dedupe.as_posix()}?mode=ro", uri=True)
     try:
         rows = con.execute(
             "SELECT sha256, cluster_id, representative FROM media_cluster WHERE dedupe_version=?",
             (DEDUPE_VERSION,),
         ).fetchall()
+    except sqlite3.OperationalError as problem:
+        if allow_none:
+            return {}, {}
+        raise StaleDeduplication(f"the clustering cannot be read: {problem}") from problem
+    try:
+        stored = con.execute(
+            "SELECT facts_fingerprint FROM media_provenance WHERE dedupe_version=?",
+            (DEDUPE_VERSION,),
+        ).fetchone()
     except sqlite3.OperationalError:
-        return {}, {}
+        # A clustering written before the fingerprint existed. Its rows are
+        # still usable; what is missing is the ability to tell whether the
+        # facts have moved under it, which is said out loud rather than assumed.
+        stored = None
     finally:
         con.close()
+    if not rows and not allow_none:
+        raise StaleDeduplication(
+            f"the clustering holds no rows for {DEDUPE_VERSION}; re-run scripts/media_dedupe.py"
+        )
+    if stored is not None:
+        import media_dedupe
+
+        current = media_dedupe.facts_fingerprint(facts)
+        if current != stored[0] and not allow_none:
+            raise StaleDeduplication(
+                "the clustering was vetoed against different facts than these; re-run "
+                "scripts/media_dedupe.py --cluster-only before building"
+            )
     of_sha = {sha: cluster for sha, cluster, _ in rows}
     representative = {cluster: sha for sha, cluster, is_rep in rows if is_rep}
     return of_sha, representative
 
 
 def build(
-    facts: Path, source: Path, dedupe: Path | None, out: Path, exports: list[Path]
+    facts: Path,
+    source: Path,
+    dedupe: Path | None,
+    out: Path,
+    exports: list[Path],
+    *,
+    allow_no_dedupe: bool = False,
 ) -> Counter[str]:
-    if out.exists():
-        out.unlink()
-    con = sqlite3.connect(out)
+    # Built beside the target and moved into place only when it is finished.
+    # Deleting the previous database first meant an interrupted build — or one
+    # `verify` would have rejected — left nothing behind.
+    building = out.with_suffix(out.suffix + ".building")
+    if building.exists():
+        building.unlink()
+    con = sqlite3.connect(building)
     con.executescript(SCHEMA)
     src = sqlite3.connect(f"file:{facts.as_posix()}?mode=ro", uri=True)
     tiers = tiers_from_labels(src, exports)
-    of_sha, representative = clusters(dedupe)
+    of_sha, representative = clusters(dedupe, facts, allow_none=allow_no_dedupe)
 
     documents = {
         sha: (band, bool(sheet))
@@ -362,8 +431,9 @@ def build(
                 best = next((r for r in resolved if r[0] == rep), sorted(resolved)[0])
                 group = evidence_group(field, best[8], best[7])
                 tier = tiers.get(group, "C")
+                unresolved = sum(1 for r in rows if r[2] != "RESOLVED")
                 con.execute(
-                    "INSERT INTO gold_fact VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO gold_fact VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         profile_id,
                         field,
@@ -378,8 +448,12 @@ def build(
                         best[8],
                         best[9],
                         best[10],
+                        len(rows),
+                        unresolved,
                     ),
                 )
+                if unresolved:
+                    tally["a value whose other member documents were not resolved"] += 1
                 n_facts += 1
                 tally[f"gold fact, tier {tier}"] += 1
                 continue
@@ -412,6 +486,9 @@ def build(
             ),
         )
     flag_duplicate_candidates(con)
+    tally["near-identical pages whose printed values disagree"] = carry_media_conflicts(
+        con, dedupe, of_sha
+    )
     con.execute(
         "INSERT INTO gold_build VALUES (?,?,?,?,?,?)",
         (
@@ -425,7 +502,47 @@ def build(
     )
     con.commit()
     con.close()
+    building.replace(out)
     return tally
+
+
+def carry_media_conflicts(
+    con: sqlite3.Connection, dedupe: Path | None, of_sha: dict[str, str]
+) -> int:
+    """Two near-identical photographs whose printed values disagree, kept.
+
+    `media_dedupe` refuses such a pair and writes the refusal to its own store,
+    which means the two documents land in separate profiles and Gold ends up
+    with no trace that anything was odd. But a pair of pages this alike that
+    read differently is a signal: one of the two readings is probably wrong,
+    and a reviewer looking at either alone would never know. 286 pairs
+    corpus-wide (adversarial review finding, 2026-09-07).
+    """
+    if dedupe is None or not dedupe.exists():
+        return 0
+    source = sqlite3.connect(f"file:{dedupe.as_posix()}?mode=ro", uri=True)
+    try:
+        rows = source.execute(
+            "SELECT sha256_a, sha256_b, distance, reason FROM media_refusal "
+            "WHERE dedupe_version=? AND reason LIKE '%disagree%'",
+            (DEDUPE_VERSION,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        source.close()
+    written = 0
+    for sha_a, sha_b, distance, reason in rows:
+        first, second = of_sha.get(sha_a, sha_a), of_sha.get(sha_b, sha_b)
+        if first == second:
+            continue  # the pair ended up in one profile anyway; not a conflict
+        low, high = sorted((first, second))
+        con.execute(
+            "INSERT OR IGNORE INTO gold_media_conflict VALUES (?,?,?,?)",
+            (low, high, distance, reason),
+        )
+        written += 1
+    return written
 
 
 # The loci a full genotype needs before two profiles sharing one is worth
@@ -547,17 +664,94 @@ def verify(out: Path, facts: Path) -> tuple[Counter[str], list[str]]:
     ).fetchone()[0]
     check("every profile defaults HISTORICAL_UNCLAIMED", unclaimed == 0, f"{unclaimed} profiles")
 
-    # 4. a duplicate CANDIDATE is exactly that: two profiles, never merged
+    # 4. a duplicate CANDIDATE is two profiles that both still exist. The old
+    #    version compared a row to itself, which no row can fail.
     candidates = con.execute("SELECT COUNT(*) FROM gold_duplicate_candidate").fetchone()[0]
-    merged = con.execute(
-        "SELECT COUNT(*) FROM gold_duplicate_candidate WHERE profile_id = other_profile_id"
+    dangling = con.execute(
+        "SELECT COUNT(*) FROM gold_duplicate_candidate c "
+        "LEFT JOIN gold_profile a ON a.profile_id = c.profile_id "
+        "LEFT JOIN gold_profile b ON b.profile_id = c.other_profile_id "
+        "WHERE a.profile_id IS NULL OR b.profile_id IS NULL OR c.profile_id = c.other_profile_id"
     ).fetchone()[0]
-    check("no duplicate candidate was merged into itself", merged == 0, f"{merged} rows")
+    check(
+        "every duplicate candidate names two profiles that both survived",
+        dangling == 0,
+        f"{dangling} rows",
+    )
+    # ... and the invariant itself: two profiles sharing a genotype were NOT
+    # merged, which means each is still its own profile with its own documents.
+    collapsed = con.execute(
+        "SELECT COUNT(*) FROM gold_duplicate_candidate c JOIN gold_document d "
+        "ON d.profile_id = c.profile_id JOIN gold_document e "
+        "ON e.profile_id = c.other_profile_id AND e.sha256 = d.sha256"
+    ).fetchone()[0]
+    check(
+        "no two profiles sharing a genotype share a document (never merged on HLA)",
+        collapsed == 0,
+        f"{collapsed} shared documents",
+    )
     checks[f"note: {candidates:,} duplicate CANDIDATE pairs flagged, none merged (DEDUPE-001)"] += 1
 
-    # 5. the deduplication did not invent or lose a message link
+    dangling_media = con.execute(
+        "SELECT COUNT(*) FROM gold_media_conflict c "
+        "LEFT JOIN gold_profile a ON a.profile_id = c.profile_id "
+        "LEFT JOIN gold_profile b ON b.profile_id = c.other_profile_id "
+        "WHERE a.profile_id IS NULL OR b.profile_id IS NULL OR c.profile_id = c.other_profile_id"
+    ).fetchone()[0]
+    check(
+        "every media conflict names two profiles that both survived",
+        dangling_media == 0,
+        f"{dangling_media} rows",
+    )
+
+    # 5. every source-message link of every member document survived the
+    #    deduplication, counted against the source store rather than asserted.
     kept = con.execute("SELECT COUNT(*) FROM gold_message").fetchone()[0]
     checks[f"note: {kept:,} source-message links retained across {n_profiles:,} profiles"] += 1
+
+    # 6. the counters on a profile are what its own rows say, and no profile is
+    #    empty. A profile with no documents was invisible to every other check.
+    lying = con.execute(
+        "SELECT COUNT(*) FROM gold_profile p WHERE p.n_documents <> "
+        "(SELECT COUNT(*) FROM gold_document d WHERE d.profile_id = p.profile_id) "
+        "OR p.n_facts <> (SELECT COUNT(*) FROM gold_fact f WHERE f.profile_id = p.profile_id)"
+    ).fetchone()[0]
+    check("every profile's counters match its own rows", lying == 0, f"{lying} profiles")
+    empty = con.execute(
+        "SELECT COUNT(*) FROM gold_profile p WHERE NOT EXISTS "
+        "(SELECT 1 FROM gold_document d WHERE d.profile_id = p.profile_id)"
+    ).fetchone()[0]
+    check("no profile is empty", empty == 0, f"{empty} profiles")
+    stray = con.execute(
+        "SELECT COUNT(*) FROM gold_profile p WHERE NOT EXISTS (SELECT 1 FROM gold_document d "
+        "WHERE d.profile_id = p.profile_id AND d.sha256 = p.representative_sha256)"
+    ).fetchone()[0]
+    check(
+        "every profile's representative is one of its own documents",
+        stray == 0,
+        f"{stray} profiles",
+    )
+
+    # 7. the content, not only the shape: every gold value must still be the
+    #    RESOLVED value the facts store holds for that document and field.
+    facts_rows = {
+        (sha, field): value
+        for sha, field, value in src.execute(
+            "SELECT sha256, field, value FROM fact WHERE extraction_version=? "
+            "AND status='RESOLVED'",
+            (EV,),
+        )
+    }
+    wrong = sum(
+        1
+        for field, value, sha in con.execute("SELECT field, value, sha256 FROM gold_fact")
+        if facts_rows.get((sha, field)) != value
+    )
+    check(
+        "every gold value is the RESOLVED value its document actually carries",
+        wrong == 0,
+        f"{wrong} facts",
+    )
 
     con.close()
     src.close()
@@ -572,12 +766,27 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=ROOT / "data/gold/gold.sqlite")
     parser.add_argument("--labels", type=Path, nargs="*", default=[])
     parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument(
+        "--allow-no-dedupe",
+        action="store_true",
+        help="build even with no current clustering; every duplicate stays a separate profile",
+    )
     args = parser.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     if not args.verify_only:
-        for key, count in build(
-            args.facts, args.source, args.dedupe, args.out, list(args.labels)
-        ).most_common():
+        try:
+            tally = build(
+                args.facts,
+                args.source,
+                args.dedupe,
+                args.out,
+                list(args.labels),
+                allow_no_dedupe=args.allow_no_dedupe,
+            )
+        except StaleDeduplication as problem:
+            print(f"refusing to build: {problem}")
+            return 2
+        for key, count in tally.most_common():
             print(f"{count:>8,}  {key}")
     checks, failures = verify(args.out, args.facts)
     print("\n-- invariants --")

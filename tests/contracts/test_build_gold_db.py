@@ -8,6 +8,7 @@ that merely share a genotype are FLAGGED, never merged.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import sqlite3
 from pathlib import Path
@@ -58,6 +59,8 @@ def dedupe_store(module, path: Path, clusters) -> None:
     con.executescript(
         "CREATE TABLE media_cluster (sha256 TEXT, dedupe_version TEXT, cluster_id TEXT,"
         " representative INTEGER, n_members INTEGER, created_utc TEXT);"
+        "CREATE TABLE media_provenance (dedupe_version TEXT PRIMARY KEY,"
+        " facts_fingerprint TEXT, n_documents INTEGER, n_clusters INTEGER, created_utc TEXT);"
     )
     for sha, cluster, rep in clusters:
         con.execute(
@@ -76,7 +79,14 @@ def build(module, tmp_path, documents, facts, clusters=()):
     if clusters:
         dedupe_store(module, dedupe, clusters)
     out = tmp_path / "gold.sqlite"
-    tally = module.build(facts_path, tmp_path / "missing_source.sqlite", dedupe, out, [])
+    tally = module.build(
+        facts_path,
+        tmp_path / "missing_source.sqlite",
+        dedupe,
+        out,
+        [],
+        allow_no_dedupe=not clusters,
+    )
     return out, tally
 
 
@@ -232,3 +242,109 @@ def test_verify_reports_a_failure_rather_than_passing_quietly(tmp_path) -> None:
     con.close()
     _checks, failures = m.verify(out, tmp_path / "facts.sqlite")
     assert failures, "a document in two profiles must be reported"
+
+
+# --- what the adversarial review of 2026-09-07 found -----------------------
+
+
+def test_a_missing_clustering_stops_the_build_rather_than_dropping_dedup(tmp_path) -> None:
+    """A build that quietly finds no clusters keeps every duplicate and looks
+    exactly like a corpus that had none."""
+    m = load()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    facts_path = tmp_path / "facts.sqlite"
+    facts_store(facts_path, [("d1", "HIGH", 0)], [("d1", "A", "RESOLVED", "A*01", None)])
+    try:
+        m.build(
+            facts_path,
+            tmp_path / "none.sqlite",
+            tmp_path / "absent.sqlite",
+            tmp_path / "gold.sqlite",
+            [],
+        )
+    except m.StaleDeduplication as problem:
+        assert "media_dedupe" in str(problem)
+    else:
+        raise AssertionError("the build accepted a missing clustering")
+
+
+def test_a_locus_no_label_has_tested_cannot_inherit_another_locus_tier() -> None:
+    """Pooling the eight HLA loci gave DPA1, with zero labelled cells, tier A on
+    HLA-A's record."""
+    m = load()
+    assert m.evidence_group("A", None, "R/v1") != m.evidence_group("DPA1", None, "R/v1")
+    assert m.evidence_group("A", "prefix-bound", None) != m.evidence_group(
+        "B", "prefix-bound", None
+    )
+    assert m.evidence_group("A", "x|later-tag", None) == m.evidence_group("A", "x", None)
+
+
+def test_a_members_refusal_survives_as_provenance_on_the_value(tmp_path) -> None:
+    """Before this, any member resolving a field deleted every trace of the
+    other members' refusals. It is recorded on the value rather than in the
+    review queue: the field HAS an answer, so it is not a review task."""
+    m = load()
+    out, tally = build(
+        m,
+        tmp_path,
+        [("d1", "HIGH", 0), ("d2", "HIGH", 0)],
+        [
+            ("d1", "A", "RESOLVED", "A*01 A*02", None),
+            ("d2", "A", "REVIEW_REQUIRED", None, None),
+        ],
+        clusters=[("d1", "c1", 1), ("d2", "c1", 0)],
+    )
+    assert tally["a value whose other member documents were not resolved"] == 1
+    assert rows(out, "SELECT value FROM gold_fact WHERE field='A'")[0][0] == "A*01 A*02"
+    counts = rows(out, "SELECT members_answering, members_unresolved FROM gold_fact")[0]
+    assert counts == (2, 1), "the sibling's refusal survives as provenance on the value"
+    assert rows(out, "SELECT COUNT(*) FROM gold_review WHERE field='A'")[0][0] == 0, (
+        "a field with an answer does not belong in the review queue"
+    )
+
+
+def test_an_interrupted_build_leaves_the_previous_database_in_place(tmp_path) -> None:
+    """The builder used to delete the target first."""
+    m = load()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    out = tmp_path / "gold.sqlite"
+    out.write_bytes(b"the previous database")
+    facts_path = tmp_path / "facts.sqlite"
+    facts_store(facts_path, [("d1", "HIGH", 0)], [("d1", "A", "RESOLVED", "A*01", None)])
+    with contextlib.suppress(m.StaleDeduplication):
+        m.build(facts_path, tmp_path / "none.sqlite", tmp_path / "absent.sqlite", out, [])
+    assert out.read_bytes() == b"the previous database"
+
+
+def test_verify_notices_a_lying_counter_and_an_empty_profile(tmp_path) -> None:
+    m = load()
+    out, _ = build(m, tmp_path, [("d1", "HIGH", 0)], [("d1", "A", "RESOLVED", "A*01", None)])
+    con = sqlite3.connect(out)
+    con.execute("UPDATE gold_profile SET n_documents = 99")
+    con.commit()
+    con.close()
+    _checks, failures = m.verify(out, tmp_path / "facts.sqlite")
+    assert any("counters" in f for f in failures)
+
+
+def test_verify_notices_a_value_the_facts_store_does_not_carry(tmp_path) -> None:
+    """The shape checks all passed on a fabricated value before this existed."""
+    m = load()
+    out, _ = build(m, tmp_path, [("d1", "HIGH", 0)], [("d1", "A", "RESOLVED", "A*01", None)])
+    con = sqlite3.connect(out)
+    con.execute("UPDATE gold_fact SET value = 'A*99'")
+    con.commit()
+    con.close()
+    _checks, failures = m.verify(out, tmp_path / "facts.sqlite")
+    assert any("RESOLVED value" in f for f in failures)
+
+
+def test_verify_notices_a_representative_that_is_not_its_own_document(tmp_path) -> None:
+    m = load()
+    out, _ = build(m, tmp_path, [("d1", "HIGH", 0)], [("d1", "A", "RESOLVED", "A*01", None)])
+    con = sqlite3.connect(out)
+    con.execute("UPDATE gold_profile SET representative_sha256 = 'somewhere else'")
+    con.commit()
+    con.close()
+    _checks, failures = m.verify(out, tmp_path / "facts.sqlite")
+    assert any("representative" in f for f in failures)

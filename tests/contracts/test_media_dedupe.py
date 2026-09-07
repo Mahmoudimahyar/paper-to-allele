@@ -125,7 +125,7 @@ def test_a_chain_may_not_merge_two_contradicting_documents(monkeypatch, tmp_path
     monkeypatch.setattr(sqlite3, "connect", fake_connect)
     tally, multi = m.cluster(tmp_path / "facts.sqlite", Path("dedupe.sqlite"), dry_run=True)
     assert multi == [], "a chain merged two documents whose printed values disagree"
-    assert tally["clusters DISSOLVED: a chain merged two contradicting documents"] == 1
+    assert tally["clusters DISSOLVED: a chain merged a contradicting pair"] == 1
 
 
 def test_a_consistent_chain_survives(monkeypatch, tmp_path) -> None:
@@ -174,3 +174,51 @@ def test_the_hash_is_stable_and_sized() -> None:
     first = m.dhash(image)
     assert len(first) == 32, "256 bits"
     assert first == m.dhash(image), "the same image must hash the same way twice"
+
+
+def test_a_chain_may_not_merge_a_pair_too_thin_to_corroborate(monkeypatch, tmp_path) -> None:
+    """The first version dissolved a chain only on CONTRADICTION, so the
+    corroboration gate held on the pairs the hash compared directly and nowhere
+    else. Worse, the store then wrote a refusal row and a same-cluster row for
+    one pair and contradicted itself. Found by adversarial review, 2026-09-07:
+    2 such pairs were live in one cluster of 6."""
+    m = load()
+    con = dedupe_store(
+        m,
+        [("a", code("0" * 256)), ("b", code("0" * 254 + "11")), ("c", code("0" * 252 + "1111"))],
+    )
+    # a~b and b~c each agree on two fields including a gene; a~c share only
+    # DRB1, which is one field and cannot corroborate on its own.
+    fields = {
+        "a": {"DRB1": "DRB1*15", "ABO": "O"},
+        "b": {"DRB1": "DRB1*15", "ABO": "O", "A": "A*01"},
+        "c": {"DRB1": "DRB1*15", "A": "A*01"},
+    }
+    monkeypatch.setattr(m, "resolved_fields", lambda _facts: fields)
+    original = sqlite3.connect
+
+    def fake_connect(target, *args, **kwargs):
+        return con if str(target).endswith("dedupe.sqlite") else original(target, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", fake_connect)
+    tally, multi = m.cluster(tmp_path / "facts.sqlite", Path("dedupe.sqlite"), dry_run=True)
+    assert multi == [], "a chain merged a pair that could not corroborate directly"
+    assert tally["clusters DISSOLVED: a chain merged a pair too thin to corroborate"] == 1
+
+
+def test_a_donor_page_never_merges_with_a_recipient_page() -> None:
+    """37 such pairs were merged before ROLE became a veto field. A page that
+    says DONOR and a page that says RECIPIENT are two people."""
+    m = load()
+    ok, reason = m.verdict(
+        {"A": "A*01", "B": "B*07", "ROLE": "DONOR"},
+        {"A": "A*01", "B": "B*07", "ROLE": "RECIPIENT"},
+    )
+    assert not ok and "disagree" in reason
+
+
+def test_a_matching_role_does_not_corroborate_on_its_own() -> None:
+    """There are two role words; agreeing on one is not evidence of identity."""
+    m = load()
+    ok, reason = m.verdict({"A": "A*01", "ROLE": "DONOR"}, {"A": "A*01", "ROLE": "DONOR"})
+    assert not ok and "too little" in reason
