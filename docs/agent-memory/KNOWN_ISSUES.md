@@ -380,3 +380,25 @@ let a repass overwrite a finding it did not make. Until the corpus is
 re-extracted those 68 cells assert "this laboratory does not perform this
 test" about pages the new build reads a family on. `family_repass.py` prints
 the count on every run so the claim stays checkable.
+
+## KI-029 — the column rule's ruling gate is inert in three of the five passes
+`ValueRule.row_rulings` is what lets a rule reading DOWN a column refuse a cell
+whose two stacked values have a printed ruling between them — the only gate
+that can see a two-subject table in that layout. `extract_facts.extract` and
+`family_repass.rule_for_page` fill it from the page's own lattice.
+
+`scripts/page_ocr_bind.py`, `scripts/rerecognise_pass.py` and
+`scripts/upright_bind.py` do not. All three take the SAME shared `BELOW_RULE`
+object and `replace(...)` only `row_slope`/`column_slope`, so the tuple is
+empty, `_ruling_between` returns None, and the gate never fires there. The
+other two gates added with it — the allele-cardinality count and `refuse_bare`
+— DO reach those passes, because they are fields of the shared object rather
+than per-page data.
+
+Exposure today is zero: no RESOLVED fact in the corpus was written under any
+below rule id, so there is nothing published for the gate to have caught. That
+is a fact about the store and not a property of the code, and the next run of
+any of the three could write one. Closing it means giving those three passes
+the page lattice they do not currently load, and measuring what each binds
+before and after — which is a change to three passes, not a comment, and is
+why it is recorded here rather than made in the same round that found it.

@@ -4,6 +4,35 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-020 — The column direction may not be promoted on the default pack
+- **Needed by:** any decision to keep `ADR0008/below-rule` — the reading that
+  takes a value from the cell BENEATH its own label instead of along a row. It
+  writes 364 cells on 290 pages and NOT ONE of them has ever been read by a
+  person.
+- **Why:** the direction's own safety case names a sample of **>= 100 column-read
+  cells**, because the shape it can get wrong — a header row over two subject
+  rows — is invisible to every gate it has unless the printed table draws a
+  line between the two values. The ruling gate catches the ruled case and costs
+  1 cell of 365; `review_pack.py`'s `below_rule_unruled` stratum is the 195 of
+  198 two-box cells where no line is drawn, and `below_rule_role_unknown` the
+  pages whose ROLE nobody could read.
+- **Decision required:** cut and label a pack at `--n 600` before any promotion.
+  Measured on the merged build with the repass applied to a copy of the live
+  store: `--n 600` draws 64 documents carrying **116** column-read cells;
+  `--n 300` draws 35 and 66; the default `--n 150` draws 21 and 41. The default
+  pack is a sighting shot. A single contradiction in the unruled stratum
+  refutes the direction for that stratum and the group is withdrawable whole
+  (`source='below-rule'`, `rule_id='ADR0008/below-rule'`).
+- **What has been read so far:** nothing. Of the 122 labelled documents, 20
+  carry no layout family, and the four findings reach 4 of those — 3 under the
+  tie clause (24 labelled HLA cells, 12 correct / 11 abstained / 1
+  contradicted, unchanged by the pass) and 1 under the prefix repair (8 cells,
+  2 missed -> correct, 0 worse). The left-out fit and the column direction hold
+  **zero** labelled pages between them.
+- **Secret?** No. **Blocking now?** Not extraction. Yes for treating a
+  column-read HLA value as something a match may rest on.
+
+
 ### HA-017 — `AGENTS.md`'s locus rule now has a documented exception
 - **Needed by:** nothing is blocked; this is a wording debt an agent must not
   pay itself.
@@ -542,8 +571,11 @@ yet; the review pack's `mid_res` stratum measures it (HA-008).
   They carry the stratum `abo_centre_rescue`, which is FIRST in
   `scripts/review_pack.py::STRATA` and weighted 100 of 559 for exactly this
   reason: `choose` takes one document per stratum and then
-  `round(room * weight / total) - 1` more, so at the default `--n 150` it draws
-  **21** (measured against the live store). The band route is weighted 12 and
+  `round(room * weight / total) - 1` more, plus `MIN_DRAW`'s floor of 20 before
+  the weights are applied at all. Measured on the merged build (the four
+  no-family strata and their two floors present, the repass applied to a copy):
+  the default `--n 150` draws **23**, so the 20 this decision waits on are in
+  every default pack. The band route is weighted 12 and
   draws 3 a pack, so its 13 uncorroborated candidates need about five packs, or
   a raised weight, if they are wanted sooner. Promote a route only at >= 95%
   agreement; withdraw it otherwise. Both weights should come down once a round

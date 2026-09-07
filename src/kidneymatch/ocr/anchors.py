@@ -293,6 +293,15 @@ class ValueRule:
     # behaviour of before, and is what a page with no measured rulings gets.
     # Typed loosely on purpose — `ocr.lattice` imports `ocr.geometry`, which
     # imports this module, so the concrete `Ruling` is a checking-time name.
+    #
+    # Filled by `extract_facts.extract` and `family_repass.rule_for_page`, and
+    # by NOTHING ELSE. `page_ocr_bind.py`, `rerecognise_pass.py` and
+    # `upright_bind.py` take this same shared `BELOW_RULE` object and
+    # `replace(...)` only the two slopes, so the tuple stays empty there and
+    # `_ruling_between` returns None: the gate is inert in three of the five
+    # passes that can read down a column. Today's exposure is zero — no
+    # RESOLVED fact in the corpus was written under a below rule id — but that
+    # is a fact about the store, not a property of the code. KI-029.
     row_rulings: tuple[Ruling, ...] = ()
 
 

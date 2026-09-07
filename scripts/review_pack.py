@@ -134,19 +134,27 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "new_rule_repaired",
         16,
         "a cell one of the four no-family findings resolved whose value ALSO went through "
-        "glyph repair. 244 of the 651 tie gains carry a repair (37%) against 501 of the "
-        "3,132 cells resolved under both rules (16%), and repaired values that split under "
-        "jitter are wrong 21% of the time corpus-wide. Without this stratum the repair "
-        "signal is pooled away: a document belongs to its RAREST tag, and every one of "
-        "these findings is rarer than repaired_glyph's 11,179 documents",
+        "glyph repair. Measured on the cells the repass writes: 467 of 1,376 carry a repair "
+        "(34%) — prefix 117 of 204 (57%), loo 105 of 258 (41%), tie 216 of 550 (39%), below "
+        "29 of 364 (8%) — against 30% of every RESOLVED HLA cell in the store, so only the "
+        "prefix repair's own cells are unusually repair-heavy. Repaired values that split "
+        "under jitter are wrong 21% of the time corpus-wide, and without this stratum the "
+        "signal is pooled away: a document belongs to its RAREST tag, and every one of these "
+        "findings is rarer than repaired_glyph's 11,555 documents",
     ),
     # The below-rule sample the direction's safety case needs is >=100 CELLS,
-    # and the pack is drawn in DOCUMENTS. Measured on this corpus after the
-    # repass: `--n 150` (the default) draws 14 documents of these three strata
-    # carrying 24 column-read cells; `--n 300` draws 33 and 56; `--n 600`
-    # draws 67 (25 unruled + 25 role-unknown + 17 flat) and carries 118. So a
-    # round aimed at the direction is `--n 600`, and the default pack is a
-    # sighting shot, not the evidence.
+    # and the pack is drawn in DOCUMENTS. Measured on the MERGED build, against
+    # the live store with `family_repass.py --no-dry-run` applied to a copy and
+    # the two floors in `MIN_DRAW` below: `--n 150` (the default) draws 21
+    # documents carrying 41 column-read cells; `--n 300` draws 35 and 66;
+    # `--n 600` draws 64 and 116. So the >= 100 cells arrive at `--n 600` and
+    # the default pack is a sighting shot, not the evidence — HA-020 records
+    # that run as the step the direction may not be promoted without.
+    #
+    # Without the floors the same build draws 8 documents and 13 cells at the
+    # default, because two blood-group strata landed above these in a merge and
+    # the weights alone shrank them. That is the failure `MIN_DRAW` exists for,
+    # and it is why these two carry a count rather than a share.
     (
         "below_rule_unruled",
         26,
@@ -183,8 +191,9 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "the recognizer boxed a label's HLA- prefix apart; joined back into the word the "
         "form prints, the page fits at the ORDINARY template tolerance and is read from the "
         "repaired boxes. 162 pages, 267 cells. The direct repair of what the left-out fit "
-        "accommodates, and it holds the ONE labelled page of that population (6eeb314e: 3 "
-        "cells missed -> correct, 0 worse)",
+        "accommodates, and it holds the ONE labelled page of that population — 6eeb314e, "
+        "whose 8 labelled HLA cells go 4 abstained / 2 missed / 2 partial to 4 abstained / "
+        "2 CORRECT / 2 partial when the pass runs, so 2 cells missed -> correct and 0 worse",
     ),
     (
         "family_loo",
@@ -374,7 +383,17 @@ STRATA_ORDER = {name: i for i, (name, _, _) in enumerate(STRATA)}
 # the total grew, and the same weight drew 19 — twice. HA-019 blocks promoting
 # the centre-band route until 20 of its readings have been read by a person, so
 # 20 is what the pack draws, whatever else is added later.
-MIN_DRAW = {"abo_centre_rescue": 20}
+#
+# The same thing then happened to the two below-rule sub-strata, in the merge
+# that brought the blood-group strata in: measured on the merged build against
+# the live store with the repass applied to a copy, `--n 150` drew 8 documents
+# carrying 13 column-read cells where the direction had been sized for 14 and
+# 24. A floor of 8 on each of the two populations where a two-subject table is
+# invisible restores it — measured, `--n 150` then draws 21 documents and 41
+# column-read cells, `--n 300` 35 and 66, and `--n 600` 64 and 116, which is
+# the >= 100 cells the direction's safety case names (HA-020). The floor costs
+# `abo_centre_rescue` one document (24 -> 23), still above its own 20.
+MIN_DRAW = {"abo_centre_rescue": 20, "below_rule_unruled": 8, "below_rule_role_unknown": 8}
 FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
 # Nearly every report leaves SOME printed cell empty, so one is no signal at
 # all. Three is a form the laboratory filled in only partly, which is the
