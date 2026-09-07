@@ -468,8 +468,9 @@ def test_two_clean_tokens_still_certify_the_third_gene_absent() -> None:
 
 # --- header W5: damage the strict pattern does not reach, and its gate -------
 #
-# Route (c), 2026-09-06. 213 boxes corpus-wide match the widening and not the
-# strict pattern, and a box the widening alone reads is a header only where the
+# Route (c), 2026-09-06. 152 boxes corpus-wide match the widening and not the
+# strict pattern (151 of them on pages carrying no strict header, exactly one
+# page carrying both), and a box the widening alone reads is a header only where the
 # page's geometry corroborates one. The measured placebos are what make that
 # gate necessary: any box in the label column at 0.6-1.3 pitches below DRB1,
 # read as a header regardless of its text, emits 1,613 PRESENT with 1.21%
