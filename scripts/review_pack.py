@@ -66,6 +66,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from kidneymatch.ocr.lattice import Lattice  # noqa: E402
+from kidneymatch.ocr.lattice import lattice_for as build_lattice  # noqa: E402
 from kidneymatch.ocr.lattice import load_rulings as load_stored_rulings  # noqa: E402
 from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
@@ -91,16 +93,17 @@ DOC_FIELDS = ("ROLE", "ABO", "RH")
 # (tag, weight, what it means). Order = priority when a document carries
 # several tags. Weights are relative quotas; `--n` scales them.
 STRATA: tuple[tuple[str, int, str], ...] = (
-    # FIRST, because they assert a value NO PERSON HAS EVER CHECKED. Each is a
-    # pass added after the first labelling round, and each is a way the pipeline
-    # could now be confidently wrong, which is the worst thing it can be. A
-    # document is pooled by its FIRST matching tag, so putting them here is what
-    # aims a second round at them.
+    # FIRST, because every stratum in this block asserts a value NO PERSON HAS
+    # EVER CHECKED. Each comes from a pass added after the first labelling
+    # round, and each is a way the pipeline could now be confidently wrong,
+    # which is the worst thing it can be. A document is pooled by its FIRST
+    # matching tag, so putting them here is what aims a second round at them.
     #
-    # The strata BELOW keep the order they had in the first round. That order is
-    # load-bearing: a document usually carries several tags, and moving one
-    # above another silently empties the lower pool.
-    # The two rescue routes are SEPARATE strata, because they rest on
+    # The strata BELOW this block keep the order they had in the first round.
+    # That order is load-bearing: a document usually carries several tags, and
+    # moving one above another silently empties the lower pool.
+    #
+    # The two blood-group rescue routes are SEPARATE strata, because they rest on
     # different evidence and only one of them is blocked. Pooling them put
     # roughly two centre documents in a 150-document pack, and HA-019 asks for
     # twenty before the group may be promoted. The centre weight is sized for
@@ -126,6 +129,92 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "documents on the live store: 29 published, because two engines boxed the same ink or "
         "the messages name the same letter, and 13 that nothing corroborates, which are here "
         "as REVIEW items carrying a crop of the candidate rather than as values",
+    ),
+    (
+        "new_rule_repaired",
+        16,
+        "a cell one of the four no-family findings resolved whose value ALSO went through "
+        "glyph repair. Measured on the cells the repass writes: 467 of 1,376 carry a repair "
+        "(34%) — prefix 117 of 204 (57%), loo 105 of 258 (41%), tie 216 of 550 (39%), below "
+        "29 of 364 (8%) — against 30% of every RESOLVED HLA cell in the store, so only the "
+        "prefix repair's own cells are unusually repair-heavy. Repaired values that split "
+        "under jitter are wrong 21% of the time corpus-wide, and without this stratum the "
+        "signal is pooled away: a document belongs to its RAREST tag, and every one of these "
+        "findings is rarer than repaired_glyph's 11,555 documents",
+    ),
+    # The below-rule sample the direction's safety case needs is >=100 CELLS,
+    # and the pack is drawn in DOCUMENTS. Measured on the MERGED build, against
+    # the live store with `family_repass.py --no-dry-run` applied to a copy and
+    # the two floors in `MIN_DRAW` below: `--n 150` (the default) draws 21
+    # documents carrying 41 column-read cells; `--n 300` draws 35 and 66;
+    # `--n 600` draws 64 and 116. So the >= 100 cells arrive at `--n 600` and
+    # the default pack is a sighting shot, not the evidence — HA-020 records
+    # that run as the step the direction may not be promoted without.
+    #
+    # Without the floors the same build draws 8 documents and 13 cells at the
+    # default, because two blood-group strata landed above these in a merge and
+    # the weights alone shrank them. That is the failure `MIN_DRAW` exists for,
+    # and it is why these two carry a count rather than a share.
+    (
+        "below_rule_unruled",
+        26,
+        "read down a column, with two values stacked under one header and NO closed ruled "
+        "cell around them. 195 of the 197 two-box column cells the shipped rule resolves are "
+        "in this state — 198 before the ruling gate refuses one (a closed cell means one row "
+        "band holds both boxes and a vertical ruling stands each side) — and it is the only "
+        "shape in which a two-subject table is invisible to every gate: two boxes, two "
+        "alleles, both under the header, no printed line between them. The ruling gate "
+        "catches the ruled case, 1 cell of 365, and cannot see these. One contradiction here "
+        "refutes the direction for this stratum",
+    ),
+    (
+        "below_rule_role_unknown",
+        26,
+        "read down a column on a page whose ROLE nobody could read. 51 of the 290 column "
+        "pages have no resolved ROLE fact; 35 of those gain a cell and they hold 59 of the "
+        "364. By the criterion the gate itself uses — no printed role word read anywhere on "
+        "the page — it is 211 pages and 249 cells "
+        "(.artifacts/no-family/below-rule-population-and-placebo.log). The Persian role "
+        "words are what refuse a donor/recipient comparison table, and here that guard "
+        "never fires",
+    ),
+    (
+        "family_tie",
+        18,
+        "the page fits one printed form but a second prototype of that form, leaning "
+        "differently, fitted nearly as well; the tie used to refuse the page and now the "
+        "form's own cell rule reads it. 975 pages, 651 cells, and 3 labelled documents. "
+        "Their 24 labelled HLA cells read 12 correct / 11 abstained / 1 contradicted "
+        "(66fca7c6 DQB1, contradicted under the old rule too) — unchanged by the tie and "
+        "far too few to say whether the lean argument holds",
+    ),
+    (
+        "family_prefix",
+        18,
+        "the recognizer boxed a label's HLA- prefix apart; joined back into the word the "
+        "form prints, the page fits at the ORDINARY template tolerance and is read from the "
+        "repaired boxes. 162 pages, 267 cells. The direct repair of what the left-out fit "
+        "accommodates, and it holds the ONE labelled page of that population — 6eeb314e, "
+        "whose 8 labelled HLA cells go 4 abstained / 2 missed / 2 partial to 4 abstained / "
+        "2 CORRECT / 2 partial when the pass runs, so 2 cells missed -> correct and 0 worse",
+    ),
+    (
+        "family_loo",
+        18,
+        "the page's label stack fits a form except at ONE label and no fragment on the page "
+        "explains it, so the fit without that label carried the form's rule. The residue "
+        "after the prefix repair: 209 pages, 259 cells, and NOT ONE of them labelled — the "
+        "single labelled page of the old 263 is now read by the repair instead",
+    ),
+    (
+        "below_rule",
+        18,
+        "the page's locus labels are column HEADERS and the value was read from the cell "
+        "beneath its own label, not along a row. 290 pages, 364 cells, NONE of them "
+        "labelled and none read by any second detector — this stratum is the only evidence "
+        "that exists for the direction. Forced on 290 right-reading pages matched by anchor "
+        "count the same rule binds 4 cells, so the direction is doing the work, not the "
+        "tolerances",
     ),
     (
         "template_band",
@@ -297,7 +386,17 @@ STRATA_ORDER = {name: i for i, (name, _, _) in enumerate(STRATA)}
 # the total grew, and the same weight drew 19 — twice. HA-019 blocks promoting
 # the centre-band route until 20 of its readings have been read by a person, so
 # 20 is what the pack draws, whatever else is added later.
-MIN_DRAW = {"abo_centre_rescue": 20}
+#
+# The same thing then happened to the two below-rule sub-strata, in the merge
+# that brought the blood-group strata in: measured on the merged build against
+# the live store with the repass applied to a copy, `--n 150` drew 8 documents
+# carrying 13 column-read cells where the direction had been sized for 14 and
+# 24. A floor of 8 on each of the two populations where a two-subject table is
+# invisible restores it — measured, `--n 150` then draws 21 documents and 41
+# column-read cells, `--n 300` 35 and 66, and `--n 600` 64 and 116, which is
+# the >= 100 cells the direction's safety case names (HA-020). The floor costs
+# `abo_centre_rescue` one document (24 -> 23), still above its own 20.
+MIN_DRAW = {"abo_centre_rescue": 20, "below_rule_unruled": 8, "below_rule_role_unknown": 8}
 FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
 # Nearly every report leaves SOME printed cell empty, so one is no signal at
 # all. Three is a form the laboratory filled in only partly, which is the
@@ -374,6 +473,12 @@ class Doc:
     # How far this page's printed rows fall per unit of width, from its own
     # rulings (`ocr/rows.py`). Non-zero means the row test followed the slope.
     row_slope: float = 0.0
+    # Whether every multi-box cell this page resolved under the column rule
+    # sits inside a CLOSED ruled cell of the printed table. False is the state
+    # that matters: two values stacked under one header with no line around
+    # them is the one shape in which a two-subject table is invisible to every
+    # gate the column rule has, so it is sampled as its own stratum.
+    ruled_below_cells: bool = True
 
     @property
     def short(self) -> str:
@@ -416,13 +521,63 @@ def attach_signals(docs: dict[str, Doc], con: sqlite3.Connection, geometry: Path
     for sha, doc in docs.items():
         found = stored.get(sha)
         if found is None:
+            # No measured rulings at all: nothing on this page is inside a
+            # closed cell, and a column reading here has no printed line to
+            # separate two subjects.
+            doc.ruled_below_cells = False
             continue
         width, height, horizontal, _ = found
         try:
             segments = json.loads(horizontal or "[]")
         except ValueError:
+            # Rulings that cannot be parsed are rulings this pack cannot see,
+            # which is the same position as a page with none — and the default
+            # here is True, so falling through would call the page fully ruled
+            # and keep it OUT of the stratum that samples the unruled ones.
+            # Four lines above, the no-rulings branch says False for exactly
+            # this reason; an unreadable measurement must not be safer than an
+            # absent one.
+            doc.ruled_below_cells = False
             continue
         doc.row_slope = measure_row_slope(segments, width, height) or 0.0
+        doc.ruled_below_cells = _below_cells_are_ruled(doc, build_lattice(sha, stored, None))
+
+
+def _below_cells_are_ruled(doc: Doc, lattice: Lattice | None) -> bool:
+    """Does every stacked column reading on this page sit in a closed ruled cell?
+
+    "Closed" means the printed table draws all four sides: one row band holds
+    every value box of the cell, and a vertical ruling stands on each side of
+    them. That is the shape in which the extraction's ruling gate could have
+    seen a two-subject table and did not have to — and its absence is what the
+    `below_rule_unruled` stratum exists to sample, because there the direction
+    rests on nothing but the geometry.
+    """
+    stacked = [
+        cell
+        for cell in doc.cells.values()
+        if cell.locus in HLA_LOCI
+        and cell.status == "RESOLVED"
+        and len(cell.value_boxes) >= 2
+        and "below" in _new_rule_findings(cell)
+    ]
+    if not stacked:
+        return True
+    if lattice is None:
+        return False
+    for cell in stacked:
+        centres = [((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) for b in cell.value_boxes]
+        heights = [b[3] - b[1] for b in cell.value_boxes]
+        x = sum(c[0] for c in centres) / len(centres)
+        band = lattice.row_band(x, centres[0][1], max(heights))
+        if band is None or not all(band.contains_y(c[1]) for c in centres):
+            return False
+        crossing = lattice.verticals_crossing(band)
+        left = min(b[0] for b in cell.value_boxes)
+        right = max(b[2] for b in cell.value_boxes)
+        if not any(v <= left for v in crossing) or not any(v >= right for v in crossing):
+            return False
+    return True
 
 
 def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
@@ -542,6 +697,39 @@ def odd_value_box(resolved: list[Cell]) -> bool:
     return any(h / middle > ODD_BOX_TALL or h / middle < ODD_BOX_SHORT for h in heights)
 
 
+# How a cell says which of the four no-family findings read it. The source is
+# what `family_repass.py` writes; the rule id is what a re-extraction writes,
+# and a stratum keyed on the source alone would empty itself the first time the
+# corpus was re-extracted.
+_NEW_RULE_SOURCES = {
+    "family-tie": "tie",
+    "family-loo": "loo",
+    "family-prefix": "prefix",
+    "below-rule": "below",
+}
+
+
+def _new_rule_findings(cell: Cell) -> set[str]:
+    """Which of the four no-family findings read this cell. Usually one.
+
+    The rule id carries EVERY accommodation the assignment used, so a page
+    whose prefix was repaired and which then tied between two leans names
+    both, and both strata must be able to find it: the sample is also the
+    withdrawal list.
+    """
+    found = set()
+    named = _NEW_RULE_SOURCES.get(cell.source or "")
+    if named is not None:
+        found.add(named)
+    rule = cell.rule_id or ""
+    if rule == "ADR0008/below-rule":
+        found.add("below")
+    for marker, name in (("(loo:", "loo"), ("(tie:", "tie"), ("(prefix:", "prefix")):
+        if marker in rule:
+            found.add(name)
+    return found
+
+
 # `scripts/column_bind.py` writes these, and every one of them is a REVIEW or a
 # RESOLVED cell that the two generic refusal strata below would otherwise
 # swallow: `review_refused` is 7,798 documents at quota 15, so a page pooled
@@ -613,6 +801,37 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("zero_fact_refused" if anchored else "zero_fact_no_anchor")
     if any((c.reason or "").find("and its own label height") >= 0 for c in resolved):
         tags.add("template_band")
+    # The four answers for a page that had no layout family. Each is keyed on
+    # BOTH the rule the extraction records and the source `family_repass.py`
+    # writes, because the same reading reaches the database by two routes: a
+    # re-extraction writes the rule id with no source, and the repass writes
+    # its own source onto a cell the extraction refused. Keying on the rule id
+    # is what makes the stratum survive a re-extraction, which sets no source
+    # at all.
+    new_rule = [c for c in resolved if _new_rule_findings(c)]
+    findings = {name for c in new_rule for name in _new_rule_findings(c)}
+    for name, tag in (("tie", "family_tie"), ("loo", "family_loo"), ("prefix", "family_prefix")):
+        if name in findings:
+            tags.add(tag)
+    below = [c for c in resolved if "below" in _new_rule_findings(c)]
+    if below:
+        tags.add("below_rule")
+        # The two sub-strata the direction's own safety case needs. A flat
+        # sample of the 290 pages is drawn mostly from pages where a ruled
+        # cell or a printed role word would have caught a two-subject table;
+        # these two are the populations where neither would.
+        if any(len(c.value_boxes) >= 2 and not doc.ruled_below_cells for c in below):
+            tags.add("below_rule_unruled")
+        if (doc.role or {}).get("value") in (None, "", "UNKNOWN"):
+            tags.add("below_rule_role_unknown")
+    # A repaired value from one of those findings carries TWO signals, and the
+    # rarer stratum would otherwise swallow the other: `choose` pools a
+    # document by its rarest tag, and every one of these tags is rarer than
+    # `repaired_glyph` (11,555 documents once this pass has run; 11,442 before,
+    # measured on the live store). Marked rather than gated, the way
+    # `ocr/boxsize.py` marks an odd box.
+    if any(c.repaired for c in new_rule):
+        tags.add("new_rule_repaired")
     if any(c.source == "rerecognised+ppocrv6" for c in resolved):
         tags.add("second_reading")
     if any(c.source == "page-ocr+wholepage" for c in resolved):

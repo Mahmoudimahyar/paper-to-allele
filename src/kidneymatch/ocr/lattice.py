@@ -214,15 +214,25 @@ class Lattice:
         return crossing[0], crossing[1]
 
 
-def load_rulings(path: Path | None, version: str) -> dict[str, tuple[int, int, str, str]]:
+def load_rulings(
+    path: Path | None, version: str, read_only: bool = False
+) -> dict[str, tuple[int, int, str, str]]:
     """Per-document stored rulings from the geometry pass: (width, height, h_json, v_json).
 
     Absent — or a geometry file from before the segments were stored — there is
     no lattice anywhere, which is the pipeline of before.
+
+    `read_only` is for the passes that only measure: a store this function
+    never writes to should not be opened writable by a script whose whole
+    contract is that it changes nothing.
     """
     if path is None or not path.exists():
         return {}
-    con = sqlite3.connect(path)
+    con = (
+        sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        if read_only
+        else sqlite3.connect(path)
+    )
     try:
         return {
             sha: (int(w), int(h), hj, vj)

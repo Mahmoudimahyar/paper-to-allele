@@ -29,6 +29,18 @@ time. Four gates now stand between a candidate box and a RESOLVED value:
    label belongs to that label.
 4. **Cardinality** — a locus has at most two alleles.
 
+**Reading DOWN a column adds one more.** Two boxes stacked under one header
+are one person's two alleles or two people's one allele each; the picture is
+identical, and publishing the wrong reading merges two genotypes. The printed
+form is what separates them, so `ValueRule.row_rulings` carries the page's
+horizontal rulings and a ruling running between the two boxes at the header's
+own x refuses the cell (`_ruling_between`). Measured over the corpus's
+column-layout pages it costs 1 cell of 365 — a DRB1 on a page whose table
+really does draw the line between two rows — and 195 of the 198 two-box cells
+it inspects have no ruling anywhere around them, which is the limit of what
+this gate can do: it catches the ruled case and nothing else in this module
+can see the unruled one at all.
+
 **The rows are read along the page's own rulings.** `ValueRule.row_slope`
 carries the slope `ocr/rows.py` measured, and the alignment test compares a box
 where its printed row would have put it on a level page. Nothing is moved: this
@@ -46,7 +58,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from kidneymatch.hla.vocabulary import FirstFieldVocabulary, load_vocabulary
 from kidneymatch.ocr.glyphs import (
@@ -57,6 +69,9 @@ from kidneymatch.ocr.glyphs import (
     looks_like_locus_label,
     parse_allele_values,
 )
+
+if TYPE_CHECKING:  # `ocr.lattice` imports `ocr.geometry`, which imports this module.
+    from kidneymatch.ocr.lattice import Ruling
 
 Direction = Literal["right", "below"]
 
@@ -81,6 +96,9 @@ DEFAULT_LOCI: tuple[str, ...] = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", 
 # label takes it from the anchor that is nearer along the reading axis, as a
 # fraction of a label height. Zero — the behaviour before this constant — makes
 # the tilt of the photograph decide the owner.
+# A rule that reads DOWN a column applies the same number to the offset ACROSS
+# its own reading axis, which there is an x — still in label heights, the unit
+# every tolerance in this module is written in.
 OWNERSHIP_Y_MARGIN = 0.25
 
 # A value is one line of text. Measured, 99.7% of legitimate values are 0.5-1.6
@@ -216,6 +234,24 @@ class ValueRule:
     # default, where a bare value is legitimate.
     require_prefix: bool = False
 
+    # Refuse a value that names no locus, WITHOUT the rest of `require_prefix`.
+    # The two are not the same demand. `require_prefix` also licenses reading a
+    # whole row band with no distance cap, accepts a star-less spelling as the
+    # star the recognizer missed, and switches on the ruled-row branch of
+    # `extract_facts.bind_in_lattice` — all measured on the forms that print
+    # the locus on every value, and none of them measured on a form whose
+    # labels are COLUMN HEADERS. Reading down a column, the thing that decides
+    # the locus is which column the value stands in, and a column is what a
+    # photographed page shears; the value's own prefix is the only independent
+    # check available, so a bare number goes to a human. Measured on THIS build,
+    # read-only against the live stores (`family_repass.py --dry-run`, 2026-09-07):
+    # the direction reads 290 pages — 305 before the page's own role words refuse
+    # 15 as two-subject sheets — and with this gate neutralised the cells they
+    # resolve carry 727 values, 727 of which print their locus. So it refuses
+    # nothing the corpus actually holds: the pass claims the same 364 cells with
+    # the gate on and off.
+    refuse_bare: bool = False
+
     # A tolerance for the overlap test, in anchor heights, used ONLY when the
     # overlap test finds nothing at all (or a single value with its partner
     # unread). Measured over the 11,140 default-rule documents: the nearest
@@ -247,6 +283,26 @@ class ValueRule:
     # on a portrait page differ by more than four times. Used only by a rule
     # reading downwards, where "the same column" is the question.
     column_slope: float = 0.0
+
+    # The page's horizontal rulings (`ocr/lattice.py`), for a rule reading DOWN
+    # a column. Reading down, two values stacked under one header are that
+    # locus's two alleles — or two PEOPLE's one allele each, which is the same
+    # picture and a merged genotype if it is published. The printed table says
+    # which: a ruling drawn between them is the form separating two rows, and
+    # nothing this rule can see makes the pair one cell again. Empty is the
+    # behaviour of before, and is what a page with no measured rulings gets.
+    # Typed loosely on purpose — `ocr.lattice` imports `ocr.geometry`, which
+    # imports this module, so the concrete `Ruling` is a checking-time name.
+    #
+    # Filled by `extract_facts.extract` and `family_repass.rule_for_page`, and
+    # by NOTHING ELSE. `page_ocr_bind.py`, `rerecognise_pass.py` and
+    # `upright_bind.py` take this same shared `BELOW_RULE` object and
+    # `replace(...)` only the two slopes, so the tuple stays empty there and
+    # `_ruling_between` returns None: the gate is inert in three of the five
+    # passes that can read down a column. Today's exposure is zero — no
+    # RESOLVED fact in the corpus was written under a below rule id — but that
+    # is a fact about the store, not a property of the code. KI-029.
+    row_rulings: tuple[Ruling, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,6 +539,54 @@ def _candidates(boxes: list[Box], anchor: Box, rule: ValueRule) -> list[Box]:
     return found
 
 
+def _cross_offset(anchor: Box, box: Box, rule: ValueRule) -> float:
+    """How far off this label's line the box sits, ACROSS the reading axis.
+
+    Reading rightwards that is a difference in `y`: which printed row is this.
+    Reading downwards it is a difference in `x`: which printed COLUMN is this.
+    Using `y` in both directions is what let a column form's value go to
+    whichever of two headers on one printed line the recognizer happened to
+    box a fraction lower, because down a column `y` is the reading axis and
+    the offset it measures is detector noise, not layout.
+    """
+    lift = _row_lift(anchor, box, rule)
+    if rule.direction == "right":
+        return abs(box.centre_y - lift - anchor.centre_y)
+    return abs(box.centre_x - lift - anchor.centre_x)
+
+
+def _ruling_between(anchor: Box, found: list[Box], rule: ValueRule) -> float | None:
+    """A printed ruling separating two of this header's candidate values, or None.
+
+    Only downwards, and only from the header's own x: a rule reading DOWN a
+    column cannot tell one person's two alleles from two people's one allele
+    each — both are two boxes stacked under one header, both parse, both name
+    the locus, and both stand in the header's column. The form can tell them
+    apart, because a table that prints two subjects draws a line between their
+    rows. So a horizontal ruling that spans the header's x and passes between
+    two candidates means they are in different printed cells, and the pair is
+    a question for a person rather than one cell's genotype.
+
+    Read AT the header's x rather than at the ruling's middle, for the reason
+    `lattice.Ruling.at_x` exists: on a page tilted a degree a ruling moves half
+    a row's height across the page. Centres, not edges: a ruling that clips the
+    top of the lower box still separates the two printed rows, and a value box
+    the detector stretched over the line must not evade the gate by touching it.
+    """
+    if rule.direction != "below" or len(found) < 2 or not rule.row_rulings:
+        return None
+    x = anchor.centre_x
+    ordered = sorted(found, key=lambda box: box.centre_y)
+    for upper, lower in zip(ordered, ordered[1:], strict=False):
+        for ruling in rule.row_rulings:
+            if not ruling.spans(x):
+                continue
+            at = ruling.at_x(x)
+            if upper.centre_y < at < lower.centre_y:
+                return at
+    return None
+
+
 def _owned_by_another_anchor(
     candidate: Box, anchor: Box, boxes: list[Box], rule: ValueRule
 ) -> str | None:
@@ -492,9 +596,13 @@ def _owned_by_another_anchor(
     with a generous gap walks from one cell into the next. The nearest preceding
     label owns the value; anything else is a guess about which gene a patient's
     allele belongs to.
+
+    Reading DOWNWARDS the question is not "which label is nearest along the
+    way" but "whose column is this in", so the two directions decide it
+    differently and the `below` branch treats an unbroken tie as a conflict.
     """
     ours = _distance(anchor, candidate, rule.direction)
-    ours_offset = abs(candidate.centre_y - _row_lift(anchor, candidate, rule) - anchor.centre_y)
+    ours_offset = _cross_offset(anchor, candidate, rule)
     for locus, other in _all_locus_anchors(boxes):
         if other is anchor:
             continue
@@ -505,6 +613,19 @@ def _owned_by_another_anchor(
             continue
         gap = _distance(other, candidate, rule.direction)
         if gap < 0:
+            continue
+        if rule.direction == "below":
+            # The column decides, and only the column. Two headers on one
+            # printed line are separated along the reading axis by nothing but
+            # the detector's y-noise, so distance down the page cannot say
+            # whose value this is; how far the value stands from each header's
+            # own column, followed along the page's column lean, can. A tie
+            # means neither column owns it, which is an ownership conflict of
+            # exactly the kind two stacked headers create.
+            margin = OWNERSHIP_Y_MARGIN * max(anchor.height, other.height)
+            theirs_offset = _cross_offset(other, candidate, rule)
+            if theirs_offset < ours_offset - margin or abs(theirs_offset - ours_offset) <= margin:
+                return locus
             continue
         # Stacked labels share an x1, so horizontal distance alone cannot
         # separate them: a tall value overlapping two rows tied, and the strict
@@ -522,8 +643,7 @@ def _owned_by_another_anchor(
         # its layout: on the reviewer's labels two values were handed to the
         # locus printed above them on exactly this clause.
         margin = OWNERSHIP_Y_MARGIN * max(anchor.height, other.height)
-        theirs_offset = abs(candidate.centre_y - _row_lift(other, candidate, rule) - other.centre_y)
-        if theirs_offset < ours_offset - margin:
+        if _cross_offset(other, candidate, rule) < ours_offset - margin:
             return locus
     return None
 
@@ -748,6 +868,23 @@ def _bind(
                 value_boxes=found,
                 reason=f"candidate is closer to the {owner} label; another locus owns it",
             )
+    separator = _ruling_between(anchor, found, rule)
+    if separator is not None:
+        # The last gate, and the only one that can see a two-subject table read
+        # down a column. Everything else about the picture is legitimate: two boxes,
+        # two alleles, both under the header, both naming the locus. What the
+        # form says is that they are in different printed rows.
+        return LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=anchor,
+            value_boxes=found,
+            reason=(
+                "a printed ruling runs between the values stacked under this header; "
+                "they are in different rows of the table, and a column rule cannot say "
+                "whether that is one person's two alleles or two people's one"
+            ),
+        )
     # The text gates. A box that does not parse is noted and the OTHER boxes
     # are still put through every gate: a refusal for shape must mean that
     # nothing else on the row was wrong.
@@ -779,6 +916,22 @@ def _bind(
                     reason=(
                         f"candidate {text!r} names its locus without a star, and this form is not "
                         "measured to print the locus on its values"
+                    ),
+                )
+            if rule.refuse_bare and value.locus_prefix is None:
+                # A column form. Which column the value stands in is the only
+                # thing naming the gene, and a photograph shears columns; the
+                # value's own prefix is the independent check, so a bare
+                # number is a question for a person. Not `require_prefix`,
+                # whose other licences were never measured on this layout.
+                return LocusResolution(
+                    locus,
+                    ResolutionStatus.REVIEW_REQUIRED,
+                    anchor_box=anchor,
+                    value_boxes=found,
+                    reason=(
+                        f"{text!r} names no locus and stands under a column header; "
+                        "the column alone cannot say which gene it is"
                     ),
                 )
             if rule.require_prefix and value.locus_prefix is None:
@@ -838,6 +991,26 @@ def _bind(
             anchor_box=anchor,
             value_boxes=found,
             reason=f"candidate {unparsed!r} does not parse as an allele value",
+        )
+    if len(parsed) > rule.max_values:
+        # Cardinality again, on the ALLELES rather than the boxes. One box can
+        # print a whole pair, so `max_values` boxes can hold twice `max_values`
+        # values and the count above never sees it. Two subjects' pairs stacked
+        # in one column is exactly that shape, and it resolved as one person's
+        # four-allele genotype. Measured on THIS build: no RESOLVED fact in the
+        # corpus holds more than two alleles, and with this gate neutralised the
+        # column direction claims the same 364 cells — not one of its gains is
+        # lost by counting them. It refuses 142 anchors on those 290 pages, none
+        # of them a cell this direction would otherwise have claimed.
+        return LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=anchor,
+            value_boxes=found,
+            reason=(
+                f"{len(parsed)} alleles across {len(found)} box(es) "
+                f"exceeds max_values={rule.max_values}"
+            ),
         )
     beyond = _value_beyond_the_chain(boxes, anchor, found, rule)
     if beyond is not None:
