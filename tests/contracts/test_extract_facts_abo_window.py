@@ -141,6 +141,83 @@ def extracted(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, dict[str,
     return out, shas
 
 
+@pytest.fixture(scope="module")
+def extracted_with_captions(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Path, dict[str, str]]:
+    """The same corpus, extracted with the messages the photographs were posted with.
+
+    This is the half of F1 that was dead code: `reconcile_abo` publishes a
+    ruled-row value boxed by ONE engine when a caption names the same letter,
+    and no production caller passed it a caption, so the branch never fired and
+    every single-box band reading went to review.
+    """
+    tmp_path = tmp_path_factory.mktemp("abo_window_captions")
+    module = load("extract_facts")
+    src, geometry, shas = corpus(tmp_path)
+    families = tmp_path / "families.json"
+    families.write_text(json.dumps({"families": []}), encoding="utf-8")
+    source = tmp_path / "source.sqlite"
+    con = sqlite3.connect(source)
+    con.execute(
+        "CREATE TABLE source_message (export_id TEXT, telegram_message_id INTEGER, raw_text TEXT)"
+    )
+    con.execute(
+        "CREATE TABLE document_message (sha256 TEXT, export_id TEXT, "
+        "telegram_message_id INTEGER, bundle_id TEXT)"
+    )
+    con.execute("INSERT INTO source_message VALUES ('e', 1, 'blood group A+')")
+    con.execute("INSERT INTO document_message VALUES (?, 'e', 1, NULL)", (shas["ruled_off_line"],))
+    con.commit()
+    con.close()
+    out = tmp_path / "facts.sqlite"
+    assert (
+        module.run(src, tmp_path / "no-persian.sqlite", families, out, None, 10, source, geometry)
+        == 0
+    )
+    return out, shas
+
+
+def test_a_caption_naming_the_same_letter_publishes_the_ruled_row_value(
+    extracted_with_captions,
+) -> None:
+    """F1(b), end to end. The value is published as a FORM reading — the route
+    in its rule id, the anchor and the candidate box in its provenance — not as
+    the poster's claim, because the form is where it was read."""
+    out, shas = extracted_with_captions
+    status, value, reason, rule_id, anchor, value_boxes = abo_of(out, shas["ruled_off_line"])
+    assert (status, value) == ("RESOLVED", "A")
+    assert rule_id == "abo/anchored-cell+band"
+    assert "own ruled row" in reason
+    # F3: the reason says how tall the row was and how many engines saw it.
+    assert "anchor heights tall" in reason
+    assert "1 engine boxed the value" in reason
+    assert json.loads(anchor) == [LABEL.x0, LABEL.y0, LABEL.x1, LABEL.y1]
+    assert json.loads(value_boxes) == [[OFF_LINE.x0, OFF_LINE.y0, OFF_LINE.x1, OFF_LINE.y1]]
+    con = sqlite3.connect(out)
+    source = con.execute(
+        "SELECT source FROM fact WHERE sha256=? AND field='ABO'", (shas["ruled_off_line"],)
+    ).fetchone()[0]
+    con.close()
+    assert source != "CAPTION_CLAIM"
+
+
+def test_the_caption_is_withheld_from_every_reading_that_does_not_need_it(
+    extracted_with_captions,
+) -> None:
+    """The caption corroborates a ruled-row candidate and does nothing else.
+
+    Handing `reconcile_abo` a caption on every page would let it resolve cells
+    the form cannot read and raise conflicts `caption_pass.py` records instead
+    — a much larger change than F1 asked for, on 8,057 documents.
+    """
+    module = load("extract_facts")
+    source = (ROOT / "scripts" / "extract_facts.py").read_text(encoding="utf-8")
+    assert "if caption_abo is not None and needs_corroboration(abo_reading)" in source
+    assert module.load_caption_abo(None) == {}
+    assert module.load_caption_abo(Path("no-such-source.sqlite")) == {}
+
+
 def test_an_uncorroborated_ruled_row_value_reaches_the_reviewer_with_its_box(extracted) -> None:
     """One engine, no caption. The value is NOT published, and the review item
     carries the candidate box so the reviewer's crop lands on the value rather
@@ -172,21 +249,122 @@ def test_a_value_on_its_labels_line_is_read_exactly_as_before(extracted) -> None
     assert rule_id == "abo/anchored-cell"
 
 
+def _stratum_doc(review_pack, rule_id: str) -> object:
+    d = review_pack.Doc("a" * 64, "photos/x.jpg", "MID", None, False, None, None)
+    d.abo = {
+        "status": "RESOLVED",
+        "value": "A",
+        "source": "LABORATORY_PRINTED",
+        "reason": "",
+        "rule_id": rule_id,
+    }
+    return d
+
+
 def test_every_rescued_reading_has_a_review_stratum() -> None:
     """A pass that asserts a value no person has checked must be samplable, and
     a document is pooled by its FIRST matching tag — so the stratum has to sit
-    above the ones a rescued page would otherwise fall into."""
+    above the ones a rescued page would otherwise fall into.
+
+    The two ROUTES are separate strata. Pooled under one tag the centre route
+    drew about two documents into a 150-document pack while HA-019 asks for
+    twenty before it may be promoted, and a quota cannot be aimed at half a
+    pool.
+    """
     review_pack = load("review_pack")
     names = [name for name, _, _ in review_pack.STRATA]
-    assert "abo_band_rescue" in names
-    assert names.index("abo_band_rescue") < names.index("abo_unreadable")
+    for tag in ("abo_band_rescue", "abo_centre_rescue"):
+        assert tag in names
+        assert names.index(tag) < names.index("abo_unreadable")
 
-    def doc(rule_id: str) -> object:
-        d = review_pack.Doc("a" * 64, "photos/x.jpg", "MID", None, False, None, None)
-        d.abo = {"status": "RESOLVED", "value": "A", "source": "LABORATORY_PRINTED", "reason": ""}
-        d.abo["rule_id"] = rule_id
-        return d
+    tag_of = review_pack.tag_document
+    assert "abo_band_rescue" in tag_of(_stratum_doc(review_pack, "abo/anchored-cell+band"), Path())
+    assert "abo_centre_rescue" in tag_of(
+        _stratum_doc(review_pack, "abo/anchored-cell+centre"), Path()
+    )
+    # Neither route claims the other's documents, and an ordinary anchored read
+    # is in no rescue stratum at all.
+    assert "abo_centre_rescue" not in tag_of(
+        _stratum_doc(review_pack, "abo/anchored-cell+band"), Path()
+    )
+    assert "abo_band_rescue" not in tag_of(
+        _stratum_doc(review_pack, "abo/anchored-cell+centre"), Path()
+    )
+    plain = tag_of(_stratum_doc(review_pack, "abo/anchored-cell"), Path())
+    assert "abo_band_rescue" not in plain
+    assert "abo_centre_rescue" not in plain
 
-    assert "abo_band_rescue" in review_pack.tag_document(doc("abo/anchored-cell+band"), Path("."))
-    assert "abo_band_rescue" in review_pack.tag_document(doc("abo/anchored-cell+centre"), Path("."))
-    assert "abo_band_rescue" not in review_pack.tag_document(doc("abo/anchored-cell"), Path("."))
+
+def test_the_centre_quota_can_actually_reach_twenty_documents() -> None:
+    """HA-019 blocks promotion until >= 20 centre-route documents are read.
+
+    A quota that cannot deliver that at the DEFAULT pack size is a plan nobody
+    executes, so the arithmetic `choose` performs is asserted here: one
+    document per stratum first, then `round(room * weight / total) - 1` more.
+    Measured on the live store at `--n 150`, this draws 21.
+    """
+    review_pack = load("review_pack")
+    weights = {name: weight for name, weight, _ in review_pack.STRATA}
+    total = sum(weights.values())
+    n = 150
+    room = n - len(review_pack.STRATA)
+    drawn = 1 + max(0, round(room * weights["abo_centre_rescue"] / total) - 1)
+    assert drawn >= 20, f"a default pack would draw {drawn} centre-route documents, not 20"
+
+
+def test_the_uncorroborated_band_candidate_is_scored_by_no_pass_as_a_value(extracted) -> None:
+    """The RH row of an unpublished band candidate must not carry a value.
+
+    `reconcile_abo` returning REVIEW_REQUIRED means there is no group; a sign
+    written beside it would be an Rh nothing read.
+    """
+    out, shas = extracted
+    con = sqlite3.connect(out)
+    status, value = con.execute(
+        "SELECT status, value FROM fact WHERE sha256=? AND field='RH'",
+        (shas["ruled_off_line"],),
+    ).fetchone()
+    con.close()
+    assert status == "UNKNOWN"
+    assert value == "UNKNOWN"
+
+
+def test_the_repass_that_collapses_a_doubled_cell_writes_the_route(tmp_path: Path) -> None:
+    """`abo_repass` publishes rescued readings too, and a published rescue with
+    no marker is outside the withdrawal handle and outside the review stratum.
+
+    Measured on the live store before this was fixed: 42 rows written from a
+    rescued reading kept `rule_id='abo/anchored-cell'`, 4 of them documents
+    only the rescue resolves.
+    """
+    abo_repass = load("abo_repass")
+    from kidneymatch.documents.abo import AboReading, AboRescue, AboStatus, rule_id_for
+
+    band = AboReading(AboStatus.RESOLVED, group="A", rescued=AboRescue.BAND)
+    assert rule_id_for(band) == "abo/anchored-cell+band"
+    assert rule_id_for(AboReading(AboStatus.RESOLVED, group="A")) == "abo/anchored-cell"
+    # The pass writes what `rule_id_for` returns, in the same UPDATE as the
+    # value, and the recognizer the boxes came from beside it: a row that says
+    # the form printed the value must not keep the caption reader's version.
+    source = (ROOT / "scripts" / "abo_repass.py").read_text(encoding="utf-8")
+    assert "rule_id = rule_id_for(reading)" in source
+    assert "engine_version=?, repaired=?, rule_id=?, anchor_box=?" in source
+    assert "engines.get(sha)" in source
+    assert abo_repass.EV == "facts/v1"
+
+
+def test_the_acceptance_harness_gates_reach_not_only_leak() -> None:
+    """Centre fix 9 gates "more than +2 admissions" — every extra admission.
+
+    The harness gated only admissions of a DIFFERENT value, which is a weaker
+    question than the one that was asked, and it passed shifts its own numbers
+    fail. It must also run the two placebos that were pinned and never built:
+    +-3.0h, and reading the cell on the wrong side of its label.
+    """
+    check = load("abo_window_check")
+    assert set(check.TRANSLATIONS) >= {1.0, 1.5, 2.0, 3.0}
+    source = (ROOT / "scripts" / "abo_window_check.py").read_text(encoding="utf-8")
+    assert "if delta > PLACEBO_ALLOWANCE:" in source
+    assert "REACH OVER THE ALLOWANCE" in source
+    assert 'choices=("translated", "decoy", "direction")' in source
+    assert hasattr(check, "Reversed")

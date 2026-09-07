@@ -88,14 +88,29 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     # The strata BELOW keep the order they had in the first round. That order is
     # load-bearing: a document usually carries several tags, and moving one
     # above another silently empties the lower pool.
+    # The two rescue routes are SEPARATE strata, because they rest on
+    # different evidence and only one of them is blocked. Pooling them put
+    # roughly two centre documents in a 150-document pack, and HA-019 asks for
+    # twenty before the group may be promoted. The centre weight is sized for
+    # exactly that and is expected to come down once a round has answered it —
+    # the arithmetic is written out in HA-019.
+    (
+        "abo_centre_rescue",
+        100,
+        "this page rules no row around the blood-group field, so nothing but distance places "
+        "the value: its box missed the label's LINE and was admitted by a 0.75 label-height "
+        "band above the label's centre, behind six gates. 38 documents on the live store, ZERO "
+        "of them ever checked by a person; the pipeline may not rest a match on one until some "
+        "have been, which is what this quota is sized to end (21 at the default --n 150)",
+    ),
     (
         "abo_band_rescue",
-        22,
-        "the blood group's box missed its label's LINE and was admitted by the label's ruled "
-        "row, or — on a page that rules nothing — by a 0.75 label-height centre band. 125 "
-        "documents. The centre half is the exposed one: 82 documents, 35/35 agreeing with a "
-        "caption and ZERO checked by a person, and 10 of them have no box tying the value to "
-        "the label's line at all",
+        12,
+        "the blood group's box missed its label's LINE and was admitted by the label's own "
+        "ruled ROW — the page prints a grid and the value is inside the label's cell. 42 "
+        "documents on the live store: 29 published, because two engines boxed the same ink or "
+        "the messages name the same letter, and 13 that nothing corroborates, which are here "
+        "as REVIEW items carrying a crop of the candidate rather than as values",
     ),
     (
         "template_band",
@@ -533,10 +548,15 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     ):
         tags.add("drbx_addon")
     abo_reason = (doc.abo or {}).get("reason") or ""
-    if ((doc.abo or {}).get("rule_id") or "").startswith("abo/anchored-cell+"):
-        # The value box was not on its label's line. Whether that cell is the
-        # label's is a question only a person can answer, and no person has
-        # answered it for any of the centre-band readings.
+    abo_rule = (doc.abo or {}).get("rule_id") or ""
+    # The value box was not on its label's line. Whether that cell is the
+    # label's is a question only a person can answer, and no person has
+    # answered it for any of the centre-band readings. The two routes are
+    # tagged apart so the centre route can be given its own quota: pooled, it
+    # drew about two documents a pack and HA-019 needs twenty.
+    if abo_rule.startswith("abo/anchored-cell+centre"):
+        tags.add("abo_centre_rescue")
+    elif abo_rule.startswith("abo/anchored-cell+band"):
         tags.add("abo_band_rescue")
     if abo_reason.startswith("more than one blood-group value"):
         tags.add("abo_doubled")

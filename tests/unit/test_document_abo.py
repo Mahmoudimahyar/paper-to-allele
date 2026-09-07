@@ -28,8 +28,10 @@ from kidneymatch.documents.abo import (
     AboSource,
     AboStatus,
     Rh,
+    needs_corroboration,
     read_abo,
     reconcile_abo,
+    rule_id_for,
 )
 from kidneymatch.ocr.anchors import Box
 from kidneymatch.ocr.lattice import Lattice, Ruling
@@ -452,24 +454,32 @@ def test_the_pair_route_still_refuses_the_disclaimer_sentence() -> None:
 # below its baseline, the Latin capitals sit above it. The value is then in the
 # label's printed CELL and outside its box.
 #
-# Two rescues, and they are not equally evidenced:
+# Two rescues, and they are not equally evidenced. The counts below are what
+# `read_abo` RETURNS over 23,485 documents in the raw frame; what the pipeline
+# publishes is smaller, and the difference is `reconcile_abo`.
 #
 # **The ruled row (`AboRescue.BAND`).** Where the page prints a grid, the row
 # between two rulings IS the cell, and a value inside it belongs to the label
-# inside it. Measured: +43 documents, 0 lost, 0 values changed, and one
-# labelled miss recovered that agrees with the human. The band is capped at
-# `_MAX_BAND_HEIGHTS` because a taller band spans two printed rows.
+# inside it. Measured: +42 readings, 0 lost, 0 values changed, and one labelled
+# miss recovered that agrees with the human. The band is capped at
+# `_MAX_BAND_HEIGHTS` because a taller band spans two printed rows, and a
+# partial printed in the label's own cell refuses it — the route-only variant
+# measured +43 before that gate, and 3 of those published over a contradiction.
 #
 # **The centre band on an unruled page (`AboRescue.CENTRE`).** No grid, so the
 # cell is not geometrically defined and the rule rests on distance alone. It
 # ships only behind six admission gates (side branch, above the centre, no
-# ruling between, anchor scale, ownership, partial contradiction): +82
-# documents, 1 lost — a cross-engine Rh sign disagreement the shipped code
-# publishes on one engine's word and this rule sends to a person.
+# ruling between, anchor scale, ownership, partial contradiction): +51 readings
+# under the combined rule (+82 as a route-only variant, before the ruled row
+# takes the pages it can locate), 1 lost — a cross-engine Rh sign disagreement
+# the shipped code publishes on one engine's word and this rule sends to a
+# person.
 #
-# NO HUMAN HAS CHECKED A SINGLE CENTRE RESCUE. 0 of the 82 gains is a labelled
+# NO HUMAN HAS CHECKED A SINGLE CENTRE RESCUE. Not one gain is a labelled
 # document, which is why every rescued reading is marked in its provenance and
-# gets its own review stratum (`abo_band_rescue` in `scripts/review_pack.py`).
+# the two routes get SEPARATE review strata (`abo_centre_rescue` and
+# `abo_band_rescue` in `scripts/review_pack.py`): pooled under one tag, the
+# centre route drew about two documents a pack and HA-019 needs twenty.
 
 
 def ruled(*ys: float, x0: float = 0.0, x1: float = 1.0, vertical: tuple = ()) -> Lattice:
@@ -790,7 +800,7 @@ def test_a_latin_label_takes_a_value_just_above_it_too() -> None:
 
 def test_a_centre_rescue_is_never_downgraded_for_being_uncorroborated() -> None:
     """F1 downgrades the RULED-ROW route only. The centre route's own answer to
-    "nothing corroborates this" is the `abo_band_rescue` review stratum, not a
+    "nothing corroborates this" is the `abo_centre_rescue` review stratum, not a
     per-document refusal: 82 documents with 35/35 caption agreement and zero
     human checks is a stratum-sized question, not a per-cell one."""
     reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=None)
@@ -947,9 +957,10 @@ def test_the_reach_the_centre_band_actually_opens(offset: float, rescue: object)
     Two boxes of equal height share `1 - offset` of their extent, so anything
     closer than 0.65 anchor heights ALREADY passes the 0.35 line test and needs
     no rescue at all. The window this constant opens is (0.65h, 0.75h]; a 0.50h
-    setting opens nothing. At 1.0h the yield is 137 documents and the
-    translated-anchor placebo leaks +171 hits, which is why the reach stops
-    here.
+    setting opens nothing. Measured over 23,485 documents, a 1.0h setting reads
+    121 instead of 93 while the translated-anchor placebo's +1.0h reach rises
+    from +10 to +24 and a second +1.5h leak appears — the extra yield is
+    exactly the reach the control can see, which is why it stops here.
     """
     reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", offset)], lattice=None)
     if rescue == "refused":
@@ -957,3 +968,158 @@ def test_the_reach_the_centre_band_actually_opens(offset: float, rescue: object)
     else:
         assert reading.status is AboStatus.RESOLVED
         assert reading.rescued is rescue
+
+
+# --- the review's fixes: the band route's own gates, and the marker ---------
+#
+# A skeptical review measured three ways the shipped branch could put a wrong
+# value, or a false sentence, into the facts store. Each is pinned below.
+
+
+def test_a_sign_in_the_cell_contradicting_a_BAND_rescued_token_refuses_it() -> None:
+    """The centre route refused this and the band route did not.
+
+    Measured on the live corpus: 3 of the 45 band gains publish over a partial
+    printed in the label's OWN cell that contradicts the rescued token — the
+    same shape the centre route calls C5. A ruled row says which CELL the token
+    is in; it says nothing about the `-` already printed in that cell.
+    """
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="-")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    lattice = ruled(0.29, 0.32)
+    assert read_abo([FA_LABEL], [rescued], lattice=lattice).rescued is AboRescue.BAND
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=lattice)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.rescued is None
+    assert reading.reason == "an Rh sign with no group letter in its cell"
+
+
+def test_a_letter_in_the_cell_contradicting_a_BAND_rescued_token_refuses_it() -> None:
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="A")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=ruled(0.29, 0.32))
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.reason == "a group letter with no Rh sign in its cell"
+
+
+def test_a_caption_cannot_publish_a_POSITIVE_over_a_printed_minus() -> None:
+    """The wrong-Rh path the gates did not stop.
+
+    F1(b) corroborates the LETTER and publishes the SIGN unchallenged, so a
+    caption saying "B" was enough to publish `B POSITIVE` over a lone `-`
+    printed in the label's own cell — one engine's reading of a sign, against
+    the form's own ink, on the strength of a claim that never mentioned Rh.
+    Two of the three corpus cases are exactly this. The refusal now happens
+    before reconciliation, where the cell is still visible.
+    """
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="-")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=ruled(0.29, 0.32))
+    # No caller consults the caption for this page at all: there is no band
+    # reading left to corroborate.
+    assert needs_corroboration(reading) is False
+    decision = reconcile_abo(reading, caption_claims={("B", Rh.UNKNOWN)})
+    # And handed one anyway, the form publishes nothing: what comes back is the
+    # poster's own claim, at the precision the poster stated it, with no Rh and
+    # with `CAPTION_CLAIM` on it. `B POSITIVE` from the form is gone.
+    assert decision.rh is Rh.UNKNOWN
+    assert decision.source is AboSource.CAPTION_CLAIM
+    assert decision.reason == "claimed by the poster; not read from any document"
+
+
+def test_a_partial_that_agrees_does_not_refuse_a_band_rescue_either() -> None:
+    """The gate refuses contradiction, not company — on both routes."""
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="+")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=ruled(0.29, 0.32))
+    assert reading.status is AboStatus.RESOLVED
+    assert reading.rescued is AboRescue.BAND
+
+
+def test_the_route_marks_the_PUBLISHED_box_not_any_box_in_the_cell() -> None:
+    """8 pages were stamped `rescued` that no rule changed.
+
+    The route was taken from any rescued box among the agreeing values, so a
+    page whose published box passed the line test was marked — and carried the
+    sentence "the value sits on the label's own ruled row rather than on its
+    line", which is false about that page. It also diluted the withdrawal group
+    and the review stratum with pages nobody needs to check.
+    """
+    # Two boxes over one printed token, 0.0007 apart: one clears the 0.35 line
+    # test against the label and the other misses it by a hair, which is the
+    # whole shape of the defect.
+    on_the_line = Box(x0=0.50, y0=0.3125, x1=0.55, y1=0.3325, text="A+")
+    other_engine = Box(x0=0.50, y0=0.3132, x1=0.55, y1=0.3332, text="A+")
+    reading = read_abo([FA_LABEL, other_engine], [on_the_line], lattice=ruled(0.30, 0.33))
+    assert reading.status is AboStatus.RESOLVED
+    assert reading.value_box is on_the_line
+    assert len(reading.value_boxes) == 2  # the rescue still buys corroboration
+    assert reading.rescued is None
+    assert reading.reason == ""
+    assert rule_id_for(reading) == "abo/anchored-cell"
+    # Alone, the same box IS a band rescue — so the geometry really does reach
+    # the branch, and it is the PUBLISHED box that decides the marker.
+    assert read_abo([FA_LABEL, other_engine], [], lattice=ruled(0.30, 0.33)).rescued is (
+        AboRescue.BAND
+    )
+
+
+def test_the_band_reason_names_the_row_height_and_the_engine_count() -> None:
+    """F3. A reason that does not say how tall the row was, or how many engines
+    boxed the value, tells a reviewer nothing about what the admission turned
+    on. The row here is 0.03 tall against a 0.02 label: 1.50 anchor heights."""
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    reading = read_abo([FA_LABEL, overlapping(value, "A+")], [value], lattice=ruled(0.29, 0.32))
+    assert reading.rescued is AboRescue.BAND
+    assert reading.band_heights == pytest.approx(1.5)
+    assert reading.engines == 2
+    assert "1.50 anchor heights tall" in reading.reason
+    assert "2 engines boxed the value" in reading.reason
+    assert reconcile_abo(reading).reason == reading.reason
+
+
+def test_the_uncorroborated_reason_names_the_row_and_the_single_engine() -> None:
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    reading = read_abo([FA_LABEL], [value], lattice=ruled(0.29, 0.32))
+    assert reading.engines == 1
+    decision = reconcile_abo(reading)
+    assert decision.status is AboStatus.REVIEW_REQUIRED
+    assert "nothing corroborates it" in decision.reason
+    assert "1.50 anchor heights tall" in decision.reason
+    assert "1 engine boxed the value" in decision.reason
+
+
+def test_the_centre_reason_carries_no_row_height_because_there_is_no_row() -> None:
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=None)
+    assert reading.rescued is AboRescue.CENTRE
+    assert reading.band_heights is None
+    assert "anchor heights tall" not in reading.reason
+    assert "1 engine boxed the value" in reading.reason
+
+
+def test_the_rule_id_is_where_the_group_is_found_and_withdrawn() -> None:
+    """Every pass that publishes one of these writes this string; `rule_id LIKE
+    'abo/anchored-cell+%'` is HA-019's withdrawal handle."""
+    band = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=ruled(0.29, 0.32))
+    centre = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=None)
+    plain = read_abo([FA_LABEL, FA_VALUE], [], lattice=ruled(0.29, 0.32))
+    assert rule_id_for(band) == "abo/anchored-cell+band"
+    assert rule_id_for(centre) == "abo/anchored-cell+centre"
+    assert rule_id_for(plain) == "abo/anchored-cell"
+
+
+def test_needs_corroboration_is_the_single_engine_band_class_and_nothing_else() -> None:
+    """What a caller must consult the caption for. A centre reading is not in
+    it — the centre route is not published on a chat claim — and neither is a
+    band reading two engines already agreed on."""
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    lone_band = read_abo([FA_LABEL], [value], lattice=ruled(0.29, 0.32))
+    two_engines = read_abo([FA_LABEL, overlapping(value, "A+")], [value], lattice=ruled(0.29, 0.32))
+    centre = read_abo([FA_LABEL], [value], lattice=None)
+    plain = read_abo([FA_LABEL, FA_VALUE], [], lattice=ruled(0.29, 0.32))
+    assert needs_corroboration(lone_band) is True
+    assert needs_corroboration(two_engines) is False
+    assert needs_corroboration(centre) is False
+    assert needs_corroboration(plain) is False
+    unread = read_abo([FA_LABEL], [], lattice=ruled(0.29, 0.32))
+    assert needs_corroboration(unread) is False

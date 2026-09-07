@@ -32,6 +32,17 @@ it agreed on, so a reviewer can see the agreement rather than take it on trust.
 This applies the reading to the extracted corpus rather than running
 `refresh_facts.py`, which rebuilds every fact and resets the later passes.
 
+**The cell window, since s19 item 1.** Given `--geometry` this pass hands
+`read_abo` the page RAW-frame lattice, so some of the cells it collapses were
+admitted by the label ruled ROW or by the centre band rather than by the label
+own line. Those rows are marked: `rule_id` becomes `abo/anchored-cell+band` or
+`+centre` on the ABO row and on the RH row beside it. Measured on the live
+store, 34 of the rows this pass writes come from a rescued reading (17 band, 17
+centre) and 4 documents are resolved by the grid that are not resolved without
+it (23 against 19). Without the marker those 4 published values would be
+invisible to `rule_id LIKE 'abo/anchored-cell+%'`, which is the handle HA-019
+withdraws the group by, and to the review strata that sample it.
+
 **Comparison sheets.** 2 of the 993 are pages carrying two subjects. They are
 written, because `extract_facts` applies its comparison-sheet downgrade only to
 HLA loci and 64 such pages ALREADY ship a resolved ABO — refusing the 2 while
@@ -54,13 +65,19 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from kidneymatch.documents.abo import AboStatus, read_abo, reconcile_abo  # noqa: E402
+from kidneymatch.documents.abo import (  # noqa: E402
+    AboStatus,
+    read_abo,
+    reconcile_abo,
+    rule_id_for,
+)
 from kidneymatch.ocr.anchors import Box  # noqa: E402
 from kidneymatch.ocr.lattice import Lattice, lattice_for  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 
 EV = "facts/v1"
 DOUBLED = "more than one blood-group value in a single cell"
+COLLAPSED_REASON = "one printed value that both engines boxed, and they agree"
 
 
 def boxes_of(geometry_json: str | None, texts_json: str | None) -> list[Box]:
@@ -123,11 +140,18 @@ def run(
         )
     }
     L: dict[str, list[Box]] = {}
-    for sha, rel, b, t in ocr.execute(
-        "SELECT sha256, rel_path, boxes_json, texts_json FROM ocr_result WHERE n_boxes>0"
+    # The recognizer the reading is made from. 15 of the rows this pass writes
+    # were resolved by the caption pass first, and a row that now says the form
+    # printed the value must not keep `caption-abo/v1` beside it: that names
+    # the reader of a chat message, and the value did not come from one.
+    engines: dict[str, str] = {}
+    for sha, rel, engine, b, t in ocr.execute(
+        "SELECT sha256, rel_path, engine_version, boxes_json, texts_json FROM ocr_result "
+        "WHERE n_boxes>0"
     ):
         if "_thumb" not in rel and sha not in L:
             L[sha] = boxes_of(b, t)
+            engines[sha] = engine
     persian.close()
     ocr.close()
     grids = raw_lattices(geometry_db, set(work)) if geometry_db else {}
@@ -149,18 +173,28 @@ def run(
             tally[f"already resolved, now read from the form ({source})"] += 1
         else:
             tally["newly resolved from a doubled cell"] += 1
+        # How the value box entered the cell, on the row it is written to.
+        # Without it a value this pass publishes from a rescued reading is
+        # indistinguishable from an ordinary anchored read: `rule_id LIKE
+        # 'abo/anchored-cell+%'` would not find it, the `abo_band_rescue`
+        # stratum would not sample it, and the group could not be withdrawn.
+        rule_id = rule_id_for(reading)
+        if reading.rescued:
+            tally[f"...admitted by the {reading.rescued.value.lower()} route"] += 1
         if dry_run:
             continue
         con.execute(
             "UPDATE fact SET status='RESOLVED', value=?, raw=?, reason=?, source=?, "
-            "repaired=?, anchor_box=?, value_boxes=?, created_utc=? "
+            "engine_version=?, repaired=?, rule_id=?, anchor_box=?, value_boxes=?, created_utc=? "
             "WHERE sha256=? AND field='ABO' AND extraction_version=?",
             (
                 decision.group,
                 reading.raw_value,
-                "one printed value that both engines boxed, and they agree",
+                f"{COLLAPSED_REASON}; {reading.reason}" if reading.reason else COLLAPSED_REASON,
                 decision.source.value,
+                engines.get(sha),
                 int(reading.repaired),
+                rule_id,
                 json.dumps(
                     [
                         reading.anchor_box.x0,
@@ -178,12 +212,15 @@ def run(
             ),
         )
         con.execute(
-            "UPDATE fact SET status='RESOLVED', value=?, reason=?, source=?, created_utc=? "
+            "UPDATE fact SET status='RESOLVED', value=?, reason=?, rule_id=?, source=?, "
+            "engine_version=?, created_utc=? "
             "WHERE sha256=? AND field='RH' AND extraction_version=? AND status!='RESOLVED'",
             (
                 decision.rh.value,
                 "the Rh sign is printed in the same token as the group",
+                rule_id,
                 decision.source.value,
+                engines.get(sha),
                 now,
                 sha,
                 EV,

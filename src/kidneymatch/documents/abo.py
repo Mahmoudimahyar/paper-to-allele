@@ -28,19 +28,36 @@ store normalised coordinates in the same frame, which is what makes that legal.
 box's height had to overlap the label's — and the two engines do not draw their
 rectangles on the same line, so a value can be the only thing in the label's
 printed cell and still be refused. Two rescues now cover that, and they rest on
-different evidence, which is why they are marked differently (`AboRescue`):
+different evidence, which is why they are marked differently (`AboRescue`).
 
-* on a page that rules a grid, the row between two rulings IS the cell. 45
-  documents corpus-wide, 0 values changed, and the one labelled miss it
-  recovers agrees with the human. A band-only reading is still published only
-  when two engines boxed the same ink or a caption agrees on the letter,
-  because 13 of the 43 measured gains were one engine's box with nothing behind
-  it and the safety evidence for that class is nil;
-* on a page that rules nothing, only distance and direction place the value, so
-  the reach is 0.75 label heights ABOVE the label's centre and six gates stand
-  in front of it. 51 documents. NO PERSON HAS CHECKED ONE OF THESE, and 35 of
-  35 with a caption agree with it; the `abo_band_rescue` review stratum is what
-  will settle whether they are right.
+Every count below is a READING count from `scripts/abo_window_check.py` over
+23,485 documents in the raw frame — what `read_abo` returns, not what the
+pipeline publishes. The two are not the same, and the difference is the whole
+point of `reconcile_abo`, so the published counts are given beside them.
+
+* **BAND** — on a page that rules a grid, the row between two rulings IS the
+  cell. 42 documents gain a reading. A band-only reading is NOT published on
+  its own word: it needs two engines over the same ink, or a caption naming the
+  same letter, and otherwise goes to a person carrying its candidate box.
+  Once both repasses have run the live store holds 42 rows marked BAND — 29
+  published (13 of them new, 12 of them rows a caption alone had answered and
+  the form is now credited for) and 13 review items with a crop. The band says
+  which CELL the token is in and nothing more, so a partial already printed in
+  that cell — a lone `-` against a rescued `+` — refuses it, exactly as on the
+  centre route;
+* **CENTRE** — on a page that rules nothing, only distance and direction place
+  the value, so the reach is 0.75 label heights ABOVE the label's centre and
+  six gates stand in front of it. 51 documents gain a reading; the live store
+  holds 38 rows marked CENTRE, 31 of them newly published. NO PERSON HAS
+  CHECKED ONE OF THESE; the `abo_centre_rescue` review stratum exists to get
+  twenty of them read, and until that happens HA-019 blocks resting a match on
+  one.
+
+A page carries a route only when the box the value is READ FROM was admitted by
+it. A page whose published box passed the line test is not marked even when the
+other engine's box needed rescuing: nothing about that page changed, and
+marking it would put it in the withdrawal group and in a reviewer's queue for
+no reason.
 
 Both cost one document: a cell whose sign the pipeline publishes today on one
 engine's word, with the other engine's box a third of a line away saying the
@@ -93,8 +110,13 @@ class AboRescue(StrEnum):
     between two rulings IS the cell, and a value inside it belongs to the label
     inside it. `CENTRE` is a page that rules nothing, where only distance and
     direction place the value; it carries six admission gates and NO HUMAN HAS
-    EVER CHECKED ONE OF ITS READINGS, which is what the `abo_band_rescue`
+    EVER CHECKED ONE OF ITS READINGS, which is what the `abo_centre_rescue`
     review stratum exists to fix.
+
+    The route is set from the box the value is READ FROM, and it travels into
+    the fact row's `rule_id` (`rule_id_for`). That string is the only handle
+    the group has once the row is written, so a pass that publishes one of
+    these and does not write it puts a value beyond withdrawal.
     """
 
     BAND = "BAND"
@@ -150,8 +172,11 @@ _SLACK = 0.30
 # draw their rectangles on the same line: a Persian line box runs below its
 # baseline while the Latin capitals sit above it, so a value can share less
 # than a third of its height with its own label and still be the only thing in
-# the label's printed cell. Measured, that costs 43 documents on ruled pages
-# and a further 82 on unruled ones.
+# the label's printed cell. Measured over 23,485 documents in the raw frame,
+# that costs 42 readings on ruled pages and a further 51 on unruled ones. (The
+# route-ONLY variants measured 43 and 82; the shipped rule consults the ruled
+# row FIRST, so a page with a usable band never reaches the centre branch and
+# the two numbers do not add up to the combined one.)
 #
 # A band taller than this spans two printed rows and locates no cell. The cap
 # is NOT a collision-free boundary: the nearest observed same-ink cross-engine
@@ -159,15 +184,25 @@ _SLACK = 0.30
 # about 1.6 px at the median 20 px label. 2.0 was chosen as the loosest setting
 # that lost nothing, which is a fitted constant, not a measured margin. That is
 # why a band-only reading has to be corroborated before it is published.
+#
+# It is also why the translated-anchor placebo says nothing about this route
+# below 2.0h: a label moved 1.0h is still inside its own printed row, and a
+# rule whose cell IS the row must find the same cell there. Measured, the
+# +-1.0h shifts cost +202 and +10 extra admissions against a +2 allowance,
+# while +-1.5h, +-2.0h and +-3.0h cost +1, 0 and +1. The gate that fails there
+# is recorded and decided in HA-019, not redefined in the harness.
 _MAX_BAND_HEIGHTS = 2.0
 # How far along its own row a value may sit from the label's centre.
 _ROW_REACH = 1.0
 # With no ruled row, how far ABOVE the label's centre a value may sit. Boxes of
 # equal height that fail the line test are already 0.65 heights apart, so this
-# opens the window (0.65h, 0.75h]; at 1.0h the yield is 137 documents and the
-# translated-anchor placebo leaks +171 hits. Values sit above their label in
-# 94-96% of resolved cells, and every below-centre rescue in the corpus was a
-# ruling-crossing or a partial contradiction.
+# opens the window (0.65h, 0.75h]. Measured over 23,485 documents, widening it
+# to 1.0h reads 121 documents instead of 93 — 28 further centre admissions —
+# and the translated-anchor placebo sees it: the +1.0h reach goes from +10 to
+# +24 and a second +1.5h leak appears. The yield is bought with reach the
+# control can detect, which is why the reach stops here. Values sit above their
+# label in 94-96% of resolved cells, and every below-centre rescue in the
+# corpus was a ruling-crossing or a partial contradiction.
 _RESCUE_BAND = 0.75
 # The reach is a fraction of the ANCHOR's height, so an over-large label box
 # buys itself a longer arm. Measured against the page's PERSIAN median: a
@@ -187,6 +222,22 @@ UNCORROBORATED_RESCUE_REASON = (
     "a value sits on the label's ruled row but not on its line; one engine read it and nothing "
     "corroborates it"
 )
+
+
+def _measured(reason: str, band_heights: float | None, engines: int) -> str:
+    """The reason with the two measurements a reviewer needs to judge it.
+
+    A ruled-row reason that does not say how tall the row was, or how many
+    engines boxed the value, tells a reviewer nothing about how far the rule
+    reached or what stood behind the reading. Both are what the admission
+    actually turned on, so both are written next to it (s19 item 1, F3).
+    """
+    parts = []
+    if band_heights is not None:
+        parts.append(f"the row is {band_heights:.2f} anchor heights tall")
+    if engines:
+        parts.append(f"{engines} engine{'s' if engines != 1 else ''} boxed the value")
+    return f"{reason} ({'; '.join(parts)})" if parts else reason
 
 
 def _is_persian_label(text: str) -> bool:
@@ -251,10 +302,20 @@ class AboReading:
     value_boxes: tuple[Box, ...] = ()
     raw_value: str | None = None
     repaired: bool = False
-    # Set when the value missed the label's own line and was admitted by the
-    # ruled row or the centre band instead. It travels into the fact row's
-    # `rule_id` so the group can be found, sampled and withdrawn.
+    # Set when the PUBLISHED value box missed the label's own line and was
+    # admitted by the ruled row or the centre band instead. It travels into the
+    # fact row's `rule_id` so the group can be found, sampled and withdrawn.
+    # A page whose published box passed the line test is NOT marked, even when
+    # the other engine's box needed rescuing: the value is one the strict window
+    # already reads, and marking it would put a page no rule changed into the
+    # withdrawal group and into the review stratum.
     rescued: AboRescue | None = None
+    # How tall the label's ruled row was, in anchor heights, when the band
+    # admitted the value; None on every other route. How many engines boxed the
+    # published value. Both are written into the reason, because they are what
+    # the admission turned on and a reviewer cannot judge it without them.
+    band_heights: float | None = None
+    engines: int = 0
     reason: str = ""
 
 
@@ -275,6 +336,34 @@ class AboDecision:
     def is_verified(self) -> bool:
         """Never true here. Verification is a laboratory act, not a reading."""
         return False
+
+
+def rule_id_for(reading: AboReading) -> str:
+    """The rule's identity, including how the value box entered the cell.
+
+    Every pass that publishes an ABO fact writes this, because it is the only
+    handle the group has once the row is written: `rule_id LIKE
+    'abo/anchored-cell+%'` finds every rescued reading, which is how the group
+    is sampled into a review pack and, if the labels turn against it, withdrawn.
+    """
+    return "abo/anchored-cell" + (f"+{reading.rescued.value.lower()}" if reading.rescued else "")
+
+
+def needs_corroboration(reading: AboReading) -> bool:
+    """Would `reconcile_abo` refuse to publish this reading on its own word?
+
+    True for exactly the class F1 sends to a person: a value admitted by the
+    label's ruled ROW, boxed by one engine only. Callers use it to decide
+    whether the caption is worth reading for this document at all — the caption
+    enters `reconcile_abo` HERE as corroboration and nowhere else, because
+    weighing a chat claim against a printed form is `scripts/caption_pass.py`'s
+    job and this is not that.
+    """
+    return (
+        reading.status is AboStatus.RESOLVED
+        and reading.rescued is AboRescue.BAND
+        and len(reading.value_boxes) < 2
+    )
 
 
 def _is_group_word_label(box: Box, latin_boxes: list[Box]) -> bool:
@@ -485,6 +574,15 @@ def _cell(
                 band.contains_y(b.centre_y)
                 and abs(offset) <= _ROW_REACH * height
                 and not _blocked_in_band(anchor, b, boxes, band, strict)
+                # The row says which CELL the token is in; it says nothing
+                # about a partial already printed in that cell. Measured, 3 of
+                # the 45 band gains publish over a lone `-` or a lone letter on
+                # the label's own line that contradicts the rescued token, and
+                # 2 of those would publish a POSITIVE Rh over a printed `-` as
+                # soon as a caption corroborates the letter. That is best-guess
+                # acceptance of ambiguous critical OCR, so the band route
+                # refuses it exactly as the centre route does.
+                and not _contradicts_the_cell(b, strict_texts)
             ):
                 rescued[id(b)] = AboRescue.BAND
             continue
@@ -593,7 +691,9 @@ def read_abo(
     # would refuse ordinary labels.
     persian_median = statistics.median([b.height for b in persian_boxes]) if persian_boxes else None
 
-    found: list[tuple[str, Rh, bool, Box, Box, str, tuple[Box, ...], AboRescue | None]] = []
+    found: list[
+        tuple[str, Rh, bool, Box, Box, str, tuple[Box, ...], AboRescue | None, float | None, int]
+    ] = []
     partial = ""
     for anchor, rightwards in anchors:
         band = (
@@ -624,7 +724,14 @@ def read_abo(
             )
         if values:
             (group, rh, repaired), vbox, raw = values[0]
-            routes = {rescued[id(b)] for _, b, _ in values if id(b) in rescued}
+            # The route of the box the value is READ FROM, not of any box in
+            # the cell. `_cell` returns the strict boxes first, so a page whose
+            # published box passed the line test has no route and is not marked
+            # — the strict window already reads that value, and stamping it
+            # would put an unchanged page into the withdrawal group and into
+            # the review stratum. Measured, that over-marked 8 pages.
+            route = rescued.get(id(vbox))
+            boxes_agreed = tuple(b for _, b, _ in values)
             # Every box that agreed travels with the fact, so a reviewer can
             # see the agreement rather than take it on trust.
             found.append(
@@ -635,8 +742,10 @@ def read_abo(
                     anchor,
                     vbox,
                     raw,
-                    tuple(b for _, b, _ in values),
-                    next(iter(routes), None),
+                    boxes_agreed,
+                    route,
+                    (band.height / anchor.height if route is AboRescue.BAND and band else None),
+                    len({id(b) in from_persian for b in boxes_agreed}),
                 )
             )
             continue
@@ -650,13 +759,13 @@ def read_abo(
         elif any(_SIGN_ONLY.match(t) for t in texts):
             partial = partial or "an Rh sign with no group letter in its cell"
 
-    distinct = {(g, rh) for g, rh, _, _, _, _, _, _ in found}
+    distinct = {(g, rh) for g, rh, _, _, _, _, _, _, _, _ in found}
     if len(distinct) > 1:
         return AboReading(
             AboStatus.REVIEW_REQUIRED, source=source, reason="two cells report different groups"
         )
     if found:
-        group, rh, repaired, anchor, vbox, raw, boxes, route = found[0]
+        group, rh, repaired, anchor, vbox, raw, boxes, route, band_heights, engines = found[0]
         return AboReading(
             AboStatus.RESOLVED,
             group=group,
@@ -668,12 +777,14 @@ def read_abo(
             raw_value=raw,
             repaired=repaired,
             rescued=route,
+            band_heights=band_heights,
+            engines=engines,
             reason=(
                 ""
                 if route is None
-                else BAND_RESCUE_REASON
+                else _measured(BAND_RESCUE_REASON, band_heights, engines)
                 if route is AboRescue.BAND
-                else CENTRE_RESCUE_REASON
+                else _measured(CENTRE_RESCUE_REASON, None, engines)
             ),
         )
     return AboReading(
@@ -731,7 +842,7 @@ def reconcile_abo(
                 None,
                 Rh.UNKNOWN,
                 image.source,
-                reason=UNCORROBORATED_RESCUE_REASON,
+                reason=_measured(UNCORROBORATED_RESCUE_REASON, image.band_heights, image.engines),
             )
         agreed = single is not None and single[0] == image.group and single[1] is image.rh
         return AboDecision(
