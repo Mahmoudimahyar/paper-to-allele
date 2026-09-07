@@ -1502,3 +1502,115 @@ Still open from the decision list: **D10, D11** (explained; awaiting an
 answer), **D2-a** the tiered export, **D8-a** round five at `--n 600`, and the
 CV plan (`CV_PLAN_2026-09-07.md`).
 
+## s24 — the disputed pack re-checked; the loss charged to checkpoints (2026-09-07)
+
+The operator re-read the 56-page disagreement pack (D15). Of the 138 disputed
+cells, **6 were label errors and 132 stand as pipeline errors** (114
+re-confirmed by hand, 18 left as seeded); one ROLE answer changed. Separately,
+35 cells the pipeline and the reviewer had AGREED on were changed — all DRB3/4/5
+rows once labelled NOT_PRINTED and now read as present/absent — which is why the
+miss count rose: those rows were always unread, and are now counted.
+
+On 1,342 labels over five rounds: **673 correct, 148 missed, 19 partial, 2
+wrong** (was 670 / 114 / 19 / 5); ROLE 94/1, ABO 48/0, RH 47/0.
+
+### The checkpoints
+
+The operator's model: orientation → tilt → cell rectangle → recognition, an
+error charged to the first checkpoint that did not hold.
+`scripts/checkpoint_attribution.py` charges each non-correct labelled cell from
+the fact's refusal reason and the page's `upright_pass` / `page_geometry`
+records, and compares the value rectangle with the page's other loci.
+
+| checkpoint | cells | of 169 |
+|---|---|---|
+| 1 orientation | 0 | — |
+| 2 tilt | 0 | — |
+| 3 layout: locus label not found | 22 | 13% |
+| 3 layout: DRB3/4/5 header not read | 41 | 24% |
+| 4 cell: too short (one allele of two) | 19 | 11% |
+| 4 cell: too wide / wrong owner | 12 | 7% |
+| 4 cell: empty / two subjects | 4 | 2% |
+| 5 recognition | 13 (incl. both wrong values) | 8% |
+| 6 DRB3/4/5 row grammar | 40 | 24% |
+| 7 a precision gate withdrew a right value | 18 | 11% |
+
+Orientation and tilt attribute nothing: the 611 sideways pages were turned
+(s17) and every page ≥ 1.5° is levelled; tilted pages are 19% of failures
+against 15% of all labelled cells. **The DRB3/4/5 row is 48% of the loss.**
+Comparison sheets carry 10% of failures on 2% of cells (5×). The operator's
+rectangle-size check measures as a signal: a value rectangle narrower than its
+page's siblings fails **6 of 12** times (50%) against 11% for a rectangle like
+its siblings; a wider-than-siblings rectangle (3 cells) did not fail, and a
+height unlike siblings (28) failed once.
+
+The ordered plan that follows from this is `IMPLEMENTATION_PLAN_2026-09-07.md`.
+
+
+
+## s25 — the checkpoint plan built: four shipped, five declined on evidence (2026-09-07)
+
+`IMPLEMENTATION_PLAN_2026-09-07.md` ordered the work by the checkpoint each
+failure belongs to. Building it produced four passes and five measurements that
+say a rule should NOT be written. The full table is in that document; this
+records what the corpus and the labels did, and the three findings worth
+carrying forward.
+
+**Labels (1,342): 673 -> 691 correct, 148 -> 130 missed, 19 partial, 2 wrong.**
+Corpus: DRB3/4/5 resolved +1,241 (+1,113 from W2(c), +116 from W2(a), +12 from
+pages the token route newly reached), review queue 35,391 -> 34,278.
+
+### The gate is charged where the damage is not (W2(c))
+
+Precision gate 2 withdraws every DRB3/4/5 second-opinion call on a page whose
+header only the damage-tolerant pattern reads. Per PAGE. But of the 21 such
+cells a person has read, 18 were right, and **all three wrong ones rest on a
+repaired gene token** — `DRBS` for DRB5, `DR83` for DRB3. The page's damage is
+not the discriminator; the cell's own token is. Re-promoting on that test, with
+the DRB1 consistency check allowed to object but not required to agree,
+recovers 18 of 21 with 0 wrong and 1,113 cells corpus-wide. Requiring the whole
+page to be clean would have recovered 12, and requiring DRB1 to agree 16 —
+both strictly worse, and neither excludes an error the token test misses.
+
+### A gate that names a hazard should test the hazard (W2(a))
+
+`resolve_token_anchored_drbx`'s G2 requires the page's DRB1 **value** RESOLVED,
+and its own docstring says why: every page with a DRB1 value box inside the
+grouped row's window is a page whose DRB1 the resolver refused. That is a proxy.
+Testing the hazard directly — no allele value may stand on the placed row — the
+116 pages the lifted gate admits split 95 clean, 14 with a bare value, 7 with a
+DRB1-prefixed one. The new gate is applied only where DRB1 is unresolved,
+because 56 of the 488 pages the route accepts today would fail it and those
+rest on exactly the corroboration being replaced.
+
+### Three rules the measurement stopped
+
+* **W5.** Restoring the 18 labelled gate-1 withdrawals yields **5 correct and
+  13 contradictions**, and no available evidence separates them: two engine
+  families agreeing with nothing contradicting is 1 right to 3 wrong. The
+  constrained decoder cannot arbitrate because `SPLIT` is what triggered the
+  gate. Gate 1 is doing its job.
+* **W3(a).** The ink in the rest of the ruled row was to find the missing second
+  allele. On the 19 labelled partials it holds ink on 2 and measures BLANK on 7.
+  The pass therefore does NOT record a blank remainder as "one allele printed" —
+  that finding would have been false on 7 of the 9 measurable labelled cells,
+  corpus-wide about 1,270 cells. The crop and the measure reproduce
+  `cell_ink_pass`'s stored decision on 136 of 136 measurable cells, which is
+  what makes the negative a result rather than a bug.
+* **W4.** Family templates reach 6 of 22 (16 of the pages have no family;
+  corpus-wide 9,229 of 11,847, because the family is assigned from the labels
+  the page failed to read). Whole-page OCR already covers 11 of the 22 and finds
+  the locus label **0 times**. Generalising the DRB3/4/5 anchor to another label
+  was refused by its own validation: only 3 of 4,000 pages can check the row
+  order, and those 3 mispredict DRB1's row by 1.38 label heights.
+
+### The residual is binding, not reading
+
+Of the 151 remaining labelled failures, **113 have the value's digits readable
+in a store already held**, 63 of the DRB3/4/5 failures have a readable gene or
+header token, and only 7 have nothing readable at all. Several plan items
+assumed the opposite. What is missing is the ability to say which row and which
+column a readable token belongs to on a page whose labels are unreadable — and
+the pages that need that capability are precisely the pages that cannot
+validate it, which is the argument for a table-structure model trained on the
+pages that do read (`CV_PLAN_2026-09-07.md` phase 2).

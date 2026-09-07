@@ -76,7 +76,7 @@ from typing import TYPE_CHECKING
 
 from kidneymatch.documents.role import is_comparison_sheet
 from kidneymatch.ocr.anchors import Box, ResolutionStatus, find_anchors, locus_anchors
-from kidneymatch.ocr.glyphs import canonical_locus_label
+from kidneymatch.ocr.glyphs import canonical_locus_label, parse_allele_values
 
 if TYPE_CHECKING:  # `lattice` imports `geometry`, which imports this module.
     from kidneymatch.ocr.lattice import Lattice
@@ -295,6 +295,10 @@ RULE_ID = "GROUPED_DRBX/v1"
 # `rule_id='GROUPED_DRBX/v1'`, so neither touches these facts, and the whole
 # group can be found and withdrawn by rule or by `source`.
 TOKEN_ANCHORED_RULE_ID = "TOKEN_ANCHORED_DRBX/v1"
+# The same route run on a page whose DRB1 VALUE was never resolved. Its own
+# rule id, because it rests on a different argument (G2b below in place of G2's
+# corroboration) and must be reviewable, and withdrawable, as its own group.
+TOKEN_ANCHORED_UNRESOLVED_RULE_ID = "TOKEN_ANCHORED_DRBX_UNRESOLVED_DRB1/v1"
 TOKEN_ANCHORED_SOURCE = "token-anchored-drbx"
 # The row read from a header only the damage-tolerant pattern reaches (route
 # (c)). Distinct for the same three reasons the token route's id is:
@@ -906,6 +910,7 @@ def resolve_token_anchored_drbx(
     drb1_resolved: bool,
     row_slope: float = 0.0,
     lattice: Lattice | None = None,
+    allow_unresolved_drb1: bool = False,
 ) -> TokenAnchoredRow:
     """The grouped row placed from the page's own geometry, PRESENT only.
 
@@ -921,6 +926,19 @@ def resolve_token_anchored_drbx(
       pages fall in this window, and all 116 pages that have one are pages
       whose DRB1 the resolver refused — a DRB1 chain that walked into the
       grouped row;
+    * **G2b** with `allow_unresolved_drb1`, the RESOLVED half of G2 is lifted
+      and this stands in its place: no box on the placed row may parse as an
+      allele value. G2 protects against one named hazard — DRB1's own values
+      walking into the grouped row — and this tests for that hazard directly
+      instead of for the correlate. A genuine grouped row prints gene NAMES,
+      and `parse_allele_values` reads none of `DRB3`, `DRBS`, `DRB3/4/5` or
+      `HLA-DRB3` as a value, so the gate costs a real row nothing. Measured
+      2026-09-07 on the 116 pages the lifted gate admits: 95 carry no allele
+      value on the placed row, 14 carry a bare one and 7 a DRB1-prefixed one,
+      so the hazard is present on 21 of them and absent on the rest. It is
+      applied ONLY where DRB1 is unresolved: 56 of the 488 pages this route
+      accepts today would fail it, and on those the DRB1 corroboration G2
+      asks for is present and is what they rest on;
     * **G3** no other locus label shares DRB1's printed line, or the labels are
       column headings and "one pitch below" is not a row of that table;
     * **G4** the pitch (`_token_pitch`) and the row window `TOKEN_ROW_RATIO`;
@@ -944,7 +962,7 @@ def resolve_token_anchored_drbx(
         return _refused("G0: donor and recipient on one sheet; a row cannot say whose gene it is")
     if find_grouped_headers(boxes):
         return _refused("G1: this page has a grouped header; the header route owns the row")
-    if not drb1_resolved:
+    if not drb1_resolved and not allow_unresolved_drb1:
         return _refused("G2: the DRB1 row was not resolved on this page")
     anchors = find_anchors(boxes, "DRB1")
     if len(anchors) != 1:
@@ -976,6 +994,9 @@ def resolve_token_anchored_drbx(
         ratio = (box.centre_y - _lift(drb1, box, row_slope) - drb1.centre_y) / pitch
         return low <= ratio <= high
 
+    # The relaxed route is its own withdrawable group; it rests on G2b rather
+    # than on G2's DRB1 corroboration and must not hide inside the other's id.
+    rule_id = TOKEN_ANCHORED_RULE_ID if drb1_resolved else TOKEN_ANCHORED_UNRESOLVED_RULE_ID
     gate = drb1.x1 + TOKEN_COLUMN_GAP_HEIGHTS * height
     counted: list[tuple[Box, list[str]]] = []
     for box in boxes:
@@ -990,6 +1011,14 @@ def resolve_token_anchored_drbx(
             return _refused("G7: a gene token on this page is not on the placed row")
         if not on_row:
             continue
+        if not drb1_resolved and parse_allele_values(text):
+            # G2b. An allele value standing on the placed row is the hazard G2
+            # names: this is not the grouped row, or DRB1's own values have
+            # walked into it. Only where DRB1 is unresolved, because that is
+            # the corroboration this stands in for.
+            return _refused(
+                "G2b: an allele value stands on the placed row and DRB1 was not resolved"
+            )
         if box.x0 >= gate:
             if symbols:
                 counted.append((box, symbols))
@@ -1043,7 +1072,7 @@ def resolve_token_anchored_drbx(
             gene_boxes=(box,),
             tokens_on_row=len(named),
             reason=TOKEN_PRESENT_REASON,
-            rule_id=TOKEN_ANCHORED_RULE_ID,
+            rule_id=rule_id,
             # The same `source` `scripts/drbx_token_repass.py` writes, emitted
             # by the RULE so a full re-extraction reproduces the provenance
             # instead of silently dropping it. Only the PRESENT facts carry it,
@@ -1060,6 +1089,6 @@ def resolve_token_anchored_drbx(
                 header_box=None,
                 tokens_on_row=len(named),
                 reason=TOKEN_UNKNOWN_REASON,
-                rule_id=TOKEN_ANCHORED_RULE_ID,
+                rule_id=rule_id,
             )
     return TokenAnchoredRow({gene: facts[gene] for gene in GENES}, "the row was placed")

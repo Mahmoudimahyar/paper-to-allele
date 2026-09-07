@@ -342,6 +342,10 @@ Never put secret values in this file.
 - **Blocking now?** No. The measurement is recorded in `cell_ink` either way.
 
 ### HA-011 — Codify the DRB3/4/5 row's grammar in the spec, and decide two semantics
+- **Status (a): DECIDED 2026-09-07 (D10-a)** — the enumeration licence is codified in
+  `OCR_SPEC.md` §2 (exception 1) and `HLA_VALIDATION_SPEC.md` §7. (b) unchanged: a
+  null-suffixed allele stays REVIEW_REQUIRED for matching until HA-004. (c) not
+  taken up. (d) unchanged: the 621 token-anchored cells stand and round five measures them.
 - **Needed by:** the row grammar v2 (`GROUPED_DRBX/v2`: bare numbers on the
   row → review with candidate genes; a prefixed allele → presence plus a
   proposal), and any use of DRB3/4/5 beyond presence in matching.

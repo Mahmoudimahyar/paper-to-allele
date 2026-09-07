@@ -220,8 +220,9 @@ body.gated main { grid-template-columns: 1fr; }
 .docnote input { width: 100%; }
 
 /* ---- a disagreements pack: the earlier answer shown, the dispute badged ---- */
-.cell.agreed { opacity: .55; }
-.cell.agreed .evid, .cell.agreed .answer .row { display: none; }
+.agree { display: inline-block; margin-left: .5em; padding: 0 .4em; border-radius: 3px;
+  background: #e6f4ea; color: #1e6b32; font-size: .78em; font-weight: 600; }
+.next-disputed { margin-left: .8em; padding: .15em .6em; font: inherit; font-size: .9em; cursor: pointer; }
 .cell.disputed { outline: 2px solid #c0392b; outline-offset: 2px; }
 .dispute { display: inline-block; margin-left: .5em; padding: 0 .4em; border-radius: 3px;
   background: #c0392b; color: #fff; font-size: .78em; font-weight: 600; letter-spacing: .02em; }
@@ -663,6 +664,27 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       }
     }
     if (seeded) save();
+  }
+
+  function nextDisputed() {
+    // The next disputed cell on this page, else the first on the next page
+    // that has one. 138 disputed cells sit among 616 pre-answered ones.
+    const here = Array.prototype.slice.call(panel.querySelectorAll('li.cell.disputed'));
+    const at = currentCell ? here.indexOf(currentCell) : -1;
+    const li = here[at + 1];
+    if (li) { setCurrent(li); li.scrollIntoView({ block: 'center' }); li.focus(); return; }
+    for (let i = docIndex + 1; i < PACK.documents.length; i++) {
+      const d = PACK.documents[i];
+      const has = (d.cells || []).some(c => c.disagrees)
+        || Object.values(d.doc_disagrees || {}).some(Boolean);
+      if (!has) continue;
+      docIndex = i;
+      renderDoc();
+      const first = panel.querySelector('li.cell.disputed');
+      if (first) { setCurrent(first); first.scrollIntoView({ block: 'center' }); first.focus(); }
+      return;
+    }
+    toast('No disputed cells after this page.');
   }
 
   function disputeHtml(cell) {
@@ -1131,6 +1153,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       + (dec ? '<span class="verdict ' + dec + '">' + dec.toLowerCase() + '</span>' : '')
       + (legacy ? '<span class="verdict EDITED">re-confirm</span>' : '')
       + rowDispute
+      + (rowAgreed ? '<span class="agree">agreed</span>' : '')
       + '</div>'
       + '<div class="evid"><div class="crop">'
       + (cropCell
@@ -1331,6 +1354,7 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
         + '<span class="state">' + esc(String(cell.status || '').replace(/_/g, ' ')) + '</span>'
         + (lab ? '<span class="verdict ' + lab.decision + '">' + lab.decision.toLowerCase() + '</span>' : '')
         + disputeHtml(cell)
+        + (agreedHere ? '<span class="agree">agreed</span>' : '')
         + '</div>'
         // Not `loading="lazy"`. These are eleven small crops and they ARE the
         // row: a lazy crop that has not loaded leaves a fully answerable
@@ -1367,9 +1391,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
       html = '<div class="pack-note">This is a <b>disagreements pack</b>: your earlier answers are already filled in. '
         + 'Only the <span class="dispute">DISAGREES</span> cells need a second look — <b>' + nCells + '</b> cell'
         + (nCells === 1 ? '' : 's') + (nFields ? ' and <b>' + nFields + '</b> whole-page field' + (nFields === 1 ? '' : 's') : '')
-        + ' on this page. Change an answer only if the crop says you were wrong.</div>' + html;
+        + ' on this page. Change an answer only if the crop says you were wrong.'
+        + '<button type="button" class="next-disputed" data-next-disputed>next disputed &#9656;</button></div>' + html;
     }
     panel.innerHTML = html;
+    const nextBtn = panel.querySelector('[data-next-disputed]');
+    if (nextBtn) nextBtn.onclick = nextDisputed;
     // `toggle` does not bubble, so it cannot ride the panel's delegated handlers.
     const msgBlock = panel.querySelector('[data-msgs]');
     if (msgBlock) msgBlock.addEventListener('toggle', () => rememberMessagesOpen(msgBlock.open));

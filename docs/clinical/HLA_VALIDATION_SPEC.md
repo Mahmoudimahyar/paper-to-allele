@@ -74,6 +74,8 @@ When high-resolution DQA1 + DQB1 are available, construct DQ alpha/beta heterodi
 ## 7. DRB3/4/5
 Store DRB3, DRB4, DRB5 as separate loci/features. A form row labeled `DRB3/4/5` is a presentation grouping, not a single gene.
 
+Per gene (HA-011 (a), decided 2026-09-07): a presence state (`PRESENT` / `ABSENT` / `UNKNOWN`), an expression note where the printed allele carries a null suffix (`N` → `NOT_EXPRESSED`), and an optional allele proposal when the row prints one. Presence may be read from the gene NAME on the grouped row because the printed header enumerates the admissible set (`OCR_SPEC.md` §2, exception 1); the review unit is the printed row, not the gene. A null-suffixed DRB3/4/5 allele never feeds matching until an immunologist rules (HA-004); it stays `REVIEW_REQUIRED` for that purpose.
+
 ## 8. Reference versioning
 Every MatchRun stores:
 - HLA reference database version;

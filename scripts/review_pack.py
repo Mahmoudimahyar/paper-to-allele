@@ -79,6 +79,10 @@ PACK_SCHEMA = "hla-review-pack/v1"
 # re-extraction, while a source written by a one-off pass does not, and a
 # stratum keyed on a vanishing source silently draws zero.
 TOKEN_ANCHORED_RULE = "TOKEN_ANCHORED_DRBX/v1"
+# The same route where the page's DRB1 VALUE was never resolved, so it rests on
+# G2b (no allele value on the placed row) instead of on DRB1's corroboration.
+# Its own group, and its own stratum: nothing has measured it.
+TOKEN_ANCHORED_UNRESOLVED_RULE = "TOKEN_ANCHORED_DRBX_UNRESOLVED_DRB1/v1"
 WIDENED_HEADER_RULE = "GROUPED_DRBX_WIDENED/v1"
 # The `source` on a widened-header cell is `widened-drbx-header:<branch>[+...]`
 # — which of the four widenings let the header in. The pack spreads that
@@ -253,6 +257,25 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "own label pitch, one row below DRB1; the gene is PRESENT because a token on that row "
         "names it. 479 pages, and only one of them carries an existing label — this stratum is "
         "the only thing that can measure whether the row was the right row",
+    ),
+    (
+        "second_allele_reread",
+        20,
+        "the cell was RESOLVED with ONE allele and no second; the rest of its ruled row held "
+        "ink, and two independent recognizers read the same admissible allele of this locus "
+        "out of it. UNMEASURED: the one labelled partial this route can reach is a cell the "
+        "two engines refused to agree on, so no person has ever checked one of these. The "
+        "second value is the one to look at",
+    ),
+    (
+        "token_anchored_drbx_unresolved",
+        20,
+        "the DRB3/4/5 row was placed from the page's own label pitch on a page whose DRB1 "
+        "VALUE was never resolved, so the corroboration the sibling stratum rests on is "
+        "absent and G2b stands in its place: no allele value may stand on the placed row. "
+        "116 cells on 92 pages (W2(a), 2026-09-07), not one of them read by a person. This "
+        "stratum is the only thing that can say whether lifting that gate was right; cut "
+        "with `--only token_anchored_drbx_unresolved` to measure it alone",
     ),
     (
         "widened_drbx_header",
@@ -852,6 +875,19 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         # after any full re-extraction this stratum would have drawn zero — the
         # exact failure this module's own header warns about.
         tags.add("token_anchored_drbx")
+    if any("second-allele-reread/v1" in (c.source or "") for c in doc.cells.values()):
+        # W3(a): an allele appended to a cell that already had one, read from
+        # the rest of the row. Nothing labelled has measured it.
+        tags.add("second_allele_reread")
+    if any(
+        c.rule_id == TOKEN_ANCHORED_UNRESOLVED_RULE
+        for c in doc.cells.values()
+        if c.locus in DRBX_LOCI
+    ):
+        # W2(a): the same geometry with DRB1's own value unread, so the only
+        # thing standing where the corroboration was is G2b. 116 cells on 92
+        # pages, and no labelled page carries one.
+        tags.add("token_anchored_drbx_unresolved")
     if any(c.rule_id == WIDENED_HEADER_RULE for c in doc.cells.values() if c.locus in DRBX_LOCI):
         # The DRB3/4/5 header was read only by the damage-tolerant pattern and
         # then corroborated by the page's geometry (route (c)). No labelled page
@@ -1612,17 +1648,28 @@ def write_launcher(out: Path, port: int = 8765) -> None:
     happens, but the better answer is not to depend on it: serving the folder
     over localhost makes storage ordinary, and costs the reader one click.
     """
+    # `python` on the reader's PATH is not this project's interpreter — on the
+    # box that built the first packs it resolved to a Python 2 that has no
+    # `http.server`, and the window closed before the error could be read. The
+    # project's own interpreter is three directories up from a pack; it is
+    # used when it is there, and the PATH one only as the fallback.
+    venv = r"%~dp0..\..\..\.venv\Scripts\python.exe"
     windows = [
         "@echo off",
         'cd /d "%~dp0"',
+        f'set "PY={venv}"',
+        'if not exist "%PY%" set "PY=python"',
         f'start "" http://localhost:{port}/index.html',
-        f"python -m http.server {port} --bind 127.0.0.1",
+        f'"%PY%" -m http.server {port} --bind 127.0.0.1',
+        "if errorlevel 1 pause",
         "",
     ]
     posix = [
         "#!/bin/sh",
         'cd "$(dirname "$0")"',
-        f"python -m http.server {port} --bind 127.0.0.1",
+        'PY="$(dirname "$0")/../../../.venv/bin/python"',
+        '[ -x "$PY" ] || PY=python3',
+        f'"$PY" -m http.server {port} --bind 127.0.0.1',
         "",
     ]
     # newline="" or the platform translates these again and cmd.exe gets \r\r\n.
@@ -1630,7 +1677,7 @@ def write_launcher(out: Path, port: int = 8765) -> None:
     (out / "serve.sh").write_text("\n".join(posix), encoding="ascii", newline="")
 
 
-def refresh_page(out: Path, page: Path) -> int:
+def refresh_page(out: Path, page: Path, port: int = 8765) -> int:
     """Replace only the page in an existing pack.
 
     Rebuilding a pack re-cuts thousands of crops, which makes iterating on the
@@ -1641,8 +1688,11 @@ def refresh_page(out: Path, page: Path) -> int:
         print(f"no pack at {out}; build one first")
         return 2
     shutil.copyfile(page, out / "index.html")
-    write_launcher(out)
-    print(f"page refreshed in {out}; reload the browser (Ctrl+F5)")
+    # The launcher is rewritten with the pack's OWN port. It used to take the
+    # default, so a `--page-only --port 8766` refresh quietly pointed
+    # `serve.cmd` at 8765 while the reader was told 8766.
+    write_launcher(out, port)
+    print(f"page refreshed in {out}; reload the browser (Ctrl+F5) at http://localhost:{port}")
     return 0
 
 
@@ -1752,7 +1802,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     if args.page_only:
-        return refresh_page(args.out, args.page)
+        return refresh_page(args.out, args.page, args.port)
     if args.augment_messages:
         return augment_messages(args.out, args.source)
     if not args.facts.exists():

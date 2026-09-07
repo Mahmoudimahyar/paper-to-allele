@@ -68,6 +68,7 @@ from prefix_bind import page_boxes  # noqa: E402
 from kidneymatch.ocr.drbx import (  # noqa: E402
     NO_GROUPED_HEADER_REASON,
     TOKEN_ANCHORED_RULE_ID,
+    TOKEN_ANCHORED_UNRESOLVED_RULE_ID,
     GeneCall,
     resolve_token_anchored_drbx,
 )
@@ -75,6 +76,10 @@ from kidneymatch.ocr.drbx import (  # noqa: E402
 EV = "facts/v1"
 GENES = ("DRB3", "DRB4", "DRB5")
 SOURCE = "token-anchored-drbx"
+# The relaxed route (W2(a), 2026-09-07) is its own source as well as its own
+# rule id, so one statement finds it, one review stratum shows it, and one
+# statement withdraws it without touching the corroborated route beside it.
+UNRESOLVED_SOURCE = "token-anchored-drbx+unresolved-drb1"
 
 
 def open_read_only(path: Path) -> sqlite3.Connection:
@@ -153,6 +158,7 @@ def run(
     *,
     dry_run: bool = True,
     limit: int | None = None,
+    allow_unresolved_drb1: bool = False,
 ) -> Counter[str]:
     # A dry run opens the store READ-ONLY. It has no business holding a write
     # handle on a live database, and the mode is the proof rather than the
@@ -176,7 +182,8 @@ def run(
         if sha in sheets:
             tally["G0: a comparison sheet; a row cannot say whose gene it is"] += 1
             continue
-        if sha not in keep:
+        drb1_resolved = sha in keep
+        if not drb1_resolved and not allow_unresolved_drb1:
             tally["G2: the DRB1 row is not resolved on this page"] += 1
             continue
         boxes, width, height = page_boxes(ocr, sha)
@@ -191,7 +198,11 @@ def run(
         slope, _ = slopes_for(document, rulings, frame)
         lattice = lattice_for(document, rulings, frame)
         row = resolve_token_anchored_drbx(
-            boxes, drb1_resolved=True, row_slope=slope, lattice=lattice
+            boxes,
+            drb1_resolved=drb1_resolved,
+            row_slope=slope,
+            lattice=lattice,
+            allow_unresolved_drb1=allow_unresolved_drb1,
         )
         if row.facts is None:
             tally[row.reason] += 1
@@ -206,8 +217,13 @@ def run(
             tally["the row named a gene another pass has already claimed"] += 1
             continue
         tally["pages the row was placed on"] += 1
+        # The relaxed route's facts never borrow the corroborated route's
+        # provenance: the rule already stamps the id, and the source follows it.
+        relaxed = not drb1_resolved
+        rule_id = TOKEN_ANCHORED_UNRESOLVED_RULE_ID if relaxed else TOKEN_ANCHORED_RULE_ID
+        source = UNRESOLVED_SOURCE if relaxed else SOURCE
         for gene, fact in named.items():
-            tally[f"PRESENT: {gene}"] += 1
+            tally[f"PRESENT{' (DRB1 unresolved)' if relaxed else ''}: {gene}"] += 1
             if dry_run:
                 continue
             gene_boxes = [back.get(id(box), box) for box in fact.gene_boxes]
@@ -220,8 +236,8 @@ def run(
                 (
                     fact.raw_text,
                     fact.reason,
-                    TOKEN_ANCHORED_RULE_ID,
-                    SOURCE,
+                    rule_id,
+                    source,
                     json.dumps([anchor.x0, anchor.y0, anchor.x1, anchor.y1]),
                     json.dumps([[b.x0, b.y0, b.x1, b.y1] for b in gene_boxes]),
                     now,
@@ -246,6 +262,12 @@ def main() -> int:
     parser.add_argument("--geometry", type=Path, default=ROOT / "data/derived/geometry.sqlite")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
+        "--allow-unresolved-drb1",
+        action="store_true",
+        help="also read the row on pages whose DRB1 VALUE was never resolved, under G2b "
+        "(no allele value may stand on the placed row); its own rule id and source",
+    )
+    parser.add_argument(
         "--dry-run",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -256,7 +278,14 @@ def main() -> int:
         if not path.exists():
             print(f"missing {path}")
             return 2
-    tally = run(args.facts, args.ocr, args.geometry, dry_run=args.dry_run, limit=args.limit)
+    tally = run(
+        args.facts,
+        args.ocr,
+        args.geometry,
+        dry_run=args.dry_run,
+        limit=args.limit,
+        allow_unresolved_drb1=args.allow_unresolved_drb1,
+    )
     print(f"{'would place' if args.dry_run else 'placed'} the DRB3/4/5 row from page geometry")
     for name, count in sorted(tally.items()):
         if count:

@@ -25,6 +25,11 @@ This is a constrained evidence extraction system, not general OCR.
 
 The system MUST NOT full-page OCR a report, regex all `*NN` tokens, and guess their HLA loci.
 
+**Exceptions, each measured, gated and withdrawable by its `source`** (the constitution names the same set):
+
+1. **The grouped DRB3/4/5 row (HA-011, decided 2026-09-07).** Geometry fixes the ROW; the printed header enumerates the admissible set {DRB3, DRB4, DRB5}. A gene NAME read from a token standing on that row may set that gene's presence — never a locus outside the enumeration, never an allele's resolution. Where the header is printed but unread, the row may be placed from the page's own label pitch (`TOKEN_ANCHORED_DRBX/v1`) under the same enumeration. A bare number on the row goes to review; a null-suffixed (`N`) DRB3/4/5 allele stays `REVIEW_REQUIRED` for matching until HA-004 rules.
+2. **A locus from the value's own printed prefix**, on three routes only: where the page labels nothing (`prefix-bound`), where the label was read but its cell held no box and the value stands on the label's row (`anchor-row-prefix`), and where a comparison sheet's column heading names the subject (`column-bound`). Gates in `CV_RESEARCH_2026-09-05.md` s12; HA-017, decided 2026-09-07.
+
 ## 3. Document classes
 - `HLA_TYPING`
 - `PRA_LUMINEX`

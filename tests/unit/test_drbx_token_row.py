@@ -32,9 +32,11 @@ from kidneymatch.ocr.anchors import Box, ResolutionStatus
 from kidneymatch.ocr.drbx import (
     GENES,
     TOKEN_ANCHORED_RULE_ID,
+    TOKEN_ANCHORED_UNRESOLVED_RULE_ID,
     GeneCall,
     resolve_token_anchored_drbx,
 )
+from kidneymatch.ocr.glyphs import parse_allele_values
 
 # One label height, and the column the form stacks its labels in.
 H = 0.012
@@ -467,3 +469,74 @@ def test_the_present_facts_carry_the_pass_source_from_the_rule_itself() -> None:
     assert row.facts["DRB4"].source is None
     assert row.facts["DRB5"].source is None
     assert {f.rule_id for f in row.facts.values()} == {TOKEN_ANCHORED_RULE_ID}
+
+
+# --- W2(a): the row on a page whose DRB1 VALUE was never resolved -----------
+#
+# G2 requires the page's DRB1 fact RESOLVED, and its own measurement says why:
+# 0 of 21,764 DRB1 value boxes on DRB1-RESOLVED pages fall in the grouped row's
+# window, and every page that has one is a page whose DRB1 the resolver refused.
+# The corroboration is a proxy for one named hazard, so G2b tests for the hazard
+# itself: no allele value may stand on the placed row. Measured 2026-09-07 on
+# the 116 pages the lifted gate admits, 95 carry no allele value there.
+
+
+def test_the_relaxed_route_is_opt_in_and_off_by_default() -> None:
+    """Nothing changes for a caller that does not ask for it."""
+    boxes = page(token("DRB3"))
+    assert read(boxes, drb1_resolved=False).facts is None
+    assert "G2:" in read(boxes, drb1_resolved=False).reason
+
+
+def test_an_unresolved_drb1_page_can_be_read_when_nothing_else_objects() -> None:
+    row = read(
+        page(token("DRB3"), token("DRB4", x0=SECOND_X)),
+        drb1_resolved=False,
+        allow_unresolved_drb1=True,
+    )
+    assert row.facts is not None, row.reason
+    assert row.facts["DRB3"].call is GeneCall.PRESENT
+    assert row.facts["DRB4"].call is GeneCall.PRESENT
+    assert row.facts["DRB5"].call is GeneCall.UNKNOWN
+
+
+def test_the_relaxed_route_carries_its_own_rule_id() -> None:
+    """It rests on G2b, not on G2's corroboration, so it is its own group."""
+    row = read(page(token("DRB3")), drb1_resolved=False, allow_unresolved_drb1=True)
+    assert row.facts is not None, row.reason
+    assert {f.rule_id for f in row.facts.values()} == {TOKEN_ANCHORED_UNRESOLVED_RULE_ID}
+    # ... and the corroborated route keeps the id it always had.
+    row = read(page(token("DRB3")), drb1_resolved=True, allow_unresolved_drb1=True)
+    assert row.facts is not None
+    assert {f.rule_id for f in row.facts.values()} == {TOKEN_ANCHORED_RULE_ID}
+
+
+@pytest.mark.parametrize("value", ["15", "04", "DRB1*15", "DRB1*04:01"])
+def test_G2b_refuses_a_page_with_an_allele_value_on_the_placed_row(value: str) -> None:
+    """The hazard G2 names: DRB1's own values walking into the grouped row."""
+    row = read(
+        page(token("DRB3"), token(value, x0=SECOND_X)),
+        drb1_resolved=False,
+        allow_unresolved_drb1=True,
+    )
+    assert row.facts is None
+    assert "G2b" in row.reason
+
+
+def test_G2b_does_not_fire_on_the_gene_names_a_real_row_prints() -> None:
+    """`parse_allele_values` reads none of these as a value, and it must not."""
+    for text in ("DRB3", "DRB4", "DRB5", "DRB3/4/5", "HLA-DRB3", "DRB3,"):
+        assert not parse_allele_values(text), text
+
+
+def test_G2b_is_not_applied_where_DRB1_corroborates() -> None:
+    """56 of the 488 pages this route accepts today carry an allele value on the
+    placed row. They rest on the DRB1 corroboration G2 asks for, and lifting
+    that gate is not licence to take their yield away."""
+    row = read(
+        page(token("DRB3"), token("15", x0=SECOND_X)),
+        drb1_resolved=True,
+        allow_unresolved_drb1=True,
+    )
+    assert row.facts is not None, row.reason
+    assert row.facts["DRB3"].call is GeneCall.PRESENT
