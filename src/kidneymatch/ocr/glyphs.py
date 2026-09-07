@@ -130,13 +130,22 @@ _LABEL_SHAPED = re.compile(
 # `drbx.py`, which owns the authoritative pattern. Measured against 83 accepted
 # spellings on the real corpus — an earlier, tighter version missed 2,560
 # documents (`HLA-DRB345`, `HLA-DRB34/5`, `HLA-DR83/4/5`, leading-dash forms).
+#
+# This is `drbx.GROUPED_DRBX_HEADER` verbatim, widened to W5 on 2026-09-06, and
+# a test pins the two copies equal. Note what the widening does NOT do here: a
+# box this reaches is not a header until `drbx.find_grouped_headers` sees the
+# page's geometry corroborate it. The looser shape is deliberately carried into
+# this module anyway, because both uses here are REFUSALS — a header-shaped box
+# may not anchor a locus and may not be read as a value — and refusing a box
+# that turns out not to be a header costs a cell, while accepting one as a
+# locus label assigns an allele to three genes.
 _GROUPED_DRBX = re.compile(
     r"^[\s\-–—.,:;'\"]*"
-    r"(?P<hla>[HI]{0,3}L?A[\s\-–—]*)?"
-    r"DR[B8RE$HD]\s*3"
-    r"(?:[\s/,.\-\\|'\"AMUV1]*4[\s/,.\-\\|'\"AMUV1]*"
-    r"|(?(hla)[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV1]*|(?!)))"
-    r"[5S][\s*:;.,)\-]*$"
+    r"(?P<hla>[HIB]{0,3}L?A[\s\-–—]*)?"
+    r"DR(?P<slot>[A-RT-Za-z?8$])?\s*3"
+    r"(?P<mid>[\s/,.\-\\|'\"AMUV14]*4[\s/,.\-\\|'\"AMUV14]*"
+    r"|(?(hla)[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV14]*|(?!)))"
+    r"(?P<final>[5S3])[\s*:;.,)\-]*$"
 )
 
 _DIGIT_SLOT = "0-9" + "".join(sorted(set(_DIGIT_REPAIRS)))

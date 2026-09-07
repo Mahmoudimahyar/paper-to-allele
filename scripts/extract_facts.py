@@ -75,7 +75,12 @@ from kidneymatch.ocr.anchors import (  # noqa: E402
     resolve_document,
     resolve_in_row,
 )
-from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx  # noqa: E402
+from kidneymatch.ocr.drbx import (  # noqa: E402
+    NO_GROUPED_HEADER_REASON,
+    GeneCall,
+    resolve_grouped_drbx,
+    resolve_token_anchored_drbx,
+)
 from kidneymatch.ocr.geometry import (  # noqa: E402
     PageFrame,
     restore,
@@ -614,9 +619,50 @@ def extract(
             value_boxes=_boxes(result.value_boxes),
         )
 
-    genes = {
-        gene: restore_drbx(fact, back) for gene, fact in resolve_grouped_drbx(latin_level).items()
-    }
+    read_genes = resolve_grouped_drbx(latin_level)
+    drb1_read = loci.get("DRB1")
+    if (
+        read_genes["DRB3"].reason == NO_GROUPED_HEADER_REASON
+        and drb1_read is not None
+        and drb1_read.status is ResolutionStatus.RESOLVED
+        and not comparison
+    ):
+        # No header was read anywhere on this page. The row can still be placed
+        # from the page's own geometry — one label pitch below the DRB1 label —
+        # and a gene token standing on it read as PRESENT. Never ABSENT: the
+        # counting argument that licenses absence needs the printed enumeration,
+        # and that is exactly what was not read. The DRB1 status tested here is
+        # the FINAL one, after the lattice and the comparison-sheet downgrade,
+        # because that is the fact the page ends up carrying.
+        token_row = resolve_token_anchored_drbx(
+            latin_level, drb1_resolved=True, row_slope=row_slope, lattice=lattice
+        )
+        if token_row.facts is not None:
+            read_genes = token_row.facts
+    genes = {gene: restore_drbx(fact, back) for gene, fact in read_genes.items()}
+    # The comparison-sheet downgrade is applied to `genes` ITSELF, not to a
+    # local copy of the status. The document summary's consistency verdict is
+    # built from this dict further down, and while the downgrade lived only in
+    # the loop below the summary judged a comparison sheet as if its genes had
+    # been resolved — the stored cells said REVIEW_REQUIRED and the summary
+    # said CONSISTENT about values nobody had accepted.
+    if comparison:
+        # The same guard the loci get. Two subjects on one page and the row
+        # rule cannot say whose gene the row prints. Today no comparison
+        # sheet in the corpus has a readable grouped header, so this changes
+        # nothing measurable — it fails closed for the ones that will.
+        genes = {
+            gene: (
+                replace(
+                    fact,
+                    status=ResolutionStatus.REVIEW_REQUIRED,
+                    reason="this page prints donor and recipient columns for two subjects",
+                )
+                if fact.status is ResolutionStatus.RESOLVED
+                else fact
+            )
+            for gene, fact in genes.items()
+        }
     for gene, fact in genes.items():
         add(
             gene,
@@ -626,6 +672,11 @@ def extract(
             repaired=fact.repaired,
             reason=fact.reason,
             rule_id=fact.rule_id,
+            # Which route read this row, when it was not the plain header
+            # route: `token-anchored-drbx`, or `widened-drbx-header:<branch>`.
+            # It comes from the RULE, so a re-extraction reproduces it and the
+            # review strata keyed on it cannot silently empty.
+            source=fact.source,
             anchor_box=_box(fact.header_box),
             # Every box on the row that named this gene, not only the first:
             # a row can print one gene twice, and the second box is what a
@@ -699,8 +750,19 @@ def extract(
     consistency = ConsistencyOutcome.NOT_CHECKABLE
     consistency_reason = "the DRB1 row or the DRB3/4/5 row was not read"
     if drb1 is not None and drb1.status is ResolutionStatus.RESOLVED:
-        present = {g for g, f in genes.items() if f.call is GeneCall.PRESENT}
-        absent = {g for g, f in genes.items() if f.call is GeneCall.ABSENT}
+        # Only cells the page actually STORES as findings. A call the row rule
+        # made and the extraction then withdrew to review is not a finding, and
+        # the summary must not check the DRB1 row against it.
+        present = {
+            g
+            for g, f in genes.items()
+            if f.call is GeneCall.PRESENT and f.status is ResolutionStatus.RESOLVED
+        }
+        absent = {
+            g
+            for g, f in genes.items()
+            if f.call is GeneCall.ABSENT and f.status is ResolutionStatus.RESOLVED
+        }
         checked = check_drb1_drbx([v.first_field for v in drb1.parsed_values], present, absent)
         consistency, consistency_reason = checked.outcome, checked.reason
 
