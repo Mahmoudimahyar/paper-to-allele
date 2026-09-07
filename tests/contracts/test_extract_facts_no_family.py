@@ -223,9 +223,12 @@ def test_a_prefix_repaired_page_may_place_a_virtual_label() -> None:
     A left-out page places no virtual label because its own full fit is what
     failed. A prefix-repaired page's full fit SUCCEEDS — on the boxes the form
     actually printed — so the template's placement of an unreadable label is
-    evidence there in the ordinary way. Measured on the corpus: 73 cells are
-    gained down this path on the 162 repaired pages, and 0 on the left-out
-    ones.
+    evidence there in the ordinary way. Measured on the cells `family_repass.py`
+    writes to a copy of the live store: 13 of the 204 prefix cells come down
+    this path, on 12 of the 162 repaired pages, against 0 of the 258 left-out
+    ones and 1 of the 550 tie ones. A re-extraction reads more of both
+    populations (`.artifacts/no-family/extraction-diff-vs-pre-change.log`); the
+    left-out fit places no virtual label in either frame, which is the point.
     """
     page = split_prefix_page("DPB1")
     page = [b for b in page if b.text != "HLA-DRB1"]  # the label glyphs unreadable
@@ -267,7 +270,9 @@ def test_a_form_whose_labels_are_column_headers_is_read_downwards() -> None:
 
 def test_a_column_page_carrying_both_role_words_keeps_the_row_rule() -> None:
     """A header row over two subject rows is exactly what a column layout
-    looks like. Measured cost of refusing them: 13 cells on 10 pages."""
+    looks like. Measured on this build by neutralising the gate: 305 pages read
+    as a column layout and claim 381 cells without it, 290 and 364 with it — 15
+    pages and 17 cells."""
     persian = [
         Box(0.05, 0.05, 0.20, 0.075, "اهدا کننده"),
         Box(0.05, 0.10, 0.20, 0.125, "گیرنده"),

@@ -159,21 +159,24 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "below_rule_unruled",
         26,
         "read down a column, with two values stacked under one header and NO closed ruled "
-        "cell around them. 195 of the 198 two-box column cells are in this state (measured "
-        "2026-09-07: a closed cell means one row band holds both boxes and a vertical "
-        "ruling stands each side), and it is the only shape in which a two-subject table is "
-        "invisible to every gate: two boxes, two alleles, both under the header, no printed "
-        "line between them. The ruling gate catches the ruled case — 1 cell of 365 — and "
-        "cannot see these. One contradiction here refutes the direction for this stratum",
+        "cell around them. 195 of the 197 two-box column cells the shipped rule resolves are "
+        "in this state — 198 before the ruling gate refuses one (a closed cell means one row "
+        "band holds both boxes and a vertical ruling stands each side) — and it is the only "
+        "shape in which a two-subject table is invisible to every gate: two boxes, two "
+        "alleles, both under the header, no printed line between them. The ruling gate "
+        "catches the ruled case, 1 cell of 365, and cannot see these. One contradiction here "
+        "refutes the direction for this stratum",
     ),
     (
         "below_rule_role_unknown",
         26,
         "read down a column on a page whose ROLE nobody could read. 51 of the 290 column "
-        "pages have no resolved ROLE and hold 59 of the gained cells; by the criterion the "
-        "gate itself uses — no printed role word read anywhere on the page — it is 211 "
-        "pages and 249 cells. The Persian role words are what refuse a donor/recipient "
-        "comparison table, and on these pages that guard never fires",
+        "pages have no resolved ROLE fact; 35 of those gain a cell and they hold 59 of the "
+        "364. By the criterion the gate itself uses — no printed role word read anywhere on "
+        "the page — it is 211 pages and 249 cells "
+        "(.artifacts/no-family/below-rule-population-and-placebo.log). The Persian role "
+        "words are what refuse a donor/recipient comparison table, and here that guard "
+        "never fires",
     ),
     (
         "family_tie",

@@ -162,9 +162,15 @@ FAMILY_RULE = ValueRule(
 # build against the pre-change one, byte-identical on all three: page_ocr_bind
 # 204 documents (1 read below) and the same 13 cells; rerecognise 204
 # documents re-read and the same 18 cells; upright_bind 425 pages (14 read
-# below) binding 0 either way. The rulings the ruling gate needs are threaded
-# in by each caller, so a pass that has no lattice for a page (upright_bind,
-# whose page was turned) simply has no such gate.
+# below) binding 0 either way.
+#
+# The RULING gate does not reach any of the three. It needs `row_rulings`,
+# which is per-page data a caller has to thread in, and all three build their
+# rule with `replace(BELOW_RULE, row_slope=..., column_slope=...)` and nothing
+# else — so the tuple stays empty and `_ruling_between` returns None there.
+# Only `extract` and `family_repass.rule_for_page` fill it. Exposure is zero
+# today (no RESOLVED fact in the store was written under a below rule id) and
+# the gap is KI-029, not a property of the passes' pages.
 #
 # The placebo, corrected. The direction's safety story used to rest on
 # "forcing BELOW on right-reading pages binds nothing", and that is false.
@@ -256,7 +262,8 @@ def connect(path: Path) -> sqlite3.Connection:
         ("tilt_deg", "REAL"),
         ("frame", "TEXT"),
         # What `ocr/layout.py` counted on this page. The direction it decides
-        # settles which way 365 cells are read, and without the counts stored
+        # settles which way 365 cells are read — 364 after the ruling gate
+        # refuses one of them — and without the counts stored
         # there is no per-page record of WHY: a later reader can see that a
         # page was read down a column but not that 12 pairs of labels shared a
         # line against 1 sharing a column. Four integers, written for every
