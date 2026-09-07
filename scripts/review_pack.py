@@ -89,6 +89,15 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     # load-bearing: a document usually carries several tags, and moving one
     # above another silently empties the lower pool.
     (
+        "abo_band_rescue",
+        22,
+        "the blood group's box missed its label's LINE and was admitted by the label's ruled "
+        "row, or — on a page that rules nothing — by a 0.75 label-height centre band. 125 "
+        "documents. The centre half is the exposed one: 82 documents, 35/35 agreeing with a "
+        "caption and ZERO checked by a person, and 10 of them have no box tying the value to "
+        "the label's line at all",
+    ),
+    (
         "template_band",
         22,
         "the label was unreadable and the form's template placed it where the page "
@@ -393,7 +402,16 @@ def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
         elif fld == "ROLE":
             doc.role = {"status": status, "value": value, "source": src}
         elif fld == "ABO":
-            doc.abo = {"status": status, "value": value, "source": src, "reason": reason}
+            # `rule_id` carries how the value box entered the cell, which is
+            # the only thing that separates a rescued reading from an ordinary
+            # one once the row is written.
+            doc.abo = {
+                "status": status,
+                "value": value,
+                "source": src,
+                "reason": reason,
+                "rule_id": rule,
+            }
         elif fld == "RH":
             doc.rh = {"status": status, "value": value, "source": src}
     # One row PER CONFIRMER. Keying them all onto one field would show the
@@ -515,6 +533,11 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     ):
         tags.add("drbx_addon")
     abo_reason = (doc.abo or {}).get("reason") or ""
+    if ((doc.abo or {}).get("rule_id") or "").startswith("abo/anchored-cell+"):
+        # The value box was not on its label's line. Whether that cell is the
+        # label's is a question only a person can answer, and no person has
+        # answered it for any of the centre-band readings.
+        tags.add("abo_band_rescue")
     if abo_reason.startswith("more than one blood-group value"):
         tags.add("abo_doubled")
     elif abo_reason.startswith("the blood-group field is printed but its cell"):

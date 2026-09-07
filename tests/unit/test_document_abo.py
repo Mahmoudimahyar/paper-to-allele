@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from kidneymatch.documents.abo import (
+    AboRescue,
     AboSource,
     AboStatus,
     Rh,
@@ -31,6 +32,7 @@ from kidneymatch.documents.abo import (
     reconcile_abo,
 )
 from kidneymatch.ocr.anchors import Box
+from kidneymatch.ocr.lattice import Lattice, Ruling
 
 GROUP_LABEL_FA = "گروه خونی :"  # "blood group:" — the printed field label
 DISCLAIMER_FA = "اطلاعات مربوط به گروه خونی براساس شرح حال مراجعه کننده بوده"
@@ -437,3 +439,521 @@ def test_the_pair_route_still_refuses_the_disclaimer_sentence() -> None:
     and disclaimer gates run before the pair route and still hold."""
     reading = read_abo([box(0.60, DISCLAIMER_FA, w=0.35), box(0.20, "A+", w=0.05)], [])
     assert reading.status is AboStatus.UNKNOWN
+
+
+# --- the cell window: the value on the label's own ruled row -----------------
+#
+# CV_RESEARCH s19 item 1, two rules verified in sequence over 23,566 documents.
+#
+# The shipped window is a LINE: a box joins the cell only when it shares more
+# than `_OVERLAP` (35%) of the shorter box's height with the label. That is
+# right for the dominant layout and wrong wherever the recognizer's two passes
+# draw their rectangles a third of a line apart — the Persian line box extends
+# below its baseline, the Latin capitals sit above it. The value is then in the
+# label's printed CELL and outside its box.
+#
+# Two rescues, and they are not equally evidenced:
+#
+# **The ruled row (`AboRescue.BAND`).** Where the page prints a grid, the row
+# between two rulings IS the cell, and a value inside it belongs to the label
+# inside it. Measured: +43 documents, 0 lost, 0 values changed, and one
+# labelled miss recovered that agrees with the human. The band is capped at
+# `_MAX_BAND_HEIGHTS` because a taller band spans two printed rows.
+#
+# **The centre band on an unruled page (`AboRescue.CENTRE`).** No grid, so the
+# cell is not geometrically defined and the rule rests on distance alone. It
+# ships only behind six admission gates (side branch, above the centre, no
+# ruling between, anchor scale, ownership, partial contradiction): +82
+# documents, 1 lost — a cross-engine Rh sign disagreement the shipped code
+# publishes on one engine's word and this rule sends to a person.
+#
+# NO HUMAN HAS CHECKED A SINGLE CENTRE RESCUE. 0 of the 82 gains is a labelled
+# document, which is why every rescued reading is marked in its provenance and
+# gets its own review stratum (`abo_band_rescue` in `scripts/review_pack.py`).
+
+
+def ruled(*ys: float, x0: float = 0.0, x1: float = 1.0, vertical: tuple = ()) -> Lattice:
+    """A page whose printed horizontal rulings are level and full width."""
+    return Lattice(tuple(Ruling(x0, x1, y, y) for y in ys), vertical)
+
+
+def offset_box(
+    anchor: Box,
+    text: str,
+    offset: float,
+    *,
+    x0: float = 0.44,
+    w: float = 0.05,
+    h: float | None = None,
+) -> Box:
+    """A box whose centre sits `offset` ANCHOR heights above the anchor's centre.
+
+    Negative offsets sit below. With equal heights the two boxes then share
+    `1 - offset` of their extent, so 0.67 is the "overlap 0.33" case the
+    proposal was written from: outside the 0.35 line test, inside the row.
+    """
+    height = anchor.height if h is None else h
+    centre = anchor.centre_y - offset * anchor.height
+    return Box(x0=x0, y0=centre - height / 2, x1=x0 + w, y1=centre + height / 2, text=text)
+
+
+# The author's seven counterexamples, restated where the combined rule changes
+# the answer: a page with no usable band falls through to the centre rescue,
+# which is what "never ship CENTRE only" cuts both ways into.
+
+
+def test_a_value_on_the_labels_ruled_row_is_read() -> None:
+    """Overlap 0.33 — refused by the line test, inside the label's own row."""
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    reading = read_abo([FA_LABEL], [value], lattice=ruled(0.29, 0.32))
+    assert reading.status is AboStatus.RESOLVED
+    assert (reading.group, reading.rh) == ("A", Rh.POSITIVE)
+    assert reading.rescued is AboRescue.BAND
+    assert reading.value_boxes == (value,)
+
+
+def test_the_same_geometry_without_a_lattice_is_not_a_band_rescue() -> None:
+    """The author proposed this as "still refused". Under the combined rule an
+    unruled page is exactly the population the centre rescue serves, so the
+    value is admitted — by the WEAKER route, and marked as such."""
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=None)
+    assert reading.rescued is AboRescue.CENTRE
+
+
+def test_a_band_taller_than_two_label_heights_never_rescues() -> None:
+    """A band that tall spans two printed rows, so it does not locate a cell.
+
+    The token here is 0.9 label heights off: inside the row rule's absolute
+    reach, outside the centre band, so nothing admits it.
+    """
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.9)], lattice=ruled(0.28, 0.33))
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.rescued is None
+
+
+def test_a_band_of_exactly_two_label_heights_still_rescues() -> None:
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=ruled(0.29, 0.33))
+    assert reading.status is AboStatus.RESOLVED
+    assert reading.rescued is AboRescue.BAND
+
+
+def test_a_token_in_the_adjacent_row_is_refused() -> None:
+    """0.9 label heights away and inside the absolute reach, but the ruling
+    between them says it is another row's cell."""
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.9)], lattice=ruled(0.295, 0.325))
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.rescued is None
+
+
+def test_a_same_band_token_on_the_wrong_side_is_refused() -> None:
+    """Direction follows the script and the rescue does not loosen it: a
+    Persian label's value is to its LEFT."""
+    wrong_side = offset_box(FA_LABEL, "A+", 0.67, x0=0.75)
+    reading = read_abo([FA_LABEL], [wrong_side], lattice=ruled(0.29, 0.32))
+    assert reading.group is None
+
+
+def test_a_letter_alone_in_the_band_is_still_not_a_value() -> None:
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A", 0.67)], lattice=ruled(0.29, 0.32))
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+    assert reading.rh is Rh.UNKNOWN
+
+
+def test_two_different_values_in_the_band_still_go_to_a_person() -> None:
+    """Neither stands between the other and the label, so both are in the cell
+    and the cell is doubled. Proximity does not settle a doubled cell."""
+    reading = read_abo(
+        [FA_LABEL],
+        [offset_box(FA_LABEL, "A+", 0.67), offset_box(FA_LABEL, "B+", -0.67)],
+        lattice=ruled(0.29, 0.33),
+    )
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_value_the_line_rule_already_owns_stops_the_reach_past_it() -> None:
+    """F4, and never-worse: the label's own line holds a value the pipeline
+    resolves today, and the band reaches a second token further along the row.
+    The nearer value is the label's, and the page keeps the answer it has."""
+    on_the_line = box(0.48, "A+", w=0.05)
+    further = offset_box(FA_LABEL, "B+", 0.67, x0=0.36)
+    reading = read_abo([FA_LABEL], [on_the_line, further], lattice=ruled(0.29, 0.32))
+    assert reading.status is AboStatus.RESOLVED
+    assert reading.group == "A"
+    assert reading.rescued is None
+
+
+# F2. The loss definition. "Lost 0" was met by choosing the cap, not by the
+# rule's merit: the nearest observed same-ink cross-engine SIGN disagreement
+# sits in a band 2.08 label heights tall, 0.08h outside the cap. Where the two
+# engines do collide, the rescue must take the page AWAY from the shipped
+# single-engine sign rather than confirm it.
+
+
+def test_a_same_ink_sign_disagreement_across_the_line_test_goes_to_review() -> None:
+    """One engine's box reaches the label's line and the other's does not.
+
+    Same ink (IoU 0.7), same letter, opposite sign. The shipped window sees
+    only the box that reaches the line and publishes its sign; admitting the
+    band makes the cell doubled, which is what a person must settle.
+    """
+    on_the_line = Box(x0=0.44, y0=0.2825, x1=0.49, y1=0.3115, text="A+")
+    in_the_band = Box(x0=0.44, y0=0.2775, x1=0.49, y1=0.3065, text="A-")
+    lattice = ruled(0.285, 0.322)
+    assert read_abo([FA_LABEL], [on_the_line], lattice=lattice).status is AboStatus.RESOLVED
+    reading = read_abo([FA_LABEL, in_the_band], [on_the_line], lattice=lattice)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert "more than one blood-group value" in reading.reason
+
+
+# F1. Thirteen of the 43 gains are one engine's box with nothing behind it.
+# Corroboration decides whether the value is published or offered to a person.
+
+
+def test_a_band_rescue_two_engines_agreed_on_is_published() -> None:
+    """17 of the 43, including the one labelled recovery."""
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    reading = read_abo([FA_LABEL, overlapping(value, "A+")], [value], lattice=ruled(0.29, 0.32))
+    assert reading.rescued is AboRescue.BAND
+    assert len(reading.value_boxes) == 2
+    decision = reconcile_abo(reading)
+    assert decision.status is AboStatus.RESOLVED
+    assert decision.group == "A"
+
+
+def test_an_uncorroborated_band_rescue_is_offered_to_a_person() -> None:
+    """13 of the 43: one box, no caption, no second engine. The candidate and
+    the anchor travel with the review item, which is more than today's generic
+    "its cell could not be read" gives a reviewer."""
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    reading = read_abo([FA_LABEL], [value], lattice=ruled(0.29, 0.32))
+    decision = reconcile_abo(reading)
+    assert decision.status is AboStatus.REVIEW_REQUIRED
+    assert decision.group is None
+    assert decision.rh is Rh.UNKNOWN
+    assert "nothing corroborates it" in decision.reason
+    assert reading.anchor_box is FA_LABEL
+    assert reading.value_boxes == (value,)
+
+
+def test_a_caption_agreeing_on_the_letter_publishes_the_band_rescue() -> None:
+    """13 of the 43 are corroborated this way; the caption need not state an Rh."""
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=ruled(0.29, 0.32))
+    decision = reconcile_abo(reading, caption_claims={("A", Rh.UNKNOWN)})
+    assert decision.status is AboStatus.RESOLVED
+    assert (decision.group, decision.rh) == ("A", Rh.POSITIVE)
+
+
+def test_a_caption_contradicting_a_band_rescue_still_conflicts() -> None:
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=ruled(0.29, 0.32))
+    decision = reconcile_abo(reading, caption_claims={("B", Rh.POSITIVE)})
+    assert decision.status is AboStatus.CONFLICT
+    assert decision.subject_identity_questioned is True
+
+
+def test_a_value_on_the_labels_own_line_is_never_downgraded() -> None:
+    """The rescue changes nothing about the readings the pipeline already
+    ships: one engine, no caption, on the line -> RESOLVED as before."""
+    reading = read_abo([FA_LABEL, FA_VALUE], [], lattice=ruled(0.29, 0.32))
+    assert reading.rescued is None
+    assert reconcile_abo(reading).status is AboStatus.RESOLVED
+
+
+# What the ruled-row rule ADMITS. Each of these is a real shape the corpus
+# contains or a construction the code path allows; they are pinned so that a
+# later change to the window has to change a test rather than a number.
+
+
+def test_an_HLA_shaped_token_in_the_band_is_admitted_as_a_blood_group() -> None:
+    """`B-` is a blood group and an HLA locus letter with a dash. Geometry
+    cannot separate them, so this is admitted — and, uncorroborated, it is
+    exactly the class F1 sends to a person."""
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "B-", 0.67)], lattice=ruled(0.29, 0.32))
+    assert (reading.group, reading.rh) == ("B", Rh.NEGATIVE)
+    assert reconcile_abo(reading).status is AboStatus.REVIEW_REQUIRED
+
+
+def test_a_second_subjects_value_eight_heights_along_the_row_is_admitted() -> None:
+    """The window reaches `_MAX_GAP` (10) label heights along the row, which the
+    shipped line rule does too. A page printing two people's groups on one row
+    would bind the wrong one; measured, 0 of the 43 gains is a comparison
+    sheet, and comparison sheets are refused upstream."""
+    far = offset_box(FA_LABEL, "A+", 0.67, x0=0.39)
+    assert FA_LABEL.x0 - far.x1 == pytest.approx(8 * FA_LABEL.height)
+    reading = read_abo([FA_LABEL], [far], lattice=ruled(0.29, 0.32))
+    assert reading.rescued is AboRescue.BAND
+    assert reading.group == "A"
+
+
+def test_a_tall_multi_line_anchor_stretches_the_absolute_reach() -> None:
+    """The reach is one ANCHOR height, so a three-line Persian block reaches a
+    whole printed line away. The centre rescue refuses out-of-scale anchors;
+    the ruled row does not, because the ruling is the cell boundary."""
+    tall = Box(x0=0.60, y0=0.28, x1=0.70, y1=0.34, text=GROUP_LABEL_FA)
+    value = offset_box(tall, "A+", 0.75, h=0.02)
+    reading = read_abo([tall], [value], lattice=ruled(0.25, 0.32))
+    assert reading.rescued is AboRescue.BAND
+    assert reading.group == "A"
+
+
+def test_a_second_printed_line_inside_a_two_height_band_is_admitted() -> None:
+    """A band may be two label heights tall and hold two printed lines. The
+    value on the OTHER line is inside the row and is taken."""
+    other_line = Box(x0=0.20, y0=0.2866, x1=0.30, y1=0.3066, text="نام بیمار")
+    reading = read_abo(
+        [FA_LABEL, other_line], [offset_box(FA_LABEL, "A+", 0.67)], lattice=ruled(0.29, 0.33)
+    )
+    assert reading.rescued is AboRescue.BAND
+
+
+def test_the_absolute_reach_stops_just_past_one_label_height() -> None:
+    """A token with NO vertical overlap at all is admitted while it is within
+    one anchor height of the label's centre, and refused past it."""
+    lattice = ruled(0.2975, 0.335)
+    near = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", -0.975)], lattice=lattice)
+    far = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", -1.05)], lattice=lattice)
+    assert near.rescued is AboRescue.BAND
+    assert far.rescued is None
+
+
+def test_an_empty_cell_between_the_label_and_the_value_does_not_refuse() -> None:
+    """4 of the 43 have two vertical rulings between label and value: one
+    repeated form geometry with an EMPTY intermediate cell, and the shipped
+    control shows the same 6% share, so it is the form and not a defect."""
+    verticals = (Ruling(0.28, 0.34, 0.52, 0.52), Ruling(0.28, 0.34, 0.56, 0.56))
+    reading = read_abo(
+        [FA_LABEL],
+        [offset_box(FA_LABEL, "A+", 0.67)],
+        lattice=ruled(0.29, 0.32, vertical=verticals),
+    )
+    assert reading.rescued is AboRescue.BAND
+
+
+def test_a_value_shaped_box_standing_between_them_refuses_the_rescue() -> None:
+    """F4. Nothing may stand in a cell between the label and the value: if
+    something does, the value is not the nearest thing the label owns."""
+    between = Box(x0=0.52, y0=0.2866, x1=0.56, y1=0.3066, text="+")
+    reading = read_abo(
+        [FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67), between], lattice=ruled(0.29, 0.32)
+    )
+    assert reading.rescued is None
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+
+
+def test_the_inside_x_span_case_is_rescued_only_by_the_ruled_row() -> None:
+    """A Persian line box swallows the Latin value that sits inside it — the
+    shape of the one labelled miss this rule recovers. On a RULED page the row
+    is the cell and the value is taken; with no row, the centre rescue refuses
+    the inside-x-span branch outright (an HLA-row token across a ruling is what
+    it admitted in the corpus)."""
+    inside = offset_box(FA_LABEL, "A+", 0.67, x0=0.62)
+    assert read_abo([FA_LABEL], [inside], lattice=ruled(0.29, 0.32)).rescued is AboRescue.BAND
+    assert read_abo([FA_LABEL], [inside], lattice=None).status is AboStatus.REVIEW_REQUIRED
+
+
+# --- the centre band, on pages that print no ruled row -----------------------
+#
+# The gates are what make this shippable, and each was measured on the 99
+# ungated admissions: below the label centre 5, partial contradiction 7,
+# ruling between 2-4, out-of-scale anchor 4, a nearer label owning the token 6,
+# inside-x-span 1. What survives is +82 documents and one document LOST, which
+# is the point of fix 7: the shipped code publishes an Rh sign a second engine
+# contradicts, and this rule sends that page to a person instead.
+
+
+def persian_page(*extra: Box) -> list[Box]:
+    """Filler Persian boxes so the page has an ordinary label scale."""
+    return [
+        Box(x0=0.10, y0=y, x1=0.20, y1=y + 0.02, text="متن") for y in (0.60, 0.64, 0.68)
+    ] + list(extra)
+
+
+def test_a_value_just_above_an_unruled_label_is_read() -> None:
+    """C6. Nothing else on the page: the intended case, and the only one no
+    gate can distinguish from a wrong-line token."""
+    value = offset_box(FA_LABEL, "A+", 0.67)
+    reading = read_abo([FA_LABEL], [value], lattice=None)
+    assert reading.status is AboStatus.RESOLVED
+    assert (reading.group, reading.rh) == ("A", Rh.POSITIVE)
+    assert reading.rescued is AboRescue.CENTRE
+    assert reconcile_abo(reading).status is AboStatus.RESOLVED
+
+
+def test_a_latin_label_takes_a_value_just_above_it_too() -> None:
+    """C12. The rightwards branch, same reach."""
+    reading = read_abo([], [EN_LABEL, offset_box(EN_LABEL, "AB+", 0.67, x0=0.33)], lattice=None)
+    assert reading.status is AboStatus.RESOLVED
+    assert (reading.group, reading.rh) == ("AB", Rh.POSITIVE)
+    assert reading.rescued is AboRescue.CENTRE
+
+
+def test_a_centre_rescue_is_never_downgraded_for_being_uncorroborated() -> None:
+    """F1 downgrades the RULED-ROW route only. The centre route's own answer to
+    "nothing corroborates this" is the `abo_band_rescue` review stratum, not a
+    per-document refusal: 82 documents with 35/35 caption agreement and zero
+    human checks is a stratum-sized question, not a per-cell one."""
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", 0.67)], lattice=None)
+    assert len(reading.value_boxes) == 1
+    assert reconcile_abo(reading).status is AboStatus.RESOLVED
+
+
+def test_a_token_owned_by_a_nearer_label_on_its_own_line_is_refused() -> None:
+    """C1. The line above prints another field, and its label is nearer to the
+    token than ours with more of the token's height beside it."""
+    other = Box(x0=0.52, y0=0.2866, x1=0.58, y1=0.3066, text="نام")
+    reading = read_abo(
+        persian_page(FA_LABEL, other), [offset_box(FA_LABEL, "O+", 0.67)], lattice=None
+    )
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_same_ink_partner_does_not_buy_a_token_off_another_field() -> None:
+    """C1c. Two engines agreeing tests INK, not LINE: both boxes sit on the
+    other field's row, and the ownership gate refuses both."""
+    other = Box(x0=0.52, y0=0.2866, x1=0.58, y1=0.3066, text="نام")
+    token = offset_box(FA_LABEL, "O+", 0.67)
+    reading = read_abo(
+        persian_page(FA_LABEL, other, overlapping(token, "O+")), [token], lattice=None
+    )
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_better_aligned_label_at_the_same_distance_takes_the_token() -> None:
+    """C9b. Without the tie-break a two-letter field label on the line above
+    walks through: it is no NEARER than ours, and the token is squarely on its
+    line and only a third on ours."""
+    other = Box(x0=0.60, y0=0.2866, x1=0.66, y1=0.3066, text="کد")
+    reading = read_abo(
+        persian_page(FA_LABEL, other), [offset_box(FA_LABEL, "A+", 0.67)], lattice=None
+    )
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_ownership_holds_on_the_rightwards_side_too() -> None:
+    """C9c. A Latin label reads to its right, so the competing label is the one
+    between it and the token."""
+    other = Box(x0=0.36, y0=0.2866, x1=0.42, y1=0.3066, text="Sex")
+    reading = read_abo([], [EN_LABEL, other, offset_box(EN_LABEL, "A+", 0.67)], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_an_out_of_scale_label_box_cannot_reach_the_next_line() -> None:
+    """C1b. A 2.5-line Persian block reaching down at normal pitch. The reach
+    is a fraction of the ANCHOR's height, so an over-large box buys itself a
+    longer arm; the scale gate compares it against the page's own PERSIAN
+    median, because a shipped Persian label runs 1.6x the Latin one."""
+    tall = Box(x0=0.60, y0=0.28, x1=0.70, y1=0.33, text=GROUP_LABEL_FA)
+    token = Box(x0=0.44, y0=0.265, x1=0.49, y1=0.285, text="A-")
+    reading = read_abo(persian_page(tall), [token], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_five_line_label_box_is_refused_by_the_same_gate() -> None:
+    """C10. The two worst in the corpus ran 4.9x and 5.0x the page median."""
+    line_box = Box(x0=0.55, y0=0.26, x1=0.75, y1=0.36, text=GROUP_LABEL_FA)
+    token = Box(x0=0.35, y0=0.245, x1=0.40, y1=0.265, text="A+")
+    reading = read_abo(persian_page(line_box), [token], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_ruling_between_the_label_and_the_token_refuses_it() -> None:
+    """C2. A reference range `0-5` split by the recognizer: `0-` parses as O
+    NEGATIVE through the digit-zero repair. The page prints a ruling between
+    that row and the label's, and the grid outranks the distance."""
+    fragment = Box(x0=0.44, y0=0.2866, x1=0.49, y1=0.3066, text="0-")
+    rest = Box(x0=0.395, y0=0.2866, x1=0.435, y1=0.3066, text="5")
+    assert read_abo([FA_LABEL], [fragment, rest], lattice=None).group == "O"
+    reading = read_abo([FA_LABEL], [fragment, rest], lattice=ruled(0.30))
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_token_below_the_label_centre_is_never_rescued() -> None:
+    """C3. `B*` on the HLA row below, read as `B+` because `+` is one of the
+    star variants. Shipped values sit ABOVE their label in 94-96% of resolved
+    cells, and every below-centre rescue in the corpus was a ruling-crossing or
+    a partial contradiction."""
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "B+", -0.67)], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_latin_label_below_its_own_line_is_refused_too() -> None:
+    """C11."""
+    reading = read_abo([], [EN_LABEL, offset_box(EN_LABEL, "AB+", -0.67, x0=0.33)], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.group is None
+
+
+def test_a_sign_in_the_cell_contradicting_the_rescued_token_refuses_it() -> None:
+    """C5. 7 of the 9 corpus cases: the label's OWN cell holds a lone `-` and
+    the rescued token says `+`. Publishing over that is best-guess acceptance
+    of ambiguous critical OCR; the page keeps its partial review reason."""
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="-")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.reason == "an Rh sign with no group letter in its cell"
+
+
+def test_a_letter_in_the_cell_contradicting_the_rescued_token_refuses_it() -> None:
+    """C5b. The same rule for the group letter."""
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="A")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert reading.reason == "a group letter with no Rh sign in its cell"
+
+
+def test_a_partial_that_agrees_with_the_rescued_token_does_not_refuse_it() -> None:
+    """The gate refuses CONTRADICTION, not company: a lone `+` in the cell and
+    a rescued `B+` are the same claim, and the sign is not overridden."""
+    in_cell = Box(x0=0.44, y0=0.30, x1=0.47, y1=0.32, text="+")
+    rescued = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="B+")
+    reading = read_abo([FA_LABEL], [in_cell, rescued], lattice=None)
+    assert reading.status is AboStatus.RESOLVED
+    assert (reading.group, reading.rh) == ("B", Rh.POSITIVE)
+    assert reading.rescued is AboRescue.CENTRE
+
+
+def test_the_one_document_the_centre_rescue_costs_goes_to_a_person() -> None:
+    """Fix 7, and the whole of "lost 1": a cell whose value the pipeline ships
+    today on one engine's sign, with the other engine's box a third of a line
+    up saying the opposite. The rescue makes the cell doubled, and a doubled
+    cell is a question, not a value. Strict-never-worse is recorded in
+    HUMAN_ACTIONS.md rather than decided here."""
+    shipped = Box(x0=0.44, y0=0.30, x1=0.49, y1=0.32, text="A+")
+    other_engine = Box(x0=0.50, y0=0.2866, x1=0.55, y1=0.3066, text="A-")
+    assert read_abo([FA_LABEL], [shipped], lattice=None).status is AboStatus.RESOLVED
+    reading = read_abo([FA_LABEL, other_engine], [shipped], lattice=None)
+    assert reading.status is AboStatus.REVIEW_REQUIRED
+    assert "more than one blood-group value" in reading.reason
+
+
+@pytest.mark.parametrize(
+    ("offset", "rescue"),
+    [(0.60, None), (0.70, AboRescue.CENTRE), (0.80, "refused")],
+)
+def test_the_reach_the_centre_band_actually_opens(offset: float, rescue: object) -> None:
+    """Why `_RESCUE_BAND` is 0.75 and why 0.50 would gain nothing.
+
+    Two boxes of equal height share `1 - offset` of their extent, so anything
+    closer than 0.65 anchor heights ALREADY passes the 0.35 line test and needs
+    no rescue at all. The window this constant opens is (0.65h, 0.75h]; a 0.50h
+    setting opens nothing. At 1.0h the yield is 137 documents and the
+    translated-anchor placebo leaks +171 hits, which is why the reach stops
+    here.
+    """
+    reading = read_abo([FA_LABEL], [offset_box(FA_LABEL, "A+", offset)], lattice=None)
+    if rescue == "refused":
+        assert reading.status is AboStatus.REVIEW_REQUIRED
+    else:
+        assert reading.status is AboStatus.RESOLVED
+        assert reading.rescued is rescue

@@ -56,6 +56,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from kidneymatch.documents.abo import AboStatus, read_abo, reconcile_abo  # noqa: E402
 from kidneymatch.ocr.anchors import Box  # noqa: E402
+from kidneymatch.ocr.lattice import Lattice, lattice_for  # noqa: E402
+from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 
 EV = "facts/v1"
 DOUBLED = "more than one blood-group value in a single cell"
@@ -67,7 +69,39 @@ def boxes_of(geometry_json: str | None, texts_json: str | None) -> list[Box]:
     return [Box(b[0], b[1], b[2], b[3], t) for b, t in zip(geometry, texts, strict=False)]
 
 
-def run(facts: Path, persian_db: Path, ocr_db: Path, *, dry_run: bool) -> Counter:
+def raw_lattices(geometry_db: Path, keep: set[str] | None = None) -> dict[str, Lattice]:
+    """Every page's printed grid in the frame the STORED boxes are in.
+
+    RAW, never levelled: `read_abo` is handed the boxes as the two passes wrote
+    them, so a grid rotated into the level frame would place the row band
+    somewhere the boxes are not. Measured on the ruled-row rescue, the levelled
+    grid gives 45 documents instead of 43 — three ROTATE pages gained on a row
+    that is not theirs and one lost.
+    """
+    if not geometry_db.exists():
+        return {}
+    con = sqlite3.connect(f"file:{geometry_db.as_posix()}?mode=ro", uri=True)
+    try:
+        rows = {
+            sha: (int(w), int(h), hj, vj)
+            for sha, w, h, hj, vj in con.execute(
+                "SELECT sha256, width, height, h_rulings_json, v_rulings_json FROM page_geometry "
+                "WHERE geometry_version=? AND h_rulings_json IS NOT NULL AND width IS NOT NULL",
+                (GEOMETRY_VERSION,),
+            )
+            if keep is None or sha in keep
+        }
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        con.close()
+    built = ((sha, lattice_for(sha, rows, None)) for sha in rows)
+    return {sha: lattice for sha, lattice in built if lattice is not None}
+
+
+def run(
+    facts: Path, persian_db: Path, ocr_db: Path, geometry_db: Path | None = None, *, dry_run: bool
+) -> Counter:
     con = sqlite3.connect(facts)
     tally: Counter[str] = Counter()
     # Only the cells this change can affect: the ones refused as doubled, plus
@@ -96,10 +130,11 @@ def run(facts: Path, persian_db: Path, ocr_db: Path, *, dry_run: bool) -> Counte
             L[sha] = boxes_of(b, t)
     persian.close()
     ocr.close()
+    grids = raw_lattices(geometry_db, set(work)) if geometry_db else {}
 
     now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
     for sha, (status, value, source) in sorted(work.items()):
-        reading = read_abo(P.get(sha, []), L.get(sha, []))
+        reading = read_abo(P.get(sha, []), L.get(sha, []), lattice=grids.get(sha))
         if reading.status is not AboStatus.RESOLVED:
             continue
         if len(reading.value_boxes) < 2:
@@ -164,9 +199,10 @@ def main() -> int:
     parser.add_argument("--facts", type=Path, default=ROOT / "data/derived/facts.sqlite")
     parser.add_argument("--persian", type=Path, default=ROOT / "data/derived/persian_pass.sqlite")
     parser.add_argument("--ocr", type=Path, default=ROOT / "data/derived/ocr_pass.sqlite")
+    parser.add_argument("--geometry", type=Path, default=ROOT / "data/derived/geometry.sqlite")
     parser.add_argument("--dry-run", action="store_true", help="count, change nothing")
     args = parser.parse_args()
-    tally = run(args.facts, args.persian, args.ocr, dry_run=args.dry_run)
+    tally = run(args.facts, args.persian, args.ocr, args.geometry, dry_run=args.dry_run)
     print(f"{'would re-read' if args.dry_run else 're-read'} the doubled blood-group cells")
     for name, count in sorted(tally.items(), key=lambda kv: -kv[1]):
         if count:

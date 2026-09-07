@@ -23,16 +23,41 @@ English label's to its RIGHT. Reading the wrong way crosses into another cell.
 The blood group itself is written in Latin characters on a Persian form, so a
 Persian-pass anchor routinely addresses a Latin-pass value box; both passes
 store normalised coordinates in the same frame, which is what makes that legal.
+
+**The cell is not the label's box.** The window was a LINE — 35% of the shorter
+box's height had to overlap the label's — and the two engines do not draw their
+rectangles on the same line, so a value can be the only thing in the label's
+printed cell and still be refused. Two rescues now cover that, and they rest on
+different evidence, which is why they are marked differently (`AboRescue`):
+
+* on a page that rules a grid, the row between two rulings IS the cell. 45
+  documents corpus-wide, 0 values changed, and the one labelled miss it
+  recovers agrees with the human. A band-only reading is still published only
+  when two engines boxed the same ink or a caption agrees on the letter,
+  because 13 of the 43 measured gains were one engine's box with nothing behind
+  it and the safety evidence for that class is nil;
+* on a page that rules nothing, only distance and direction place the value, so
+  the reach is 0.75 label heights ABOVE the label's centre and six gates stand
+  in front of it. 51 documents. NO PERSON HAS CHECKED ONE OF THESE, and 35 of
+  35 with a caption agree with it; the `abo_band_rescue` review stratum is what
+  will settle whether they are right.
+
+Both cost one document: a cell whose sign the pipeline publishes today on one
+engine's word, with the other engine's box a third of a line away saying the
+opposite. That page now goes to a person, which is the correct answer and a
+worse yield number.
 """
 
 from __future__ import annotations
 
 import re
+import statistics
 from dataclasses import dataclass
 from enum import StrEnum
 
 from kidneymatch.documents.role import normalise
 from kidneymatch.ocr.anchors import Box
+from kidneymatch.ocr.lattice import Lattice, RowBand
 
 
 class AboStatus(StrEnum):
@@ -59,6 +84,21 @@ class AboSource(StrEnum):
     PATIENT_REPORTED_ON_FORM = "PATIENT_REPORTED_ON_FORM"
     CAPTION_CLAIM = "CAPTION_CLAIM"
     NONE = "NONE"
+
+
+class AboRescue(StrEnum):
+    """How a value box entered the cell when it missed the label's own line.
+
+    `BAND` is the label's printed row: where the page rules a grid, the space
+    between two rulings IS the cell, and a value inside it belongs to the label
+    inside it. `CENTRE` is a page that rules nothing, where only distance and
+    direction place the value; it carries six admission gates and NO HUMAN HAS
+    EVER CHECKED ONE OF ITS READINGS, which is what the `abo_band_rescue`
+    review stratum exists to fix.
+    """
+
+    BAND = "BAND"
+    CENTRE = "CENTRE"
 
 
 # Case-sensitive. `D` is the Rh(D) antigen rather than a blood group, and lower
@@ -103,6 +143,50 @@ _MAX_LABEL_CHARS = 25
 _MAX_GAP = 10.0  # anchor heights; measured p99 of the real gap is 9.36
 _OVERLAP = 0.35
 _SLACK = 0.30
+
+# --- the cell window (CV_RESEARCH s19 item 1) -------------------------------
+#
+# `_OVERLAP` is a test against the label's LINE, and the two recognizers do not
+# draw their rectangles on the same line: a Persian line box runs below its
+# baseline while the Latin capitals sit above it, so a value can share less
+# than a third of its height with its own label and still be the only thing in
+# the label's printed cell. Measured, that costs 43 documents on ruled pages
+# and a further 82 on unruled ones.
+#
+# A band taller than this spans two printed rows and locates no cell. The cap
+# is NOT a collision-free boundary: the nearest observed same-ink cross-engine
+# SIGN disagreement sits in a band 2.08 anchor heights tall — 0.08h outside,
+# about 1.6 px at the median 20 px label. 2.0 was chosen as the loosest setting
+# that lost nothing, which is a fitted constant, not a measured margin. That is
+# why a band-only reading has to be corroborated before it is published.
+_MAX_BAND_HEIGHTS = 2.0
+# How far along its own row a value may sit from the label's centre.
+_ROW_REACH = 1.0
+# With no ruled row, how far ABOVE the label's centre a value may sit. Boxes of
+# equal height that fail the line test are already 0.65 heights apart, so this
+# opens the window (0.65h, 0.75h]; at 1.0h the yield is 137 documents and the
+# translated-anchor placebo leaks +171 hits. Values sit above their label in
+# 94-96% of resolved cells, and every below-centre rescue in the corpus was a
+# ruling-crossing or a partial contradiction.
+_RESCUE_BAND = 0.75
+# The reach is a fraction of the ANCHOR's height, so an over-large label box
+# buys itself a longer arm. Measured against the page's PERSIAN median: a
+# shipped Persian label runs 1.6x the Latin median, which would refuse ordinary
+# labels. Refuses 4 of 99, including line boxes at 4.9x and 5.0x.
+_MAX_ANCHOR_SCALE = 1.5
+# How much better aligned a competing label must be to own the token when it is
+# no nearer to it than the anchor is.
+_ALIGNMENT_TIE_BREAK = 0.25
+
+BAND_RESCUE_REASON = "the value sits on the label's own ruled row rather than on its line"
+CENTRE_RESCUE_REASON = (
+    "the value box was admitted by the 0.75 label-height centre band; this page rules no row "
+    "around the field"
+)
+UNCORROBORATED_RESCUE_REASON = (
+    "a value sits on the label's ruled row but not on its line; one engine read it and nothing "
+    "corroborates it"
+)
 
 
 def _is_persian_label(text: str) -> bool:
@@ -167,6 +251,10 @@ class AboReading:
     value_boxes: tuple[Box, ...] = ()
     raw_value: str | None = None
     repaired: bool = False
+    # Set when the value missed the label's own line and was admitted by the
+    # ruled row or the centre band instead. It travels into the fact row's
+    # `rule_id` so the group can be found, sampled and withdrawn.
+    rescued: AboRescue | None = None
     reason: str = ""
 
 
@@ -226,27 +314,194 @@ def _parse(token: str) -> tuple[str, Rh, bool] | None:
     )
 
 
-def _cell(anchor: Box, boxes: list[Box], rightwards: bool) -> list[Box]:
+def _ruling_between(lattice: Lattice | None, anchor: Box, b: Box) -> bool:
+    """Does the page rule a line between the label and the token?
+
+    Read at the token's own x, not at the ruling's middle: a ruling across a
+    page tilted a degree moves half a row's height end to end.
+    """
+    if lattice is None:
+        return False
+    low, high = sorted((anchor.centre_y, b.centre_y))
+    return any(r.spans(b.centre_x) and low < r.at_x(b.centre_x) < high for r in lattice.horizontal)
+
+
+def _blocked_in_band(
+    anchor: Box, b: Box, boxes: list[Box], band: RowBand, on_the_line: list[Box]
+) -> bool:
+    """Does anything stand in a cell between the label and the value?
+
+    The row rule reaches ten label heights along a row, which can cross an
+    intervening cell. Measured, the 4 corpus cases with two vertical rulings
+    between label and token have an EMPTY cell between them; if one did not,
+    the value nearest the label would not be this one.
+
+    A parseable token blocks only when it is on the label's OWN LINE, where the
+    shipped rule already owns it — that keeps this rule from taking a page the
+    pipeline resolves today. Two tokens that both need rescuing do not settle
+    each other by proximity: that cell is doubled, and a doubled cell is a
+    question for a person.
+    """
+    if b.x1 <= anchor.x0:
+        low, high = b.x1, anchor.x0
+    elif b.x0 >= anchor.x1:
+        low, high = anchor.x1, b.x0
+    else:
+        return False  # the value sits inside the label's own x-span
+    strict = {id(box) for box in on_the_line}
+    for other in boxes:
+        if other is anchor or other is b:
+            continue
+        if not (low <= other.x0 and other.x1 <= high):
+            continue
+        if not band.contains_y(other.centre_y):
+            continue
+        text = (other.text or "").strip()
+        if _parse(text):
+            if id(other) in strict:
+                return True
+            continue
+        if (
+            _LETTER_ONLY.match(text)
+            or _SIGN_ONLY.match(text)
+            or _is_persian_label(text)
+            or _LABEL_LATIN.match(text)
+        ):
+            return True
+    return False
+
+
+def _owned_by_a_nearer_label(anchor: Box, token: Box, boxes: list[Box]) -> bool:
+    """Is some other field's label the one this token belongs to?
+
+    The mainline binder refuses a candidate that sits closer to a different
+    label (`ocr/anchors.py`, nearest-anchor ownership). `_cell` has no such
+    rule, which is survivable while the window is the label's own line and is
+    not once it reaches the line above. The tie-break is what stops a two-letter
+    field label on that line from walking through on distance alone.
+    """
+    label_right = anchor.centre_x > token.centre_x
+    anchor_gap = (anchor.x0 - token.x1) if label_right else (token.x0 - anchor.x1)
+    anchor_overlap = max(min(anchor.y1, token.y1) - max(anchor.y0, token.y0), 0.0)
+    reach = _MAX_GAP * token.height
+    for other in boxes:
+        if other is anchor or other is token:
+            continue
+        text = (other.text or "").strip()
+        if not text or _parse(text) or not any(ch.isalpha() for ch in text):
+            continue
+        gap = (other.x0 - token.x1) if label_right else (token.x0 - other.x1)
+        if gap < 0 or gap > reach:
+            continue
+        overlap = min(other.y1, token.y1) - max(other.y0, token.y0)
+        if overlap <= _OVERLAP * min(other.height, token.height):
+            continue
+        if gap < anchor_gap and overlap > anchor_overlap:
+            return True
+        if (
+            gap <= anchor_gap + _ALIGNMENT_TIE_BREAK * token.height
+            and overlap > anchor_overlap + _ALIGNMENT_TIE_BREAK * token.height
+        ):
+            return True
+    return False
+
+
+def _contradicts_the_cell(token: Box, strict_texts: list[str]) -> bool:
+    """Does the label's OWN cell already say something else?
+
+    Seven of the nine corpus cases where the cell holds a partial are a lone
+    `-` in the cell against a rescued `+`. Publishing over that is best-guess
+    acceptance of ambiguous critical OCR; the page keeps its partial reason and
+    goes to a person.
+    """
+    parsed = _parse((token.text or "").strip())
+    if parsed is None:
+        return False
+    letter, rh, _ = parsed
+    sign = "+" if rh is Rh.POSITIVE else "-"
+    for text in strict_texts:
+        if _SIGN_ONLY.match(text) and text != sign:
+            return True
+        match = _LETTER_ONLY.match(text)
+        if match and ("O" if match.group(1) == "0" else match.group(1)) != letter:
+            return True
+    return False
+
+
+def _cell(
+    anchor: Box,
+    boxes: list[Box],
+    rightwards: bool,
+    band: RowBand | None = None,
+    lattice: Lattice | None = None,
+    persian_median: float | None = None,
+) -> tuple[list[Box], dict[int, AboRescue]]:
+    """The boxes in this label's cell, and how any of them got there.
+
+    The horizontal window — direction, `_SLACK`, `_MAX_GAP`, the inside-x-span
+    branch — is unchanged by either rescue. Only the vertical test is loosened,
+    and only for boxes that would otherwise be dropped: the strict reading is
+    computed first and always comes first in the result, so the value the
+    pipeline ships today is still the one it reads.
+    """
     height = anchor.height
     slack = _SLACK * height
     limit = _MAX_GAP * height
-    out = []
+    if band is not None and band.height > _MAX_BAND_HEIGHTS * height:
+        # Two printed rows, not a cell. The page is then treated as unruled for
+        # this anchor, which is what makes the centre rescue reachable.
+        band = None
+    strict: list[Box] = []
+    candidates: list[tuple[Box, bool, float]] = []
     for b in boxes:
         if b is anchor:
             continue
-        overlap = min(anchor.y1, b.y1) - max(anchor.y0, b.y0)
-        if overlap <= _OVERLAP * min(height, max(b.y1 - b.y0, 1e-6)):
-            continue
         if rightwards:
-            if b.x0 >= anchor.x1 - slack and (b.x0 - anchor.x1) <= limit:
-                out.append(b)
+            if not (b.x0 >= anchor.x1 - slack and (b.x0 - anchor.x1) <= limit):
+                continue
+            inside_span = False
         elif b.x1 <= anchor.x0 + slack and (anchor.x0 - b.x1) <= limit:
-            out.append(b)
+            inside_span = False
         elif b.x0 >= anchor.x0 - slack and b.x1 <= anchor.x1 + slack:
             # Persian is detected at line level, so the line box sometimes
             # swallows the Latin value that sits inside it.
-            out.append(b)
-    return out
+            inside_span = True
+        else:
+            continue
+        overlap = min(anchor.y1, b.y1) - max(anchor.y0, b.y0)
+        if overlap > _OVERLAP * min(height, max(b.y1 - b.y0, 1e-6)):
+            strict.append(b)
+        else:
+            candidates.append((b, inside_span, overlap))
+
+    rescued: dict[int, AboRescue] = {}
+    if not candidates:
+        return strict, rescued
+    strict_texts = [(b.text or "").strip() for b in strict]
+    for b, inside_span, overlap in candidates:
+        offset = anchor.centre_y - b.centre_y  # positive: the token sits ABOVE
+        if band is not None:
+            if (
+                band.contains_y(b.centre_y)
+                and abs(offset) <= _ROW_REACH * height
+                and not _blocked_in_band(anchor, b, boxes, band, strict)
+            ):
+                rescued[id(b)] = AboRescue.BAND
+            continue
+        if inside_span or overlap <= 0:
+            continue
+        if not 0 < offset <= _RESCUE_BAND * height:
+            continue
+        if _ruling_between(lattice, anchor, b):
+            continue
+        if persian_median is not None and height > _MAX_ANCHOR_SCALE * persian_median:
+            continue
+        if _owned_by_a_nearer_label(anchor, b, boxes):
+            continue
+        if _contradicts_the_cell(b, strict_texts):
+            continue
+        rescued[id(b)] = AboRescue.CENTRE
+    return strict + [b for b, _, _ in candidates if id(b) in rescued], rescued
 
 
 def _iou(a: Box, b: Box) -> float:
@@ -302,8 +557,16 @@ def _one_token_read_twice(
     return len(engines) > 1
 
 
-def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
-    """Read the blood group from its printed cell, or abstain."""
+def read_abo(
+    persian_boxes: list[Box], latin_boxes: list[Box], lattice: Lattice | None = None
+) -> AboReading:
+    """Read the blood group from its printed cell, or abstain.
+
+    `lattice` is the page's printed grid in the frame the BOXES are in. Callers
+    that rectify a tilted page for the HLA rules must still pass the RAW-frame
+    lattice here, because these boxes are the stored ones: the levelled grid
+    against raw boxes reads a different row on the 1,591 ROTATE pages.
+    """
     everything = list(persian_boxes) + list(latin_boxes)
     # Which engine drew each box, by identity: the Persian pass (easyocr) and
     # the Latin pass (onnxtr) are independent in vendor, detector and
@@ -325,10 +588,27 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
         else AboSource.LABORATORY_PRINTED
     )
 
-    found: list[tuple[str, Rh, bool, Box, Box, str, tuple[Box, ...]]] = []
+    # The scale gate compares a label box against the PERSIAN pass's own boxes:
+    # a shipped Persian label runs 1.6x the Latin median, so the Latin one
+    # would refuse ordinary labels.
+    persian_median = statistics.median([b.height for b in persian_boxes]) if persian_boxes else None
+
+    found: list[tuple[str, Rh, bool, Box, Box, str, tuple[Box, ...], AboRescue | None]] = []
     partial = ""
     for anchor, rightwards in anchors:
-        cell = _cell(anchor, everything, rightwards)
+        band = (
+            lattice.row_band(anchor.centre_x, anchor.centre_y, anchor.height)
+            if lattice is not None
+            else None
+        )
+        cell, rescued = _cell(
+            anchor,
+            everything,
+            rightwards,
+            band=band,
+            lattice=lattice,
+            persian_median=persian_median,
+        )
         values = []
         for b in cell:
             token = (b.text or "").strip()
@@ -344,9 +624,21 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
             )
         if values:
             (group, rh, repaired), vbox, raw = values[0]
+            routes = {rescued[id(b)] for _, b, _ in values if id(b) in rescued}
             # Every box that agreed travels with the fact, so a reviewer can
             # see the agreement rather than take it on trust.
-            found.append((group, rh, repaired, anchor, vbox, raw, tuple(b for _, b, _ in values)))
+            found.append(
+                (
+                    group,
+                    rh,
+                    repaired,
+                    anchor,
+                    vbox,
+                    raw,
+                    tuple(b for _, b, _ in values),
+                    next(iter(routes), None),
+                )
+            )
             continue
         texts = [(b.text or "").strip() for b in cell]
         if any(_LETTER_ONLY.match(t) for t in texts) and any(_SIGN_ONLY.match(t) for t in texts):
@@ -358,13 +650,13 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
         elif any(_SIGN_ONLY.match(t) for t in texts):
             partial = partial or "an Rh sign with no group letter in its cell"
 
-    distinct = {(g, rh) for g, rh, _, _, _, _, _ in found}
+    distinct = {(g, rh) for g, rh, _, _, _, _, _, _ in found}
     if len(distinct) > 1:
         return AboReading(
             AboStatus.REVIEW_REQUIRED, source=source, reason="two cells report different groups"
         )
     if found:
-        group, rh, repaired, anchor, vbox, raw, boxes = found[0]
+        group, rh, repaired, anchor, vbox, raw, boxes, route = found[0]
         return AboReading(
             AboStatus.RESOLVED,
             group=group,
@@ -375,6 +667,14 @@ def read_abo(persian_boxes: list[Box], latin_boxes: list[Box]) -> AboReading:
             value_boxes=boxes,
             raw_value=raw,
             repaired=repaired,
+            rescued=route,
+            reason=(
+                ""
+                if route is None
+                else BAND_RESCUE_REASON
+                if route is AboRescue.BAND
+                else CENTRE_RESCUE_REASON
+            ),
         )
     return AboReading(
         AboStatus.REVIEW_REQUIRED,
@@ -417,6 +717,22 @@ def reconcile_abo(
                 subject_identity_questioned=True,
                 reason="the caption states a different blood group from the form",
             )
+        if image.rescued is AboRescue.BAND and len(image.value_boxes) < 2 and single is None:
+            # The band says which CELL the value is in; it says nothing about
+            # whether the value was read correctly. 13 of the 43 documents this
+            # rule reaches are one engine's box with no second engine over the
+            # same ink and no caption, and the safety evidence for that class
+            # is nil — every independent agreement measured (17 captions, 1
+            # human) lies in the other two classes. So the candidate goes to a
+            # person WITH its box, which is more than the generic refusal it
+            # replaces gave a reviewer.
+            return AboDecision(
+                AboStatus.REVIEW_REQUIRED,
+                None,
+                Rh.UNKNOWN,
+                image.source,
+                reason=UNCORROBORATED_RESCUE_REASON,
+            )
         agreed = single is not None and single[0] == image.group and single[1] is image.rh
         return AboDecision(
             AboStatus.RESOLVED,
@@ -424,6 +740,7 @@ def reconcile_abo(
             image.rh,
             image.source,
             agreed=agreed,
+            reason=image.reason,
             # Agreement corroborates only if the two claims are independent.
             # Where the form disclaims its own field, they may not be.
             independently_corroborated=(

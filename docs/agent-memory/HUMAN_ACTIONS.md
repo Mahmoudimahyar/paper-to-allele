@@ -318,3 +318,43 @@ yet; the review pack's `mid_res` stratum measures it (HA-008).
 - **Blocking now?** Not extraction. Yes for MATCH-ABO-001: a blood group that
   may belong to the other person on the page must not gate a match.
 
+## HA-019 — the blood-group cell window: two decisions only a person can make
+
+- **Status:** OPEN. Not blocking extraction; blocking promotion of the
+  centre-band readings, and blocking a settled answer on strict-never-worse.
+- **What shipped:** `documents/abo.py` admits a value that misses its label's
+  LINE when the page's own rulings put it in the label's ROW
+  (`AboRescue.BAND`), and, on a page that rules nothing, when it sits within
+  0.75 label heights ABOVE the label's centre behind six gates
+  (`AboRescue.CENTRE`). Measured over 23,485 documents with
+  `scripts/abo_window_check.py`: 96 documents gain a group (45 band, 51
+  centre), 0 values change, 1 is LOST.
+- **Decision 1 — strict-never-worse.** The one lost document is a cell the
+  pipeline resolves today on ONE engine's Rh sign, while the other engine's
+  box, a third of a line away, reads the opposite sign. The rescue makes the
+  cell doubled and sends it to a person. The mainline binder keeps the strict
+  reading in the equivalent case. Which is right is a policy question: is a
+  cross-engine sign disagreement over one field a reason to withdraw a shipped
+  value, or is the strict reading privileged because the window was designed
+  around it? The code currently withdraws it.
+- **Decision 2 — the centre band has no human check.** NO labelled document is
+  among the centre-band gains. 35 of 35 with a caption agree on the letter and
+  33 of 33 on the sign, but a caption is the poster's claim, not an independent
+  reading. Of the 82 measured centre gains, 10 have no box tying the value to
+  the label's line at all and 23 share a line with a Persian box that is not
+  the label's.
+- **What to do:** put at least 20 of the centre-band documents into the next
+  review pack — they carry the stratum `abo_band_rescue`, which is FIRST in
+  `scripts/review_pack.py::STRATA` — and read them. Promote the group only at
+  >= 95% agreement; withdraw it otherwise. The whole group is findable, and
+  withdrawable, by `rule_id LIKE 'abo/anchored-cell+%'`.
+- **Also worth a person's eye:** the per-family offsets are tight (FORM#1
+  -0.72..-0.63h over 42 documents), which reads as a fixed template relation
+  rather than drift. The principled replacement for a generic band on unruled
+  pages is an ADR 0007 per-family ABO relation.
+- **Find them:** `SELECT sha256, rule_id, status FROM fact WHERE field='ABO'
+  AND rule_id LIKE 'abo/anchored-cell+%' AND extraction_version='facts/v1'`
+- **Secret?** No. The pages are PHI and stay in the local, gitignored store.
+- **Blocking now?** Not extraction. Yes for treating a centre-band blood group
+  as something a match may rest on.
+

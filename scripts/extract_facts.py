@@ -492,8 +492,17 @@ def extract(
     frame: PageFrame | None = None,
     lattice: Lattice | None = None,
     row_slope: float = 0.0,
+    raw_lattice: Lattice | None = None,
 ) -> tuple[list[tuple], dict]:
-    """Every fact this document yields. Pure: no I/O, so it is testable."""
+    """Every fact this document yields. Pure: no I/O, so it is testable.
+
+    `lattice` is levelled with `frame`, because the HLA rules run on rectified
+    boxes. `raw_lattice` is the same grid in the frame the STORED boxes are in,
+    and it is what the blood-group reader needs: `read_abo` is given the boxes
+    as stored. Passing the levelled one instead changes which row the rescue
+    reads on the 1,591 ROTATE pages — measured, 45 documents gained instead of
+    43, with one raw-only page lost and three levelled-only pages gained.
+    """
     latin = document.boxes
     rows: list[tuple] = []
     comparison = is_comparison_sheet(latin)
@@ -631,8 +640,14 @@ def extract(
         value_boxes=_boxes([t.box for t in reading.tokens]),
     )
 
-    abo_reading = read_abo(persian, latin)
+    abo_reading = read_abo(persian, latin, lattice=raw_lattice)
     abo_decision = reconcile_abo(abo_reading)
+    # The route the value box took into the cell is part of the rule's
+    # identity: it is how this group is found in the facts table, sampled into
+    # a review pack, and withdrawn if the labels turn against it.
+    abo_rule_id = "abo/anchored-cell" + (
+        f"+{abo_reading.rescued.value.lower()}" if abo_reading.rescued else ""
+    )
     add(
         "ABO",
         abo_decision.status.value,
@@ -640,7 +655,7 @@ def extract(
         raw=abo_reading.raw_value,
         repaired=abo_reading.repaired,
         reason=abo_decision.reason or abo_reading.reason,
-        rule_id="abo/anchored-cell",
+        rule_id=abo_rule_id,
         source=abo_decision.source.value,
         anchor_box=_box(abo_reading.anchor_box),
         value_boxes=_boxes(
@@ -657,7 +672,7 @@ def extract(
         ),
         value=abo_decision.rh.value,
         reason="Rh is never synthesised when the cell does not print it",
-        rule_id="abo/anchored-cell",
+        rule_id=abo_rule_id,
         source=abo_decision.source.value,
     )
 
@@ -790,6 +805,7 @@ def run(
             frame,
             lattice_for(document, rulings, frame),
             row_slope_for(document, rulings, frame),
+            lattice_for(document, rulings, None),
         )
         facts.extend(rows)
         documents.append(
