@@ -389,6 +389,133 @@ whole group can be found and withdrawn if the decision is reversed.
 HA-017 records that the sentence in `AGENTS.md` now has a documented exception
 and should be reworded by a person rather than by an agent.
 
+## 12-b. A comparison sheet with ONE filled column (amended 2026-09-06)
+
+s12 above says "**a comparison sheet is refused outright**". This amends that,
+narrowly, and the amendment is recorded here because s12 is the operator's own
+decision and an agent may not quietly reverse one.
+
+**The operator's instruction, this session:** all eight segments of the s18
+loss are to be resolved. Comparison sheets are segment 2, and the refusal above
+is what makes them a segment: 450 pages, 0 cells, on one laboratory template.
+
+**What the pages actually are.** Family `None` on all 450. An identity block,
+then a header row `Recipient | Frequency | Donor | Frequency` — Recipient LEFT
+on 445 of 449 pages — then allele rows printed one locus per box with NO row
+labels at all (0 locus anchors on 427 of 450). On **419 of 450, only ONE column
+holds fully-qualified alleles**. Such a page prints two headings and describes
+ONE person. The heading above the filled column is the only thing on the page
+that says which.
+
+**The amendment, and the condition on it.** A comparison sheet may be bound
+when, and only when, the **subject-agreement gate** holds:
+
+> exactly one column holds fully-qualified values, the other column holds
+> nothing a person could have typed, and the document's own independent ROLE
+> fact is RESOLVED and names the same subject as the heading above the filled
+> column.
+
+The locus still comes from the value's printed prefix, exactly as s12 allows,
+and still only where the page anchors no label for it. What is NEW is that
+geometry now decides the PERSON as well: which column, plus the row-order and
+alignment constraints of the template. `scripts/column_bind.py` implements it
+with `source='column-bound'`, so the whole group is withdrawable — and each
+fact records in `rule_id` which ROLE source gated it, because that gate is 54%
+caption claims (150 of 276 binds) and 30% bare role words (84), against 15% on
+a strong printed field (42), so the weakest tier can be withdrawn on its own.
+
+**Everything the amendment does NOT permit.** A page with values under both
+headings, a third role word on the header row, a box reaching both columns, or
+a second column holding anything typed at all, is refused to `REVIEW_REQUIRED`
+with the tokens and the filled heading boxed (`source='column-bind-refused'`):
+40 pages, which the reviewer previously saw as three.
+
+**Those 40 are two groups, and they are not the same claim.** 15 pages / 26
+cells are refused because the PAGE prints two subjects, and only those carry
+"this page prints donor and recipient columns for two subjects"
+(`rule_id='column/two-subjects'`). The other 25 pages / 53 cells are refused
+because the column that should be empty is not blank, and what is in it is a
+date, a frequency or an 11-digit identifier rather than anything shaped like a
+typing: they carry a reason that says exactly that, under
+`rule_id='column/other-column-unread'`, and `review_pack` samples them as their
+own stratum. The emptiness predicate is deliberately wider than the parser — it
+has to be, or five of twelve real two-people pages bind — so it also catches
+the form's own printing, and writing a two-subject claim over a reference
+number would put a false statement about a patient's record into the medical
+review queue.
+
+A page whose geometry is clean but whose ROLE fact is missing is NEVER resolved
+— it is named for review only (`source='column-named+role-unconfirmed'`, 50
+pages / 108 cells), and the reason deliberately does not say which role,
+because the review page prints the reason beside the Role question the reviewer
+is meant to answer independently. That reason also states how many printed rows
+on the page got no crop at all because the second allele is printed without its
+own star (89 rows on 77 pages corpus-wide); `parse_allele_values` will not
+guess between a pair and one two-field value, so those rows are not proposals.
+
+**Why the gate is the condition and not a detail.** Sliding every token under
+the OTHER heading, with the gate off, binds 333 pages and names the wrong
+person on 272 of them. With it on, on the shipped code: 276 of 276 bound pages
+refuse the slide, and 276 of 276 refuse a MIRROR of their own filled column
+into the vacant one. It is the whole wrong-person defence, and the residual it
+does not cover is stated in the pass's docstring — pixels cannot certify a
+column blank, so a second column no engine boxed at all is gated by the ROLE
+fact alone.
+
+**Worth, measured from the shipped code by `--dry-run` against the live stores
+with every connection forced read-only:** 276 pages / 699 cells (A 219,
+DRB1 216, DQB1 146, B 118); 50 pages / 108 cells named; 40 pages / 79 cells
+into review; 84 refused outright; 276 + 50 + 40 + 84 = 450. Applied to a copy
+of `facts.sqlite`: 699 rows written, all RESOLVED, every one of them UNKNOWN
+"no anchor on this document" beforehand, and 0 already-RESOLVED cells changed
+anywhere. On the four label exports (1,287 cells scored, 774 judged): 616 to
+618 correct, 121 to 119 missed, 18 to 18 contradicted, nothing lost.
+
+**The B row, stated exactly.** B binds at all only because `glyphs.py` now
+reads the `Bw4,Bw6` epitope tail this template prints after the B pair. That
+parser change alone newly reads **279 tokens on 279 pages** (270 `B*`, 3 `8*`,
+6 other spellings; 180 of them comparison sheets, 99 not) and changes **ZERO
+mainline cells on every locus** — there is no B anchor on any of those pages,
+so the ordinary resolver never sees them. Its own yield is **+97 B cells
+through `scripts/prefix_bind.py`** (`--dry-run`, read-only, against the live
+stores), all on non-sheet pages, all two-valued, and 0 on comparison sheets —
+the 3,535 sheet cells stay behind the guard. No human label covers any of the
+97. The "+1 correct" belongs to `column_bind`, not to the parser.
+
+**That acceptance evidence has now been produced.** A full corpus extraction
+with the parser was compared by `refresh_facts.compare` against a full corpus
+extraction with the pre-branch `glyphs.py`, both written to scratch databases
+from the same read-only sources:
+
+    A     13,306 -> 13,306      DQB1  13,024 -> 13,024
+    B     13,136 -> 13,136      DRB1  12,912 -> 12,912
+    C      3,998 ->  3,998      DRB3  11,323 -> 11,323
+    DPA1      29 ->     29      DRB4   9,550 ->  9,550
+    DPB1      32 ->     32      DRB5  10,815 -> 10,815
+    DQA1     839 ->    839
+    0 second alleles gained, 0 dropped, 0 SWAPPED, no status transition at all
+
+0 RESOLVED deltas on every one of the eleven loci, which is what was owed.
+
+`prefix_bind.py` was hardened before that landed: its comparison-sheet guard
+returned an empty set on a query error — indistinguishable from a corpus with
+no sheets in it, and 180 two-role pages' B rows now sit behind it — and its
+star-less same-locus token was skipped past rather than tainting the page,
+which hid it from `MAX_VALUES`. Both are `tests/contracts/test_prefix_binding.py`.
+
+**Counting is the default.** `python scripts/column_bind.py` with no argument
+does not write: this pass reverses a recorded operator decision on 450 pages of
+real patient facts, so the write is `--write`, asked for by name. That differs
+from `prefix_bind.py` and `anchor_row_bind.py` deliberately.
+
+**Pass order.** `column_bind.py` runs AFTER `prefix_bind` and
+`anchor_row_bind`, and after any pass that writes ROLE (`caption_pass`,
+`role_repass`): it re-checks every `column-bound` fact against the current ROLE
+fact at the head of each run and withdraws the ones that no longer agree, so
+re-running it in order is the repair when a later pass changes a role.
+
+HA-017 now carries the second exception as well as the first.
+
 ## s13 — the whole-page fields, and two strata that were silently empty
 
 The reviewer, on where the rest of the answer lives:
@@ -1045,15 +1172,31 @@ recorded so the reviewer's crop lands on the field.
 ABO 45.6% → **46.5%**, RH 40.7% → **41.7%**. On the labels ABO 46 → 47
 correct, still 0 wrong.
 
-### Item 4 — the Persian OCR backlog
+### Item 4 — the Persian OCR backlog: DONE
 
 The pass's own filter (`--min-loci 2`) reported 1,566 documents; the true
-backlog is **4,529** of 23,566 with no Persian OCR at all, and they hold 6 of
-the 17 role misses and 6 of the 50 ABO misses. `easyocr` was in no lockfile
-extra; the only environment on this machine with torch (`anaconda3/envs/AGILE`,
-CPU) had it installed and the pass is running there in resumable batches, the
-first 800 with `--min-loci 1`. It is slow on a CPU and this box powers off
-under sustained load, so it runs bounded and resumes.
+backlog was **4,529** of 23,566 with no Persian OCR at all, holding 6 of the 17
+role misses and 6 of the 50 ABO misses. `easyocr` is in no lockfile extra — the
+20,201 existing rows predate the repo's environment — so it was installed into
+the one environment on this machine with torch (`anaconda3/envs/AGILE`, CPU)
+and the pass run there in resumable batches at ~5s/page.
+
+**Every report document in the archive now has Persian OCR: 20,201 → 21,948
+rows, 0 errors, and `targets()` returns 0.** The 2,782 documents still without
+it carry no locus label in the Latin pass at all — advertisements and
+screenshots, which is exactly what the filter is for.
+
+Harvested by re-running the three readers over the new pages:
+
+| pass | gained |
+|---|---|
+| `role_repass.py` | 247 DONOR + 117 RECIPIENT bare, 35 + 27 anchored |
+| `abo_label_repass.py` | 138 resolved, 215 surfaced to review |
+| `caption_pass.py` | the chat re-weighed against the new form readings |
+
+**ROLE 78.1% → 79.9%** (18,404 → 18,830), ABO 46.5% → **47.1%**, RH 41.7% →
+**42.2%**. On the labels ROLE gains one correct (92 → 93) with contradictions
+unchanged at 2; ABO and RH hold at 47 and 46 correct, 0 wrong.
 
 ### Item 8, sized while the design is verified
 
@@ -1066,4 +1209,154 @@ page. Anchoring the row from its own gene tokens is the ADR 0008 Decision 4
 licence with the header absent, which HA-011 says needs no spec change for
 presence — and it reads a gene from token text, so it goes through the
 adversarial workflow before a line of it ships.
+
+## s20 — items 1, 2, 3 and 8: four builds, four rejections, and what they caught
+
+The four remaining items were designed by one workflow, adversarially verified
+by a second, implemented in isolated worktrees by a third and reviewed there by
+a fourth. **Every one of the four builds was rejected**, each on measurements
+the reviewer reproduced against the live stores. That is the process paying for
+itself, and the defects are worth recording whether or not the branches land.
+
+### The one that matters most: two people published as one genotype
+
+Item 3 wires `BELOW_RULE` into extraction so a form printing its alleles UNDER
+column headers can be read. The reviewer built the counterexample the design
+missed: a header row `HLA-A | HLA-B | HLA-C` over a donor row and a recipient
+row, one prefixed allele each. The branch resolves **A, B and C each with two
+values — one from each person** — and publishes them as a single genotype.
+
+Nothing in the shipped gates sees it. The cardinality gate counts two boxes and
+two alleles, which is exactly `max_values`. `refuse_bare` passes because both
+values print their own locus. The ownership gate passes because both boxes are
+in the header's own column. `is_comparison_sheet` was measured at **0 of 305**
+on these very pages, and the Persian role words fire on 10 of 305 while 76
+pages carry ROLE UNKNOWN.
+
+The verifier had required a gate for exactly this — refuse a two-box BELOW cell
+when a page ruling crosses between the two value boxes, measured cost 0 of 199
+— and it was not implemented. This is the wrong-person failure this project
+names as its worst, reached by a rule that was verified in design and then lost
+its guard in the build.
+
+### The other three
+
+**Item 1 (the ABO cell window).** The corroboration half of the safety case is
+dead code: `reconcile_abo` accepts caption claims and no production caller
+passes any, so the pinned "30 published / 13 to review" ships as 17 / 28, and
+14 documents whose chat states the same letter are downgraded anyway. Worse,
+the partial-contradiction gate exists on one route and not the other: 3 pages
+publish a rescued value over a contradicting sign printed in the label's own
+cell, and 2 of those would publish a POSITIVE Rh over a printed `-` the moment
+the caption branch is wired in.
+
+**Item 2 (comparison sheets).** The dry run does not reproduce its own pin: 241
+pages bound against ~305. The cause is a straddle gate whose midline falls
+inside a `Frequency` column, so wide OCR boxes holding an 11-digit identifier or
+a percentage read as "a value straddles the midline". It refuses 85 pages
+(pinned: 5), 64 of which bind cleanly without those boxes — and it writes
+`this page prints donor and recipient columns for two subjects` into the review
+queue for all of them. **224 of the 252 review cells assert two people on the
+evidence of an ID number.** A false provenance statement in a medical queue is
+worse than the missing yield.
+
+**Item 8 (the DRB3/4/5 row).** The widened-header route writes 194 RESOLVED
+cells — 75 of them ABSENT, a clinical negative — through the same code path as
+strict headers, so `source` is NULL and `rule_id` is the ordinary one. Nothing
+in the store distinguishes a widened-header page from a strict one: the review
+pack cannot sample them and the group cannot be withdrawn. 16 of those pages
+rest on a `3`-for-`5` glyph substitution with no measurement behind it, where
+the sibling `S`-for-`5` rule has one. Separately, the token route's own stratum
+tags on a `source` string that only the one-off pass sets, so it empties
+silently at the next re-extraction — the third time this session a stratum has
+been built that reports zero without being empty.
+
+### What this says about the method
+
+Every one of these was caught by measurement, not by reading: the reviewer ran
+the pass against the live stores, built the counterexample, and compared the
+shipped numbers with the docstrings. Three of the four rejections are about
+something written into the repo or the queue that the code does not do —
+a yield, a provenance, a guarantee. The fourth is a wrong-value path.
+
+None of the four is merged. A fix round is applying the reviews' required fixes
+in the same worktrees, to be re-reviewed against the same measurements.
+
+## s21 — items 1, 2 and 8 merged and applied; what the fix round changed
+
+The four rejected builds (s20) went back to their worktrees with the reviews as
+the specification. Three came back approved and are merged; item 3 was rejected
+a second time, on a defect its own fix round introduced.
+
+### What the fix round actually closed
+
+Each of these was a path that could publish something untrue, and none was
+visible without running the code:
+
+* **item 1** — the partial-contradiction gate ran on one rescue route and not
+  the other, so 3 pages published over a contradicting sign printed in the
+  label's own cell; 2 of them would have published a POSITIVE Rh over a printed
+  `-` the moment the caption branch became reachable. The caption branch was
+  itself dead code: `reconcile_abo` accepted claims and no caller passed any.
+* **item 2** — the straddle test crossed a midline that, on a
+  `Recipient | Frequency | Donor | Frequency` template, falls INSIDE the
+  Frequency column. Wide boxes holding an 11-digit identifier read as "a value
+  straddles the midline": 85 pages refused where the design priced 5, and
+  **224 of 252 review cells asserted two people on the evidence of an ID
+  number**. The test is now geometric — a box must reach into both columns'
+  own spans.
+* **item 8** — a widened header whose printed final `5` was read as a `3` was
+  certifying **ABSENT**, a clinical negative resting on a glyph substitution
+  with no measurement behind it where the sibling `S`-for-`5` rule has three
+  independent legs. Those absences now go to review.
+
+### Applied to the corpus
+
+| pass | written |
+|---|---|
+| `abo_label_repass` (band + centre rescue) | 44 newly resolved, 12 caption rows upgraded to a form reading, 13 uncorroborated candidates to review |
+| `column_bind` | 699 cells bound on 276 comparison sheets, 108 named for review on 50, 79 refused with crops |
+| `drbx_token_repass` | 621 PRESENT on 479 pages |
+
+Measured against the 1,342 labels: **662 → 664 correct, 122 → 120 missed,
+contradictions unchanged at 5.** Corpus: HLA value cells 65,574 → 66,273, ABO
+47.1% → **47.3%**, RH 42.2% → **42.4%**, and ABO gains a labelled correct (47 →
+48) with Rh (46 → 47), still 0 wrong on either.
+
+The labelled movement is small because these rules were aimed at populations
+the four review rounds had barely sampled — 276 comparison sheets scored 0
+correct on every labelled cell before, and 479 no-header DRB3/4/5 pages had
+none. Their accuracy is unmeasured, which is why each ships with its own
+`source`, its own review stratum, and a withdrawal handle.
+
+### A quota that was a share, and had to become a count
+
+Merging exposed something neither review could see alone. `abo_centre_rescue`
+was weighted so a default pack drew 21 documents, meeting HA-019's gate of 20
+readings before promotion. Item 2's two strata landed beside it, the total
+weight grew, and the same weight drew **19**. Raising it to 112 bought one
+merge; item 8's two strata took it back to 19 on the very next one.
+
+A weight is a share of a total that other work keeps changing. A promotion gate
+is an absolute count. `MIN_DRAW` now states the count and is drawn before the
+weighted share, so a stratum landing beside it cannot quietly repeal the gate,
+and the test asserts the guarantee rather than re-deriving arithmetic that kept
+going stale. It was item 1's own test that caught it, twice — which is the
+argument for writing the arithmetic down.
+
+### Item 3, rejected again
+
+Its fix round introduced a wrong-crop path. `family_repass` re-derived its
+provenance map from a **second, independent** `merge_prefix_fragments()` call,
+so the map's keys were `id()` values of objects that were garbage before the
+next line ran. The lookup never matched, 43 resolved cells got an anchor box in
+the levelled frame while their value boxes were in the raw one — the anchor
+crop and the value crops of one fact in different frames — and, worse, a dead
+`id()` is recyclable: a freshly constructed `Box` can take one of those
+addresses, and the restore would hand a live box the wrong provenance, silently
+and differently on each run.
+
+It also still justified `refuse_bare` with "765 of 765 values print their
+locus" from the pre-fix build, where the shipped extraction reads 290 pages and
+727 of 727. That is the same class of defect the first review rejected it for.
 

@@ -13,10 +13,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from kidneymatch.ocr.store import OcrDocument, read_corpus
 
 from kidneymatch.ingestion.photos import QualityBand
 from kidneymatch.ocr.anchors import Box
+from kidneymatch.ocr.store import OcrDocument, read_corpus
 
 SCHEMA = """
 CREATE TABLE ocr_result (

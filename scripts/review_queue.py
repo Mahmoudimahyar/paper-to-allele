@@ -114,9 +114,15 @@ def build(facts_db: Path, labelled: set[str]) -> list[QueueItem]:
     # or the decode could not read stably. Queueing only the first would leave
     # the disputed values — the ones that are wrong in the database right now —
     # entirely unreviewed.
+    # `scripts/column_bind.py` files two kinds of cell here: a page whose column
+    # names a person no independent role fact confirms, and a page that holds
+    # two people. Both carry the tokens and the column heading, so they are the
+    # tier-4 case — boxes on the row, refused — and not "everything else".
+    column_named = {"column-named+role-unconfirmed", "column-bind-refused"}
+
     items: list[QueueItem] = []
-    for sha256, field, reason, status in con.execute(
-        "SELECT sha256, field, reason, status FROM fact "
+    for sha256, field, reason, status, source in con.execute(
+        "SELECT sha256, field, reason, status, source FROM fact "
         "WHERE (status='REVIEW_REQUIRED' OR (status='RESOLVED' AND stability IN "
         "('SPLIT','DIGITS_LOST','ILLEGIBLE'))) "
         f"AND field IN ({','.join('?' * len(HLA_LOCI))}) ORDER BY sha256, field",
@@ -142,6 +148,8 @@ def build(facts_db: Path, labelled: set[str]) -> list[QueueItem]:
             "candidate values exceeds" in reason or "cannot decide which row" in reason
         ):
             tier, why = 4, "boxes sit on the row and the resolver refused to bind them"
+        elif source in column_named:
+            tier, why = 4, "the tokens and the column heading are boxed; the person is not settled"
         else:
             tier, why = 5, "no stronger signal"
         items.append(QueueItem(cell_id, sha256, field, status, tier, TIERS[tier], why, reason))

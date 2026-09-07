@@ -44,11 +44,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from kidneymatch.documents.abo import (  # noqa: E402
     AboStatus,
+    Rh,
+    needs_corroboration,
     read_abo,
     reconcile_abo,
+    rule_id_for,
 )
 from kidneymatch.documents.role import (  # noqa: E402
     Role,
@@ -71,7 +75,12 @@ from kidneymatch.ocr.anchors import (  # noqa: E402
     resolve_document,
     resolve_in_row,
 )
-from kidneymatch.ocr.drbx import GeneCall, resolve_grouped_drbx  # noqa: E402
+from kidneymatch.ocr.drbx import (  # noqa: E402
+    NO_GROUPED_HEADER_REASON,
+    GeneCall,
+    resolve_grouped_drbx,
+    resolve_token_anchored_drbx,
+)
 from kidneymatch.ocr.geometry import (  # noqa: E402
     PageFrame,
     restore,
@@ -602,8 +611,28 @@ def extract(
     lattice: Lattice | None = None,
     row_slope: float = 0.0,
     column_slope: float = 0.0,
+    raw_lattice: Lattice | None = None,
+    caption_abo: tuple[str, Rh] | None = None,
 ) -> tuple[list[tuple], dict]:
-    """Every fact this document yields. Pure: no I/O, so it is testable."""
+    """Every fact this document yields. Pure: no I/O, so it is testable.
+
+    `lattice` is levelled with `frame`, because the HLA rules run on rectified
+    boxes. `raw_lattice` is the same grid in the frame the STORED boxes are in,
+    and it is what the blood-group reader needs: `read_abo` is given the boxes
+    as stored. Passing the levelled one instead changes which row the rescue
+    reads on the ROTATE pages. Measured over 23,485 documents: the raw frame
+    gains 93 readings (42 band, 51 centre), the levelled frame 88 (44 band, 44
+    centre). The pair is the discriminator and
+    `scripts/abo_window_check.py --levelled` prints it.
+
+    `caption_abo` is the blood group every message this photograph was posted
+    with agrees on, and it is consulted for ONE purpose: corroborating a value
+    that only the label's ruled row admitted (`needs_corroboration`). Weighing a
+    chat claim against a printed form in general is `scripts/caption_pass.py`'s
+    job; handing it to `reconcile_abo` unconditionally here would also let it
+    resolve cells the form does not read and raise conflicts the caption pass
+    records instead, neither of which this rule is about.
+    """
     latin = document.boxes
     rows: list[tuple] = []
     comparison = is_comparison_sheet(latin)
@@ -815,9 +844,50 @@ def extract(
             value_boxes=_boxes(result.value_boxes),
         )
 
-    genes = {
-        gene: restore_drbx(fact, back) for gene, fact in resolve_grouped_drbx(latin_level).items()
-    }
+    read_genes = resolve_grouped_drbx(latin_level)
+    drb1_read = loci.get("DRB1")
+    if (
+        read_genes["DRB3"].reason == NO_GROUPED_HEADER_REASON
+        and drb1_read is not None
+        and drb1_read.status is ResolutionStatus.RESOLVED
+        and not comparison
+    ):
+        # No header was read anywhere on this page. The row can still be placed
+        # from the page's own geometry — one label pitch below the DRB1 label —
+        # and a gene token standing on it read as PRESENT. Never ABSENT: the
+        # counting argument that licenses absence needs the printed enumeration,
+        # and that is exactly what was not read. The DRB1 status tested here is
+        # the FINAL one, after the lattice and the comparison-sheet downgrade,
+        # because that is the fact the page ends up carrying.
+        token_row = resolve_token_anchored_drbx(
+            latin_level, drb1_resolved=True, row_slope=row_slope, lattice=lattice
+        )
+        if token_row.facts is not None:
+            read_genes = token_row.facts
+    genes = {gene: restore_drbx(fact, back) for gene, fact in read_genes.items()}
+    # The comparison-sheet downgrade is applied to `genes` ITSELF, not to a
+    # local copy of the status. The document summary's consistency verdict is
+    # built from this dict further down, and while the downgrade lived only in
+    # the loop below the summary judged a comparison sheet as if its genes had
+    # been resolved — the stored cells said REVIEW_REQUIRED and the summary
+    # said CONSISTENT about values nobody had accepted.
+    if comparison:
+        # The same guard the loci get. Two subjects on one page and the row
+        # rule cannot say whose gene the row prints. Today no comparison
+        # sheet in the corpus has a readable grouped header, so this changes
+        # nothing measurable — it fails closed for the ones that will.
+        genes = {
+            gene: (
+                replace(
+                    fact,
+                    status=ResolutionStatus.REVIEW_REQUIRED,
+                    reason="this page prints donor and recipient columns for two subjects",
+                )
+                if fact.status is ResolutionStatus.RESOLVED
+                else fact
+            )
+            for gene, fact in genes.items()
+        }
     for gene, fact in genes.items():
         add(
             gene,
@@ -827,6 +897,11 @@ def extract(
             repaired=fact.repaired,
             reason=fact.reason,
             rule_id=fact.rule_id,
+            # Which route read this row, when it was not the plain header
+            # route: `token-anchored-drbx`, or `widened-drbx-header:<branch>`.
+            # It comes from the RULE, so a re-extraction reproduces it and the
+            # review strata keyed on it cannot silently empty.
+            source=fact.source,
             anchor_box=_box(fact.header_box),
             # Every box on the row that named this gene, not only the first:
             # a row can print one gene twice, and the second box is what a
@@ -856,8 +931,18 @@ def extract(
         value_boxes=_boxes([t.box for t in reading.tokens]),
     )
 
-    abo_reading = read_abo(persian, latin)
-    abo_decision = reconcile_abo(abo_reading)
+    abo_reading = read_abo(persian, latin, lattice=raw_lattice)
+    # F1(b): a band-only reading boxed by one engine is published only when the
+    # caption agrees on the letter. Everywhere else the caption is withheld, so
+    # this call is the shipped one-argument call it has always been.
+    corroboration = (
+        {caption_abo} if caption_abo is not None and needs_corroboration(abo_reading) else None
+    )
+    abo_decision = reconcile_abo(abo_reading, caption_claims=corroboration)
+    # The route the value box took into the cell is part of the rule's
+    # identity: it is how this group is found in the facts table, sampled into
+    # a review pack, and withdrawn if the labels turn against it.
+    abo_rule_id = rule_id_for(abo_reading)
     add(
         "ABO",
         abo_decision.status.value,
@@ -865,7 +950,7 @@ def extract(
         raw=abo_reading.raw_value,
         repaired=abo_reading.repaired,
         reason=abo_decision.reason or abo_reading.reason,
-        rule_id="abo/anchored-cell",
+        rule_id=abo_rule_id,
         source=abo_decision.source.value,
         anchor_box=_box(abo_reading.anchor_box),
         value_boxes=_boxes(
@@ -882,7 +967,7 @@ def extract(
         ),
         value=abo_decision.rh.value,
         reason="Rh is never synthesised when the cell does not print it",
-        rule_id="abo/anchored-cell",
+        rule_id=abo_rule_id,
         source=abo_decision.source.value,
     )
 
@@ -890,8 +975,19 @@ def extract(
     consistency = ConsistencyOutcome.NOT_CHECKABLE
     consistency_reason = "the DRB1 row or the DRB3/4/5 row was not read"
     if drb1 is not None and drb1.status is ResolutionStatus.RESOLVED:
-        present = {g for g, f in genes.items() if f.call is GeneCall.PRESENT}
-        absent = {g for g, f in genes.items() if f.call is GeneCall.ABSENT}
+        # Only cells the page actually STORES as findings. A call the row rule
+        # made and the extraction then withdrew to review is not a finding, and
+        # the summary must not check the DRB1 row against it.
+        present = {
+            g
+            for g, f in genes.items()
+            if f.call is GeneCall.PRESENT and f.status is ResolutionStatus.RESOLVED
+        }
+        absent = {
+            g
+            for g, f in genes.items()
+            if f.call is GeneCall.ABSENT and f.status is ResolutionStatus.RESOLVED
+        }
         checked = check_drb1_drbx([v.first_field for v in drb1.parsed_values], present, absent)
         consistency, consistency_reason = checked.outcome, checked.reason
 
@@ -940,6 +1036,28 @@ def load_caption_roles(source_db: Path | None) -> dict[str, Role]:
     return {sha256: Role(role) for sha256, role in rows if role in set(Role)}
 
 
+def load_caption_abo(source_db: Path | None) -> dict[str, tuple[str, Rh]]:
+    """The blood group every message a photograph was posted with agrees on.
+
+    The same reading `scripts/caption_pass.py` publishes as a CAPTION_CLAIM, and
+    read by the same function so the two can never drift: a message naming two
+    groups, or asking FOR one, says nothing, and two messages naming different
+    groups leave the document alone. Here it is not published — it is only
+    allowed to corroborate a value the label's ruled row admitted on one
+    engine's word (`needs_corroboration`).
+    """
+    if source_db is None or not source_db.exists():
+        return {}
+    from caption_pass import claim_for, messages_by_document
+
+    out: dict[str, tuple[str, Rh]] = {}
+    for sha, texts in messages_by_document(source_db).items():
+        group, rh, _ = claim_for(texts)
+        if group:
+            out[sha] = (group, Rh(rh) if rh in set(Rh) else Rh.UNKNOWN)
+    return out
+
+
 def run(
     src: Path,
     persian_db: Path,
@@ -981,6 +1099,13 @@ def run(
     caption_roles = load_caption_roles(source_db)
     if caption_roles:
         print(f"caption role claims available: {len(caption_roles):,}", flush=True)
+    caption_abo = load_caption_abo(source_db)
+    if caption_abo:
+        print(
+            f"caption blood-group claims available: {len(caption_abo):,} "
+            "(used only to corroborate a ruled-row rescue)",
+            flush=True,
+        )
     con = connect(out)
     done = {
         r[0]
@@ -1025,6 +1150,8 @@ def run(
             lattice_for(document, rulings, frame),
             row_slope,
             column_slope,
+            lattice_for(document, rulings, None),
+            caption_abo.get(document.sha256),
         )
         facts.extend(rows)
         documents.append(

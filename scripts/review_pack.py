@@ -73,6 +73,18 @@ from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 
 PACK_SCHEMA = "hla-review-pack/v1"
+# Two DRB3/4/5 routes that assert values no person has checked. Both are keyed
+# by their RULE id rather than by the `source` string a pass happens to write:
+# a rule_id is emitted by `ocr/drbx.py` itself and therefore survives a full
+# re-extraction, while a source written by a one-off pass does not, and a
+# stratum keyed on a vanishing source silently draws zero.
+TOKEN_ANCHORED_RULE = "TOKEN_ANCHORED_DRBX/v1"
+WIDENED_HEADER_RULE = "GROUPED_DRBX_WIDENED/v1"
+# The `source` on a widened-header cell is `widened-drbx-header:<branch>[+...]`
+# — which of the four widenings let the header in. The pack spreads that
+# stratum across BRANCHES the way every other stratum is spread across layout
+# families, because the four are four different kinds of damage.
+WIDENED_HEADER_SOURCE = "widened-drbx-header"
 HLA_LOCI = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
 DRBX_LOCI = ("DRB3", "DRB4", "DRB5")
 CELL_FIELDS = HLA_LOCI + DRBX_LOCI
@@ -81,15 +93,43 @@ DOC_FIELDS = ("ROLE", "ABO", "RH")
 # (tag, weight, what it means). Order = priority when a document carries
 # several tags. Weights are relative quotas; `--n` scales them.
 STRATA: tuple[tuple[str, int, str], ...] = (
-    # FIRST, because they assert a value NO PERSON HAS EVER CHECKED. Each is a
-    # pass added after the first labelling round, and each is a way the pipeline
-    # could now be confidently wrong, which is the worst thing it can be. A
-    # document is pooled by its FIRST matching tag, so putting them here is what
-    # aims a second round at them.
+    # FIRST, because every stratum in this block asserts a value NO PERSON HAS
+    # EVER CHECKED. Each comes from a pass added after the first labelling
+    # round, and each is a way the pipeline could now be confidently wrong,
+    # which is the worst thing it can be. A document is pooled by its FIRST
+    # matching tag, so putting them here is what aims a second round at them.
     #
-    # The strata BELOW keep the order they had in the first round. That order is
-    # load-bearing: a document usually carries several tags, and moving one
-    # above another silently empties the lower pool.
+    # The strata BELOW this block keep the order they had in the first round.
+    # That order is load-bearing: a document usually carries several tags, and
+    # moving one above another silently empties the lower pool.
+    #
+    # The two blood-group rescue routes are SEPARATE strata, because they rest on
+    # different evidence and only one of them is blocked. Pooling them put
+    # roughly two centre documents in a 150-document pack, and HA-019 asks for
+    # twenty before the group may be promoted. The centre weight is sized for
+    # exactly that and is expected to come down once a round has answered it —
+    # the arithmetic is written out in HA-019.
+    (
+        "abo_centre_rescue",
+        # The weight only tops this stratum up; `MIN_DRAW` is what guarantees
+        # the 20 readings HA-019 blocks promotion on, because a share of the
+        # total silently shrinks whenever a stratum lands beside it.
+        40,
+        "this page rules no row around the blood-group field, so nothing but distance places "
+        "the value: its box missed the label's LINE and was admitted by a 0.75 label-height "
+        "band above the label's centre, behind six gates. 38 documents on the live store, ZERO "
+        "of them ever checked by a person; the pipeline may not rest a match on one until some "
+        "have been, which is what this quota is sized to end (21 at the default --n 150)",
+    ),
+    (
+        "abo_band_rescue",
+        12,
+        "the blood group's box missed its label's LINE and was admitted by the label's own "
+        "ruled ROW — the page prints a grid and the value is inside the label's cell. 42 "
+        "documents on the live store: 29 published, because two engines boxed the same ink or "
+        "the messages name the same letter, and 13 that nothing corroborates, which are here "
+        "as REVIEW items carrying a crop of the candidate rather than as values",
+    ),
     (
         "new_rule_repaired",
         16,
@@ -195,6 +235,24 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "printed gene box",
     ),
     (
+        "token_anchored_drbx",
+        20,
+        "the page printed NO readable DRB3/4/5 header and the row was placed from the page's "
+        "own label pitch, one row below DRB1; the gene is PRESENT because a token on that row "
+        "names it. 479 pages, and only one of them carries an existing label — this stratum is "
+        "the only thing that can measure whether the row was the right row",
+    ),
+    (
+        "widened_drbx_header",
+        20,
+        "the DRB3/4/5 header was read ONLY by the damage-tolerant pattern, and the page's own "
+        "row pitch then put it where a header belongs. 104 pages, 312 gene cells, 119 PRESENT "
+        "and 60 ABSENT — and an ABSENT here is a clinical negative resting on a glyph the "
+        "recognizer got wrong. No labelled page carries one; the nearest labelled stratum "
+        "(damaged header, add-on source) is wrong 5 times in 20. Cut with `--only "
+        "widened_drbx_header`, which spreads the sample across the four widenings",
+    ),
+    (
         "sloped_row",
         14,
         "the page's rulings slope enough that the row test follows them; the binding "
@@ -204,6 +262,33 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ("low_res", 5, "quality band LOW"),
     ("digits_lost", 15, "the constrained decode dropped a digit the recognizer saw"),
     ("proposal", 10, "the resolver refused the cell for shape; the decode reads a clean allele"),
+    (
+        "column_bound",
+        20,
+        "a comparison sheet with only ONE column filled: the values were bound to the person "
+        "named by the heading above that column, checked against the document's own role fact "
+        "(`column-bound`, 276 documents / 699 cells). It reverses s12's flat refusal of these "
+        "pages under s12-b, the role agreement is the whole wrong-person defence, and 54% of it "
+        "rests on a caption claim and 30% on a bare printed role word",
+    ),
+    (
+        "column_named",
+        14,
+        "the same geometry, but nothing was resolved: either no independent role confirms the "
+        "person (`column-named+role-unconfirmed`, 50 documents / 108 cells) or the page itself "
+        "prints two (`column-bind-refused` with `rule_id='column/two-subjects'`, 15 documents / "
+        "26 cells). Both now carry the tokens and the header box where the reviewer previously "
+        "saw no crop at all, and the question asked of them is the ROLE",
+    ),
+    (
+        "column_crowded",
+        10,
+        "the same sheet, refused because the column that should be empty is not blank — but what "
+        "is in it is a date, a frequency or an identifier, not anything shaped like a typing "
+        "(`rule_id='column/other-column-unread'`, 25 documents / 53 cells). Kept apart from "
+        "`column_named` on purpose: these pages do NOT assert a second subject, and the pass "
+        "cannot tell the form's own printing from a second person's values",
+    ),
     ("review_refused", 15, "boxes sat on the row but the resolver refused the cell"),
     ("unread_second", 10, "a second allele the pipeline could not read"),
     ("decode_split", 20, "the reading changes under one-pixel jitter"),
@@ -283,6 +368,13 @@ STRATA: tuple[tuple[str, int, str], ...] = (
 # Ties in rarity fall back to the order STRATA is written in, so a pack stays
 # reproducible for a seed.
 STRATA_ORDER = {name: i for i, (name, _, _) in enumerate(STRATA)}
+# A stratum whose promotion gate names a COUNT gets that count, not a share of
+# the total weight. `abo_centre_rescue` is weighted 112 of 603 and drew 21 when
+# it was written; two strata then landed beside it in the same merge sequence,
+# the total grew, and the same weight drew 19 — twice. HA-019 blocks promoting
+# the centre-band route until 20 of its readings have been read by a person, so
+# 20 is what the pack draws, whatever else is added later.
+MIN_DRAW = {"abo_centre_rescue": 20}
 FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
 # Nearly every report leaves SOME printed cell empty, so one is no signal at
 # all. Three is a form the laboratory filled in only partly, which is the
@@ -525,7 +617,16 @@ def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
         elif fld == "ROLE":
             doc.role = {"status": status, "value": value, "source": src}
         elif fld == "ABO":
-            doc.abo = {"status": status, "value": value, "source": src, "reason": reason}
+            # `rule_id` carries how the value box entered the cell, which is
+            # the only thing that separates a rescued reading from an ordinary
+            # one once the row is written.
+            doc.abo = {
+                "status": status,
+                "value": value,
+                "source": src,
+                "reason": reason,
+                "rule_id": rule,
+            }
         elif fld == "RH":
             doc.rh = {"status": status, "value": value, "source": src}
     # One row PER CONFIRMER. Keying them all onto one field would show the
@@ -607,10 +708,23 @@ def _new_rule_findings(cell: Cell) -> set[str]:
     return found
 
 
+# `scripts/column_bind.py` writes these, and every one of them is a REVIEW or a
+# RESOLVED cell that the two generic refusal strata below would otherwise
+# swallow: `review_refused` is 7,798 documents at quota 15, so a page pooled
+# there is never sampled, and `zero_fact_refused` ("labels anchored but every
+# cell refused") is not even true of a page that anchors nothing.
+COLUMN_SOURCES = frozenset({"column-bound", "column-named+role-unconfirmed", "column-bind-refused"})
+# The sub-marker inside `column-bind-refused`: a column that is not blank and
+# holds nothing shaped like a typing. A separate stratum, because the answer a
+# reviewer gives it is a different answer.
+COLUMN_UNREAD_RULE = "column/other-column-unread"
+
+
 def tag_document(doc: Doc, export: Path) -> list[str]:
     """Every stratum this document belongs to, in `STRATA` order."""
     hla = [c for c in doc.cells.values() if c.locus in HLA_LOCI]
     resolved = [c for c in hla if c.status == "RESOLVED"]
+    generic = [c for c in hla if c.source not in COLUMN_SOURCES]
     verdicts = {c.locus: (c.decode or {}).get("verdict") for c in hla}
     # A cell is "contradicted" when ANY independent reader disputes it; a
     # stratum keyed on one engine would go quiet the moment that engine did.
@@ -638,7 +752,7 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("decode_split")
     if any(v == "PROPOSAL" for v in verdicts.values()):
         tags.add("proposal")
-    if any(c.status == "REVIEW_REQUIRED" and c.value_boxes for c in hla):
+    if any(c.status == "REVIEW_REQUIRED" and c.value_boxes for c in generic):
         tags.add("review_refused")
     if any(c.second_allele == "UNREAD" for c in resolved):
         tags.add("unread_second")
@@ -661,7 +775,7 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     if doc.family is None and resolved:
         tags.add("default_rule")
     if not resolved:
-        anchored = any(c.status == "REVIEW_REQUIRED" for c in hla)
+        anchored = any(c.status == "REVIEW_REQUIRED" for c in generic)
         tags.add("zero_fact_refused" if anchored else "zero_fact_no_anchor")
     if any((c.reason or "").find("and its own label height") >= 0 for c in resolved):
         tags.add("template_band")
@@ -703,6 +817,25 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
+    if any(c.rule_id == TOKEN_ANCHORED_RULE for c in doc.cells.values() if c.locus in DRBX_LOCI):
+        # The row placed from geometry alone on a page whose printed enumeration
+        # was never read. Nothing else in the pipeline can say whether it was
+        # the right row: no header text corroborates it and the labels do not
+        # reach it.
+        #
+        # Keyed on the RULE, not on the `source` string. The source was written
+        # only by the one-off `scripts/drbx_token_repass.py`; the extraction
+        # path writes the same rule_id but used to leave `source` NULL, so
+        # after any full re-extraction this stratum would have drawn zero — the
+        # exact failure this module's own header warns about.
+        tags.add("token_anchored_drbx")
+    if any(c.rule_id == WIDENED_HEADER_RULE for c in doc.cells.values() if c.locus in DRBX_LOCI):
+        # The DRB3/4/5 header was read only by the damage-tolerant pattern and
+        # then corroborated by the page's geometry (route (c)). No labelled page
+        # carries one, so nothing has ever measured whether the widening reads a
+        # header or something else standing where one belongs — and these pages
+        # write ABSENT, which is a clinical negative.
+        tags.add("widened_drbx_header")
     if any(
         c.source in ("drbx-reread+ppocrv6", "ink-certified")
         for c in doc.cells.values()
@@ -710,6 +843,16 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     ):
         tags.add("drbx_addon")
     abo_reason = (doc.abo or {}).get("reason") or ""
+    abo_rule = (doc.abo or {}).get("rule_id") or ""
+    # The value box was not on its label's line. Whether that cell is the
+    # label's is a question only a person can answer, and no person has
+    # answered it for any of the centre-band readings. The two routes are
+    # tagged apart so the centre route can be given its own quota: pooled, it
+    # drew about two documents a pack and HA-019 needs twenty.
+    if abo_rule.startswith("abo/anchored-cell+centre"):
+        tags.add("abo_centre_rescue")
+    elif abo_rule.startswith("abo/anchored-cell+band"):
+        tags.add("abo_band_rescue")
     if abo_reason.startswith("more than one blood-group value"):
         tags.add("abo_doubled")
     elif abo_reason.startswith("the blood-group field is printed but its cell"):
@@ -720,6 +863,17 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("bare_role")
     if any(c.source == "anchor-row-prefix" for c in resolved):
         tags.add("anchor_row")
+    if any(c.source == "column-bound" for c in resolved):
+        tags.add("column_bound")
+    # Keyed on `rule_id`, not only on `source`: the refusal family shares one
+    # source so the whole group stays withdrawable, and the rule id is what
+    # separates a page that prints two subjects from one this pass merely could
+    # not certify. `column_bind.py` writes both on every run, so a
+    # re-extraction that re-runs the pass reproduces both strata.
+    if any(c.rule_id == COLUMN_UNREAD_RULE for c in hla):
+        tags.add("column_crowded")
+    elif any(c.source in ("column-named+role-unconfirmed", "column-bind-refused") for c in hla):
+        tags.add("column_named")
     if odd_value_box(resolved):
         tags.add("odd_box")
     if doc.blank_cells >= MIN_BLANK_CELLS:
@@ -764,14 +918,47 @@ def pinned_shas(sources: list[Path]) -> set[str]:
     return shas
 
 
+def spread_key(doc: Doc, tag: str) -> str | None:
+    """What a stratum is round-robined across, so one pool is not one thing.
+
+    Layout family everywhere, except the widened-header stratum, where the
+    thing that must not dominate the sample is the BRANCH — which of the four
+    widenings let this page's header in. They are four different kinds of
+    recognizer damage, and the pack exists to tell them apart; a sample that is
+    all `slash-as-4` measures one of them and is silent about the other three.
+    """
+    if tag != "widened_drbx_header":
+        return doc.family
+    branches = {
+        (c.source or "").split(":", 1)[1]
+        for c in doc.cells.values()
+        if c.locus in DRBX_LOCI and (c.source or "").startswith(f"{WIDENED_HEADER_SOURCE}:")
+    }
+    return "+".join(sorted(branches)) or None
+
+
 def choose(
-    docs: dict[str, Doc], n: int, seed: int, export: Path, pin: set[str] | None = None
+    docs: dict[str, Doc],
+    n: int,
+    seed: int,
+    export: Path,
+    pin: set[str] | None = None,
+    only: str | None = None,
 ) -> list[Doc]:
-    """Stratified, deterministic, spread across layout families inside a stratum."""
+    """Stratified, deterministic, spread across layout families inside a stratum.
+
+    `only` cuts a pack of ONE stratum: every document carrying that tag is
+    pooled there whatever rarer signal it also carries, and no other stratum is
+    drawn. That is how a route with no labelled page gets the >= 40 rows a
+    promotion decision needs, instead of the handful a weight would give it in
+    a general pack.
+    """
     rng = random.Random(seed)
     present: list[Doc] = []
     for doc in docs.values():
         doc.tags = tag_document(doc, export)
+        if only is not None:
+            doc.tags = [t for t in doc.tags if t == only]
         if doc.tags and (export / doc.rel_path).exists():
             present.append(doc)
     # A document belongs to its RAREST stratum, measured on this corpus rather
@@ -810,7 +997,7 @@ def choose(
     for tag, _, _ in STRATA:
         grouped: dict[str | None, list[Doc]] = defaultdict(list)
         for doc in pools[tag]:
-            grouped[doc.family].append(doc)
+            grouped[spread_key(doc, tag)].append(doc)
         for group in grouped.values():
             rng.shuffle(group)
         by_family[tag] = grouped
@@ -830,6 +1017,15 @@ def choose(
                     chosen.append(grouped[family].pop())
                     taken += 1
 
+    if only is not None:
+        # One stratum, so there is nothing for the one-per-stratum pass or the
+        # weights to balance, and the top-up would fill the rest of the pack at
+        # random. The whole of `n` goes to this stratum in ONE round-robin over
+        # its branches — running the one-per pass first would restart that
+        # round-robin and take the first branch twice.
+        take(only, n)
+        return chosen[:n]
+
     # ONE document from every stratum that has any, before a single stratum
     # takes a second. A pack is a diagnostic instrument, and a signal with no
     # document in it is a signal nobody can check — which is what happened
@@ -846,6 +1042,11 @@ def choose(
         spare = [d for d in carriers[tag] if d.sha256 not in taken]
         if spare and len(chosen) < n:
             chosen.append(rng.choice(spare))
+    # A promotion gate's own count comes before the weights, so that adding a
+    # stratum elsewhere cannot quietly take it below the number it names.
+    for tag, floor in MIN_DRAW.items():
+        already = sum(1 for doc in chosen if tag in doc.tags)
+        take(tag, max(0, min(floor, n) - already))
     # Then the weights, over whatever room is left.
     total_weight = sum(w for _, w, _ in STRATA)
     room = max(0, n - len(chosen))
@@ -865,7 +1066,15 @@ def choose(
 
 def cell_crop_box(cell: Cell, width: int, height: int) -> tuple[int, int, int, int] | None:
     boxes = list(cell.value_boxes)
-    if cell.anchor_box:
+    if cell.anchor_box and not (cell.source in COLUMN_SOURCES and cell.value_boxes):
+        # On a comparison sheet the "anchor" is the column HEADING, and it sits
+        # a long way above the row. Measured over the 807 cells this pass
+        # writes on a bound or named page, unioning it in gives a strip with a
+        # median height of 5.7 header heights (p90 12.1) at 0.11 page widths,
+        # 60% of which swallow at least one OTHER locus's row — unreadable at
+        # the 58px the page shows a crop at, and an invitation to read the
+        # wrong row. The heading is still stored, and `highlight()` draws and
+        # zooms to it on the full image, which is where it can be read.
         boxes.append(cell.anchor_box)
     if not boxes:
         return None
@@ -1197,6 +1406,7 @@ def build_pack(
     drop: set[str] | None = None,
     geometry_db: Path | None = None,
     port: int = 8765,
+    only: str | None = None,
 ) -> dict[str, int]:
     con = sqlite3.connect(facts_db)
     docs = load_documents(con)
@@ -1204,7 +1414,7 @@ def build_pack(
     con.close()
     if drop:
         docs = {sha: doc for sha, doc in docs.items() if doc.short not in drop}
-    chosen = choose(docs, n, seed, export, pin)
+    chosen = choose(docs, n, seed, export, pin, only=only)
     if len({d.short for d in chosen}) != len(chosen):
         raise ValueError("two chosen documents share a 16-character id prefix")
     out.mkdir(parents=True, exist_ok=True)
@@ -1378,6 +1588,13 @@ def main() -> int:
         "the page keeps a reader's answers in the browser's storage for one origin",
     )
     parser.add_argument(
+        "--only",
+        default=None,
+        choices=[t for t, _, _ in STRATA],
+        help="cut a pack of ONE stratum. A route with no labelled page needs tens of rows "
+        "before its calls can be promoted, and a weight in a general pack gives it a handful",
+    )
+    parser.add_argument(
         "--page-only",
         action="store_true",
         help="replace index.html in an existing pack and touch nothing else",
@@ -1415,6 +1632,7 @@ def main() -> int:
         drop=drop,
         geometry_db=args.geometry,
         port=args.port,
+        only=args.only,
     )
     packed = json.loads((args.out / "pack.json").read_text(encoding="utf-8"))["n_documents"]
     print(f"packed {packed} documents into {args.out}")

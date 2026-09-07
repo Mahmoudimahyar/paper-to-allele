@@ -32,7 +32,7 @@ def synthetic(path: Path) -> None:
     con = sqlite3.connect(path)
     con.executescript(
         """
-        CREATE TABLE fact (sha256, field, status, reason, stability, value);
+        CREATE TABLE fact (sha256, field, status, reason, stability, value, source);
         CREATE TABLE decode (sha256, field, verdict, jitter_readings);
         CREATE TABLE confirmation (sha256, field, verdict);
         """
@@ -40,26 +40,36 @@ def synthetic(path: Path) -> None:
     # A: a document one cell short of a matchable record.
     for locus in ("B", "C", "DRB1", "DQB1"):
         con.execute(
-            "INSERT INTO fact VALUES ('a', ?, 'RESOLVED', NULL, 'UNANIMOUS', 'x')", (locus,)
+            "INSERT INTO fact VALUES ('a', ?, 'RESOLVED', NULL, 'UNANIMOUS', 'x', NULL)", (locus,)
         )
-    con.execute("INSERT INTO fact VALUES ('a', 'ROLE', 'RESOLVED', NULL, NULL, 'DONOR')")
-    con.execute("INSERT INTO fact VALUES ('a', 'A', 'REVIEW_REQUIRED', 'no anchor', NULL, NULL)")
+    con.execute("INSERT INTO fact VALUES ('a', 'ROLE', 'RESOLVED', NULL, NULL, 'DONOR', NULL)")
+    con.execute(
+        "INSERT INTO fact VALUES ('a', 'A', 'REVIEW_REQUIRED', 'no anchor', NULL, NULL, NULL)"
+    )
     # B: an unstable accepted value, split two ways.
-    con.execute("INSERT INTO fact VALUES ('b', 'A', 'RESOLVED', NULL, 'SPLIT', 'A*11')")
+    con.execute("INSERT INTO fact VALUES ('b', 'A', 'RESOLVED', NULL, 'SPLIT', 'A*11', NULL)")
     con.execute(
         "INSERT INTO decode VALUES ('b', 'A', 'SPLIT', ?)",
         (json.dumps({"0:11": 7, "0:17": 2}),),
     )
     # C: an accepted value a second reader disputes.
-    con.execute("INSERT INTO fact VALUES ('c', 'A', 'RESOLVED', NULL, 'SPLIT', 'A*02')")
+    con.execute("INSERT INTO fact VALUES ('c', 'A', 'RESOLVED', NULL, 'SPLIT', 'A*02', NULL)")
     con.execute("INSERT INTO confirmation VALUES ('c', 'A', 'CONTRADICTED')")
     # D: boxes on the row, refused.
     con.execute(
         "INSERT INTO fact VALUES ('d', 'A', 'REVIEW_REQUIRED', "
-        "'3 candidate values exceeds max_values=2', NULL, NULL)"
+        "'3 candidate values exceeds max_values=2', NULL, NULL, NULL)"
     )
     # E: nothing to go on.
-    con.execute("INSERT INTO fact VALUES ('e', 'A', 'REVIEW_REQUIRED', 'no anchor', NULL, NULL)")
+    con.execute(
+        "INSERT INTO fact VALUES ('e', 'A', 'REVIEW_REQUIRED', 'no anchor', NULL, NULL, NULL)"
+    )
+    # F: a comparison sheet whose column names a person no role fact confirms.
+    # The tokens and the heading are boxed, so this is not "everything else".
+    con.execute(
+        "INSERT INTO fact VALUES ('f', 'A', 'REVIEW_REQUIRED', 'values printed under one "
+        "header of a comparison table', NULL, NULL, 'column-named+role-unconfirmed')"
+    )
     con.commit()
     con.close()
 
@@ -79,6 +89,7 @@ def test_the_queue_is_ordered_by_what_a_decision_buys(tmp_path: Path) -> None:
     assert assigned["c"] == 3, "the readers disagree"
     assert assigned["d"] == 4, "boxes on the row"
     assert assigned["e"] == 5
+    assert assigned["f"] == 4, "the column named the person and boxed the tokens"
     assert [item.tier for item in items] == sorted(item.tier for item in items)
 
 
