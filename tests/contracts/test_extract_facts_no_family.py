@@ -7,15 +7,19 @@ each:
 * **A tie between prototypes that are one form under lean** — 987 pages fit
   inside `MAX_RESIDUAL` and were refused only because a second prototype fitted
   nearly as well. Assigning the best when the tied prototypes author one rule
-  and print one row order gains 649 cells against the default rule.
-* **A page whose stack fits except at one label** — 318 pages, where the
-  recognizer boxed one label's `HLA-` prefix apart. The left-out fit assigns
-  them; the virtual-anchor path must NOT run there, because the page's own
-  full fit is what failed.
-* **A form whose locus labels are column headers** — 305 pages, where every
+  and print one row order gains 651 cells against the default rule.
+* **A label whose `HLA-` prefix was boxed apart** — 162 pages, where the
+  fragment is on the page and can be put back, after which the stack fits at
+  the ordinary tolerance and the page is READ from the repaired boxes.
+* **A page whose stack fits except at one label, with no fragment to explain
+  it** — the residue, 209 pages. The left-out fit assigns them; the
+  virtual-anchor path must NOT run there, because the page's own full fit is
+  what failed.
+* **A form whose locus labels are column headers** — 290 pages, where every
   value sits in the cell beneath its label. `ocr/layout.py` has been able to
-  say so since the reviewer described one, and until now only
-  `page_ocr_bind.py` acted on it.
+  say so since the reviewer described one, and three add-on passes acted on it
+  (`page_ocr_bind.py`, `rerecognise_pass.py`, `upright_bind.py`, which import
+  the same rule object); the extraction did not.
 
 And one fallback the tie measurement asked for: on 18 pages the family rule
 refuses a value for naming no locus where the default rule reads the page
@@ -155,6 +159,30 @@ def test_a_tie_page_whose_values_name_no_locus_goes_back_to_the_default_rule() -
     assert cells["A"][1] == "01 02"
 
 
+# --- putting a boxed-apart `HLA-` prefix back ------------------------------
+
+
+def split_prefix_page(locus: str) -> list[Box]:
+    """The stack with one label's `HLA-` boxed apart, and a two-allele A row."""
+    boxes = []
+    for index, name in enumerate(ROW_ORDER):
+        y = 0.20 + index * PITCH
+        if name == locus:
+            boxes.append(Box(x0=0.15, y0=y, x1=0.19, y1=y + 0.025, text="HLA-"))
+            boxes.append(Box(x0=0.194, y0=y, x1=0.25, y1=y + 0.025, text=name))
+        else:
+            boxes.append(Box(x0=0.15, y0=y, x1=0.25, y1=y + 0.025, text=f"HLA-{name}"))
+    return [*boxes, value(0.40, 0.20, "A*01"), value(0.60, 0.20, "A*24")]
+
+
+def test_a_boxed_apart_prefix_is_put_back_and_the_page_reads_at_full_tolerance() -> None:
+    cells, summary = facts(split_prefix_page("DPB1"), prototypes=[prototype("FORM#0", 0.0)])
+    assert summary["family"] == "FORM#0"
+    assert summary["dropped_label"] is None, "nothing was left out; the word was put back"
+    assert cells["A"][3] == "family/FORM#0(prefix:DPB1)", cells["A"]
+    assert cells["A"][0] == "RESOLVED"
+
+
 # --- the left-out fit ------------------------------------------------------
 
 
@@ -187,6 +215,29 @@ def test_a_left_out_page_never_places_a_virtual_label() -> None:
     assert summary["family"] == "FORM#0"
     assert cells["DRB1"][0] == "UNKNOWN"
     assert "+lattice" not in (cells["DRB1"][3] or "")
+
+
+def test_a_prefix_repaired_page_may_place_a_virtual_label() -> None:
+    """The deliberate difference from the left-out fit.
+
+    A left-out page places no virtual label because its own full fit is what
+    failed. A prefix-repaired page's full fit SUCCEEDS — on the boxes the form
+    actually printed — so the template's placement of an unreadable label is
+    evidence there in the ordinary way. Measured on the corpus: 73 cells are
+    gained down this path on the 162 repaired pages, and 0 on the left-out
+    ones.
+    """
+    page = split_prefix_page("DPB1")
+    page = [b for b in page if b.text != "HLA-DRB1"]  # the label glyphs unreadable
+    page += [value(0.40, 0.44, "DRB1*04"), value(0.60, 0.44, "DRB1*11")]
+    lattice = extract_facts.Lattice.from_segments(
+        [[0, 560, 1000, 560], [0, 600, 1000, 600]], [], 1000, 1300
+    )
+    cells, summary = facts(page, prototypes=[prototype("FORM#0", 0.0)], lattice=lattice)
+    assert summary["family"] == "FORM#0"
+    assert "(prefix:DPB1)" in (cells["DRB1"][3] or ""), cells["DRB1"]
+    assert cells["DRB1"][0] == "RESOLVED"
+    assert "placed by the form's template" in (cells["DRB1"][2] or "")
 
 
 # --- the column form -------------------------------------------------------
@@ -236,3 +287,151 @@ def test_a_page_with_a_family_never_takes_the_column_rule() -> None:
     cells, summary = facts(page)
     assert summary["family"] is not None
     assert "below" not in (cells["A"][3] or "")
+
+
+# --- the wrong-locus safety case for the two template accommodations -------
+#
+# The accommodations exist to apply a FORM'S OWN cell rule to a page that
+# nearly fits it, and the whole risk is that the rule then reads a value off
+# the wrong row. The perturbation that tests it is to move a locus label to
+# another row's y and ask what the page publishes: the answer must be a
+# refusal, on a form that prints the locus on its values and on one whose
+# values have had the prefix stripped. Never a resolution under either.
+
+
+# One admissible allele family per locus, so the vocabulary gate is not what
+# refuses these pages. Fabricated values on synthetic geometry.
+FIELDS = {
+    "A": ("01", "24"),
+    "B": ("07", "35"),
+    "C": ("01", "07"),
+    "DQB1": ("02", "03"),
+    "DRB1": ("04", "11"),
+    "DPB1": ("02", "04"),
+    "DPA1": ("01", "02"),
+    "DQA1": ("01", "05"),
+}
+
+
+def moved_anchor(locus: str, rows: int, prefixed: bool) -> list[Box]:
+    """The stack with one label lifted `rows` pitches out of its own row, and
+    a two-allele value printed on every row."""
+    boxes = []
+    for index, name in enumerate(ROW_ORDER):
+        y = 0.20 + index * PITCH
+        label_y = y + (rows * PITCH if name == locus else 0.0)
+        boxes.append(Box(x0=0.15, y0=label_y, x1=0.25, y1=label_y + 0.025, text=f"HLA-{name}"))
+        first, second = FIELDS[name]
+        head = f"{name}*" if prefixed else ""
+        boxes.append(value(0.40, y, f"{head}{first}"))
+        boxes.append(value(0.60, y, f"{head}{second}"))
+    return boxes
+
+
+def test_the_control_reads_every_row_when_no_label_is_moved() -> None:
+    """The placebo half of the perturbation: with every label in its own row
+    the page resolves, so a refusal below is the moved label and not the
+    fixture."""
+    cells, summary = facts(
+        moved_anchor("DQB1", rows=0, prefixed=True), prototypes=[prototype("FORM#0", 0.0)]
+    )
+    assert summary["family"] == "FORM#0"
+    for locus in ("A", "DQB1", "DRB1"):
+        assert cells[locus][0] == "RESOLVED", (locus, cells[locus])
+
+
+def test_a_prefix_stripped_page_publishes_nothing_under_the_family_rule() -> None:
+    """The other half of the perturbation, and the reason the moved anchor is
+    only dangerous on a form that prints the locus: strip the prefixes and the
+    family rule refuses every cell, moved label or not."""
+    cells, summary = facts(
+        moved_anchor("DQB1", rows=0, prefixed=False), prototypes=[prototype("FORM#0", 0.0)]
+    )
+    assert summary["family"] == "FORM#0"
+    assert not [locus for locus in ROW_ORDER if cells[locus][0] == "RESOLVED"]
+    assert extract_facts.NAMES_NO_LOCUS in (cells["A"][2] or "")
+
+
+@pytest.mark.parametrize("prefixed", [True, False])
+@pytest.mark.parametrize("locus", ["DQB1", "B", "DPA1"])
+def test_a_moved_anchor_never_resolves(locus: str, prefixed: bool) -> None:
+    """Lift one locus label into the next row and ask what the page publishes.
+
+    This is the whole wrong-locus safety case for the two accommodations: they
+    exist to apply a FORM'S OWN cell rule to a page that nearly fits it, and
+    the risk they carry is that the rule then reads a value off the wrong row.
+    The answer must be a refusal for the moved locus and for the locus whose
+    row it moved into — on a form that prints the locus on its values, and on
+    one whose values have had the prefix stripped. Never a resolution.
+    """
+    below = ROW_ORDER[ROW_ORDER.index(locus) + 1]
+    cells, _ = facts(
+        moved_anchor(locus, rows=1, prefixed=prefixed), prototypes=[prototype("FORM#0", 0.0)]
+    )
+    assert cells[locus][0] != "RESOLVED", cells[locus]
+    assert cells[below][0] != "RESOLVED", cells[below]
+
+
+@pytest.mark.parametrize("prefixed", [True, False])
+def test_a_moved_anchor_also_costs_the_page_its_family(prefixed: bool) -> None:
+    """Two layers refuse it, and both are worth pinning: the template refuses
+    the page (a label a whole pitch out of its row is a different row order,
+    and the left-out fit's x-dominance test is what says so), and the binding
+    gates refuse the cell even when the page is read under the default rule."""
+    cells, summary = facts(
+        moved_anchor("DQB1", rows=1, prefixed=prefixed), prototypes=[prototype("FORM#0", 0.0)]
+    )
+    assert summary["family"] is None
+    assert cells["DQB1"][3] == "ADR0008/default-row-rule"
+    assert "owns it" in (cells["DQB1"][2] or "")
+
+
+# --- what the direction that decided 365 cells leaves behind ---------------
+
+
+def test_the_layout_counts_are_recorded_for_every_page() -> None:
+    """`ocr/layout.py` counts four things and the direction it decides settles
+    which way a page is read. Without the counts stored there is no per-page
+    record of WHY, and no way to see the population that nearly qualified."""
+    _, column = facts(column_page())
+    assert column["loci_sharing_a_row"] >= 3
+    assert column["loci_sharing_a_column"] == 0
+    assert column["values_under_the_label"] > column["values_along_the_row"]
+
+    _, stacked = facts([*stack(lean=0.001), value(0.40, 0.20, "A*01")])
+    assert stacked["loci_sharing_a_column"] > stacked["loci_sharing_a_row"]
+    assert stacked["values_along_the_row"] >= 1
+
+
+def test_the_dropped_label_is_recorded_on_the_document() -> None:
+    """Which label the left-out fit dropped is a column, not something to be
+    recovered by string-parsing the rule ids of the cells a page happened to
+    gain."""
+    page = [
+        *stack(dropped="DPB1", dx=0.055),
+        value(0.40, 0.20, "A*01"),
+        value(0.60, 0.20, "A*02"),
+    ]
+    _, summary = facts(page, prototypes=[prototype("FORM#0", 0.0)])
+    assert summary["dropped_label"] == "DPB1"
+    _, plain = facts([*stack(lean=0.001), value(0.40, 0.20, "A*01")])
+    assert plain["dropped_label"] is None
+
+
+def test_the_document_table_carries_every_column_the_summary_writes() -> None:
+    """A positional INSERT breaks the moment a column is added to one and not
+    the other, and `connect` is what adds them to an existing database."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        con = extract_facts.connect(Path(tmp) / "facts.sqlite")
+        columns = {row[1] for row in con.execute("PRAGMA table_info(document)")}
+        con.close()
+    for name in (
+        "loci_sharing_a_row",
+        "loci_sharing_a_column",
+        "values_along_the_row",
+        "values_under_the_label",
+        "dropped_label",
+    ):
+        assert name in columns, name

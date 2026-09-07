@@ -66,6 +66,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from kidneymatch.ocr.lattice import Lattice  # noqa: E402
+from kidneymatch.ocr.lattice import lattice_for as build_lattice  # noqa: E402
 from kidneymatch.ocr.lattice import load_rulings as load_stored_rulings  # noqa: E402
 from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
@@ -89,27 +91,78 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     # load-bearing: a document usually carries several tags, and moving one
     # above another silently empties the lower pool.
     (
+        "new_rule_repaired",
+        16,
+        "a cell one of the four no-family findings resolved whose value ALSO went through "
+        "glyph repair. 244 of the 651 tie gains carry a repair (37%) against 501 of the "
+        "3,132 cells resolved under both rules (16%), and repaired values that split under "
+        "jitter are wrong 21% of the time corpus-wide. Without this stratum the repair "
+        "signal is pooled away: a document belongs to its RAREST tag, and every one of "
+        "these findings is rarer than repaired_glyph's 11,179 documents",
+    ),
+    # The below-rule sample the direction's safety case needs is >=100 CELLS,
+    # and the pack is drawn in DOCUMENTS. Measured on this corpus after the
+    # repass: `--n 150` (the default) draws 14 documents of these three strata
+    # carrying 24 column-read cells; `--n 300` draws 33 and 56; `--n 600`
+    # draws 67 (25 unruled + 25 role-unknown + 17 flat) and carries 118. So a
+    # round aimed at the direction is `--n 600`, and the default pack is a
+    # sighting shot, not the evidence.
+    (
+        "below_rule_unruled",
+        26,
+        "read down a column, with two values stacked under one header and NO closed ruled "
+        "cell around them. 195 of the 198 two-box column cells are in this state (measured "
+        "2026-09-07: a closed cell means one row band holds both boxes and a vertical "
+        "ruling stands each side), and it is the only shape in which a two-subject table is "
+        "invisible to every gate: two boxes, two alleles, both under the header, no printed "
+        "line between them. The ruling gate catches the ruled case — 1 cell of 365 — and "
+        "cannot see these. One contradiction here refutes the direction for this stratum",
+    ),
+    (
+        "below_rule_role_unknown",
+        26,
+        "read down a column on a page whose ROLE nobody could read. 51 of the 290 column "
+        "pages have no resolved ROLE and hold 59 of the gained cells; by the criterion the "
+        "gate itself uses — no printed role word read anywhere on the page — it is 211 "
+        "pages and 249 cells. The Persian role words are what refuse a donor/recipient "
+        "comparison table, and on these pages that guard never fires",
+    ),
+    (
         "family_tie",
         18,
         "the page fits one printed form but a second prototype of that form, leaning "
         "differently, fitted nearly as well; the tie used to refuse the page and now the "
-        "form's own cell rule reads it. 987 pages, 649 cells, and 3 labelled documents — "
+        "form's own cell rule reads it. 975 pages, 651 cells, and 3 labelled documents. "
+        "Their 24 labelled HLA cells read 12 correct / 11 abstained / 1 contradicted "
+        "(66fca7c6 DQB1, contradicted under the old rule too) — unchanged by the tie and "
         "far too few to say whether the lean argument holds",
+    ),
+    (
+        "family_prefix",
+        18,
+        "the recognizer boxed a label's HLA- prefix apart; joined back into the word the "
+        "form prints, the page fits at the ORDINARY template tolerance and is read from the "
+        "repaired boxes. 162 pages, 267 cells. The direct repair of what the left-out fit "
+        "accommodates, and it holds the ONE labelled page of that population (6eeb314e: 3 "
+        "cells missed -> correct, 0 worse)",
     ),
     (
         "family_loo",
         18,
-        "the page's label stack fits a form except at ONE label, whose HLA- prefix the "
-        "recognizer boxed apart, and the fit without that label carried the form's rule. "
-        "318 pages; exactly one is labelled, and on it three cells go from missed to correct",
+        "the page's label stack fits a form except at ONE label and no fragment on the page "
+        "explains it, so the fit without that label carried the form's rule. The residue "
+        "after the prefix repair: 209 pages, 259 cells, and NOT ONE of them labelled — the "
+        "single labelled page of the old 263 is now read by the repair instead",
     ),
     (
         "below_rule",
         18,
         "the page's locus labels are column HEADERS and the value was read from the cell "
-        "beneath its own label, not along a row. 305 pages, 370 cells, NONE of them "
+        "beneath its own label, not along a row. 290 pages, 364 cells, NONE of them "
         "labelled and none read by any second detector — this stratum is the only evidence "
-        "that exists for the direction",
+        "that exists for the direction. Forced on 290 right-reading pages matched by anchor "
+        "count the same rule binds 4 cells, so the direction is doing the work, not the "
+        "tolerances",
     ),
     (
         "template_band",
@@ -306,6 +359,12 @@ class Doc:
     # How far this page's printed rows fall per unit of width, from its own
     # rulings (`ocr/rows.py`). Non-zero means the row test followed the slope.
     row_slope: float = 0.0
+    # Whether every multi-box cell this page resolved under the column rule
+    # sits inside a CLOSED ruled cell of the printed table. False is the state
+    # that matters: two values stacked under one header with no line around
+    # them is the one shape in which a two-subject table is invisible to every
+    # gate the column rule has, so it is sampled as its own stratum.
+    ruled_below_cells: bool = True
 
     @property
     def short(self) -> str:
@@ -348,6 +407,10 @@ def attach_signals(docs: dict[str, Doc], con: sqlite3.Connection, geometry: Path
     for sha, doc in docs.items():
         found = stored.get(sha)
         if found is None:
+            # No measured rulings at all: nothing on this page is inside a
+            # closed cell, and a column reading here has no printed line to
+            # separate two subjects.
+            doc.ruled_below_cells = False
             continue
         width, height, horizontal, _ = found
         try:
@@ -355,6 +418,44 @@ def attach_signals(docs: dict[str, Doc], con: sqlite3.Connection, geometry: Path
         except ValueError:
             continue
         doc.row_slope = measure_row_slope(segments, width, height) or 0.0
+        doc.ruled_below_cells = _below_cells_are_ruled(doc, build_lattice(sha, stored, None))
+
+
+def _below_cells_are_ruled(doc: Doc, lattice: Lattice | None) -> bool:
+    """Does every stacked column reading on this page sit in a closed ruled cell?
+
+    "Closed" means the printed table draws all four sides: one row band holds
+    every value box of the cell, and a vertical ruling stands on each side of
+    them. That is the shape in which the extraction's ruling gate could have
+    seen a two-subject table and did not have to — and its absence is what the
+    `below_rule_unruled` stratum exists to sample, because there the direction
+    rests on nothing but the geometry.
+    """
+    stacked = [
+        cell
+        for cell in doc.cells.values()
+        if cell.locus in HLA_LOCI
+        and cell.status == "RESOLVED"
+        and len(cell.value_boxes) >= 2
+        and "below" in _new_rule_findings(cell)
+    ]
+    if not stacked:
+        return True
+    if lattice is None:
+        return False
+    for cell in stacked:
+        centres = [((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) for b in cell.value_boxes]
+        heights = [b[3] - b[1] for b in cell.value_boxes]
+        x = sum(c[0] for c in centres) / len(centres)
+        band = lattice.row_band(x, centres[0][1], max(heights))
+        if band is None or not all(band.contains_y(c[1]) for c in centres):
+            return False
+        crossing = lattice.verticals_crossing(band)
+        left = min(b[0] for b in cell.value_boxes)
+        right = max(b[2] for b in cell.value_boxes)
+        if not any(v <= left for v in crossing) or not any(v >= right for v in crossing):
+            return False
+    return True
 
 
 def load_documents(con: sqlite3.Connection) -> dict[str, Doc]:
@@ -465,6 +566,39 @@ def odd_value_box(resolved: list[Cell]) -> bool:
     return any(h / middle > ODD_BOX_TALL or h / middle < ODD_BOX_SHORT for h in heights)
 
 
+# How a cell says which of the four no-family findings read it. The source is
+# what `family_repass.py` writes; the rule id is what a re-extraction writes,
+# and a stratum keyed on the source alone would empty itself the first time the
+# corpus was re-extracted.
+_NEW_RULE_SOURCES = {
+    "family-tie": "tie",
+    "family-loo": "loo",
+    "family-prefix": "prefix",
+    "below-rule": "below",
+}
+
+
+def _new_rule_findings(cell: Cell) -> set[str]:
+    """Which of the four no-family findings read this cell. Usually one.
+
+    The rule id carries EVERY accommodation the assignment used, so a page
+    whose prefix was repaired and which then tied between two leans names
+    both, and both strata must be able to find it: the sample is also the
+    withdrawal list.
+    """
+    found = set()
+    named = _NEW_RULE_SOURCES.get(cell.source or "")
+    if named is not None:
+        found.add(named)
+    rule = cell.rule_id or ""
+    if rule == "ADR0008/below-rule":
+        found.add("below")
+    for marker, name in (("(loo:", "loo"), ("(tie:", "tie"), ("(prefix:", "prefix")):
+        if marker in rule:
+            found.add(name)
+    return found
+
+
 def tag_document(doc: Doc, export: Path) -> list[str]:
     """Every stratum this document belongs to, in `STRATA` order."""
     hla = [c for c in doc.cells.values() if c.locus in HLA_LOCI]
@@ -523,17 +657,36 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("zero_fact_refused" if anchored else "zero_fact_no_anchor")
     if any((c.reason or "").find("and its own label height") >= 0 for c in resolved):
         tags.add("template_band")
-    # The three answers for a page that had no layout family. Each is keyed on
+    # The four answers for a page that had no layout family. Each is keyed on
     # BOTH the rule the extraction records and the source `family_repass.py`
     # writes, because the same reading reaches the database by two routes: a
     # re-extraction writes the rule id with no source, and the repass writes
-    # its own source onto a cell the extraction refused.
-    if any(c.source == "family-tie" or "(tie:" in (c.rule_id or "") for c in resolved):
-        tags.add("family_tie")
-    if any(c.source == "family-loo" or "(loo:" in (c.rule_id or "") for c in resolved):
-        tags.add("family_loo")
-    if any(c.source == "below-rule" or (c.rule_id or "") == "ADR0008/below-rule" for c in resolved):
+    # its own source onto a cell the extraction refused. Keying on the rule id
+    # is what makes the stratum survive a re-extraction, which sets no source
+    # at all.
+    new_rule = [c for c in resolved if _new_rule_findings(c)]
+    findings = {name for c in new_rule for name in _new_rule_findings(c)}
+    for name, tag in (("tie", "family_tie"), ("loo", "family_loo"), ("prefix", "family_prefix")):
+        if name in findings:
+            tags.add(tag)
+    below = [c for c in resolved if "below" in _new_rule_findings(c)]
+    if below:
         tags.add("below_rule")
+        # The two sub-strata the direction's own safety case needs. A flat
+        # sample of the 305 pages is drawn mostly from pages where a ruled
+        # cell or a printed role word would have caught a two-subject table;
+        # these two are the populations where neither would.
+        if any(len(c.value_boxes) >= 2 and not doc.ruled_below_cells for c in below):
+            tags.add("below_rule_unruled")
+        if (doc.role or {}).get("value") in (None, "", "UNKNOWN"):
+            tags.add("below_rule_role_unknown")
+    # A repaired value from one of those findings carries TWO signals, and the
+    # rarer stratum would otherwise swallow the other: `choose` pools a
+    # document by its rarest tag, and every one of these tags is rarer than
+    # `repaired_glyph` (11,179 documents). Marked rather than gated, the way
+    # `ocr/boxsize.py` marks an odd box.
+    if any(c.repaired for c in new_rule):
+        tags.add("new_rule_repaired")
     if any(c.source == "rerecognised+ppocrv6" for c in resolved):
         tags.add("second_reading")
     if any(c.source == "page-ocr+wholepage" for c in resolved):

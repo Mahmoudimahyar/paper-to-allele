@@ -123,12 +123,24 @@ def corpus(tmp_path: Path) -> tuple[Path, Path, Path, dict[str, str]]:
     return src, families, tmp_path / "missing.sqlite", shas
 
 
+SHEET_SHA = "f" * 64
+
+
 def facts_db(tmp_path: Path, shas: dict[str, str]) -> Path:
     """A facts database in the state the corpus is in today: no family, and
     every HLA cell refused or unknown — plus two cells that must not move."""
     extract_facts = load("extract_facts")
     path = tmp_path / "facts.sqlite"
     con = extract_facts.connect(path)
+    # A page the extraction marked as printing two people. The corpus has 450;
+    # the guard refuses to run at all against a database holding none, so the
+    # fixture holds one the way the real store does.
+    con.execute(
+        "INSERT INTO document (sha256, extraction_version, rel_path, quality_band, family, "
+        "comparison_sheet, consistency, consistency_reason, n_facts, created_utc) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (SHEET_SHA, "facts/v1", "photos/sheet.jpg", "HIGH", None, 1, "NOT_CHECKABLE", "", 0, "t"),
+    )
     for name, sha in shas.items():
         con.execute(
             "INSERT INTO document (sha256, extraction_version, rel_path, quality_band, family, "
@@ -190,7 +202,9 @@ def test_a_dry_run_changes_nothing(tmp_path: Path) -> None:
     src, families, geometry, shas = corpus(tmp_path)
     facts = facts_db(tmp_path, shas)
     before = facts.read_bytes()
-    tally = module.run(facts, src, geometry, tmp_path / "no-persian.sqlite", families, dry_run=True)
+    tally, _, _ = module.run(
+        facts, src, geometry, tmp_path / "no-persian.sqlite", families, dry_run=True
+    )
     assert tally["cells family-tie would resolve"] >= 1
     assert tally["cells below-rule would resolve"] >= 1
     assert facts.read_bytes() == before, "a dry run must not write to the facts database"
@@ -237,7 +251,7 @@ def test_a_comparison_sheet_is_refused_outright(tmp_path: Path) -> None:
     con.execute("UPDATE document SET comparison_sheet=1 WHERE sha256=?", (shas["tie"],))
     con.commit()
     con.close()
-    tally = module.run(
+    tally, _, _ = module.run(
         facts, src, geometry, tmp_path / "no-persian.sqlite", families, dry_run=False
     )
     assert tally["comparison sheet; a rule cannot say whose value it is"] == 1
@@ -258,10 +272,30 @@ def test_the_comparison_sheet_guard_fails_closed(tmp_path: Path) -> None:
         module.run(facts, src, geometry, tmp_path / "no-persian.sqlite", families, dry_run=True)
 
 
+def test_the_comparison_sheet_guard_fails_closed_on_an_empty_result(tmp_path: Path) -> None:
+    """The failure the dropped table does NOT exercise, and the likelier one.
+
+    A query that RUNS and matches nothing returns the empty set, and the pass
+    then reads all 450 two-subject sheets as one person's page each. That is
+    the state of a database whose extraction has not written the
+    `comparison_sheet` column yet, or wrote it at another extraction version —
+    a partially-run or differently-versioned store, not a corrupt one.
+    """
+    module = load("family_repass")
+    src, families, geometry, shas = corpus(tmp_path)
+    facts = facts_db(tmp_path, shas)
+    con = sqlite3.connect(facts)
+    con.execute("UPDATE document SET comparison_sheet=0")
+    con.commit()
+    con.close()
+    with pytest.raises(SystemExit, match="comparison_sheet"):
+        module.run(facts, src, geometry, tmp_path / "no-persian.sqlite", families, dry_run=True)
+
+
 def test_every_source_this_pass_writes_has_a_review_stratum() -> None:
     """A pass whose values no stratum draws is a pass nobody can check."""
     repass = load("family_repass")
     pack = load("review_pack")
     strata = {name for name, _, _ in pack.STRATA}
-    for source in (repass.TIE, repass.LOO, repass.BELOW):
+    for source in (repass.TIE, repass.LOO, repass.BELOW, repass.PREFIX):
         assert source.replace("-", "_") in strata, source

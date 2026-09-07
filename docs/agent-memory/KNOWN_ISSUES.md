@@ -352,3 +352,31 @@ exactly two value cells with the token in one of them. A lattice built from
 merged, extended rulings (bridging the gaps the detector leaves) is the
 untried variant; it would need the same adversarial pass before it certified
 anything.
+
+## KI-028 — `family_repass.py` leaves two states no single build produces
+The pass applies the four no-family findings to a database without
+re-extracting the corpus, because a re-extraction resets every later pass. Two
+consequences are measured, printed by the pass itself, and NOT fixed there.
+
+**`document.family` stays NULL under family-rule facts.** 1,336 documents are
+read under `family/FORM#n(...)` rules while their `document` row still says no
+family. `scripts/build_testing_policy.py` groups on `coalesce(d.family,'')`
+(line 66), so 1,012 family-rule resolutions land in its `(no family)` bucket
+and raise that bucket's resolve rate. The direction is safe — a higher resolve
+rate makes NOT_TESTED *less* likely, so no cell is newly retired on this
+evidence — but the policy is then measured on a fiction. Setting `family` here
+would fix the grouping and break the pass's own idempotence (`candidates`
+selects `d.family IS NULL`), so the repair belongs to the re-extraction that
+writes both together.
+
+**68 cells go on calling themselves NOT_TESTED.** `extract_facts.extract`
+reclassifies an EMPTY cell as NOT_TESTED from the testing policy of the page's
+family. A page that gains a family gains a rule that reads it, so the cell is
+no longer empty and a re-extraction moves it NOT_TESTED -> REVIEW_REQUIRED —
+measured at exactly 68 (58 under the tie clause, 9 under the left-out fit, 1
+under the prefix repair), all DPA1/DPB1. This pass cannot move them:
+`candidates` selects only UNKNOWN and REVIEW_REQUIRED, and widening it would
+let a repass overwrite a finding it did not make. Until the corpus is
+re-extracted those 68 cells assert "this laboratory does not perform this
+test" about pages the new build reads a family on. `family_repass.py` prints
+the count on every run so the claim stays checkable.

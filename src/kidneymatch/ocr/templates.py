@@ -27,33 +27,52 @@ than by page coordinates. Measured, that raises coverage to **14,876 documents
 must never happen is claiming a family a page does not belong to, because that
 applies the family's authored cell rule to a layout it was never measured on.
 
-## Two accommodations, and what each is NOT
+## One repair and two accommodations, in the order they are tried
 
 11,210 documents still carry no family, and two thirds of the reason is not
-that the page is a different form:
+that the page is a different form. `assign_prototype` asks three questions,
+and the order is the point: the ordinary fit first, then the REPAIR, and only
+what is left over reaches the accommodation.
 
-* **A near-tie between prototypes of ONE form.** 987 pages fit inside
-  `MAX_RESIDUAL` and were refused only because a second prototype fitted
-  nearly as well — and the prototypes that tie are the same printed form
-  photographed at different leans. `assign_prototype` assigns those, but only
-  when the caller says the tied prototypes author one cell rule AND their rows
-  agree under a y-only fit. It is not "the closest one wins": two genuinely
-  different layouts still refuse each other.
-* **A stack that fits except at ONE label.** On 318 pages the recognizer boxed
-  one label's `HLA-` prefix separately, or did not box it, which moves that
-  label's centre right; the page then misses the tolerance by a whisker. The
-  left-out fit admits those at half the tolerance. It is not a perspective
-  correction — the dropped label is a MIDDLE label on 241 of the 318 — and it
-  is not a licence to drop an inconvenient point: the dropped box must still
-  stand in the page's label column and its deviation must be in x.
+1. **A near-tie between prototypes of ONE form.** 987 pages fit inside
+   `MAX_RESIDUAL` and were refused only because a second prototype fitted
+   nearly as well — and the prototypes that tie are the same printed form
+   photographed at different leans. `assign_prototype` assigns those, but only
+   when the caller says the tied prototypes author one cell rule AND their rows
+   agree under a y-only fit. It is not "the closest one wins": two genuinely
+   different layouts still refuse each other.
+2. **A label whose `HLA-` prefix the recognizer boxed apart.** That fragment
+   carries the label's printed left edge away and drags its centre right,
+   which is what pushes the page's stack past the tolerance. The fragment is
+   ON THE PAGE, so it is put back (`merge_prefix_fragments`) and the ORDINARY
+   question is asked again at the ORDINARY tolerance. Measured over the 11,210:
+   162 pages assign this way, +267 cells, and the 2,000 already-assigned pages
+   sampled are untouched — the merge is tried only after the plain fit has
+   refused. The repaired boxes are also what the page is then READ from, or
+   the same displacement hands the label's value to the next locus down.
+3. **A stack that fits except at ONE label, with no fragment to explain it.**
+   The residue: 209 pages, +259 cells. The left-out fit admits them at half
+   the tolerance. It is not a perspective correction — the dropped label is a
+   MIDDLE label on most of them — and it is not a licence to drop an
+   inconvenient point: the dropped box must still stand in the page's label
+   column and its deviation must be in x. Its placebo is a prototype
+   translated by one row, which a uniformly-pitched stack fits perfectly once
+   the wrapped label is dropped; the x-dominance test is what refuses it.
 
-Both are accommodations for READING a page, never evidence for building a form,
-so `template_discovery.py` gets neither.
+Measured against the pre-change build, doing the repair FIRST rather than
+accommodating everything gains 161 cells over the left-out fit alone and
+assigns 108 more pages. What it does NOT do is repair the left-out fit's own
+losses: of the 34 cells that fit lost to review, the merge repairs 0 and adds
+4, because on those pages the displaced label has no `HLA-` box to put back.
+
+All three are for READING a page, never evidence for building a form, so
+`template_discovery.py` gets none of them.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from statistics import median
@@ -129,6 +148,19 @@ LOO_MIN_LABELS = 6
 # read as a bare locus name, not a label whose prefix was boxed apart.
 LABEL_COLUMN_HEIGHTS = 6.0
 
+# The `HLA-` a recognizer boxes apart from the label it belongs to. This is the
+# CAUSE of the left-out fit's population — the fragment carries the label's
+# printed left edge away and drags its centre right — so where the fragment is
+# on the page it can be put back instead of accommodated, and the label's box
+# is then the one the form printed. Nothing here reads a locus from text: the
+# fragment names no gene, and the box it is joined to already named one.
+PREFIX_FRAGMENT = re.compile(r"^H\s*[L1I]\s*[A4]\s*[-–—:.]?$", re.IGNORECASE)
+# How far the fragment's right edge may sit from the label's left edge, in
+# label heights, and how far off its line. A prefix boxed apart is touching:
+# the two halves of one printed word.
+FRAGMENT_MAX_GAP = 1.0
+FRAGMENT_MAX_OFFSET = 0.6
+
 
 @dataclass(frozen=True, slots=True)
 class SimilarityFit:
@@ -172,6 +204,13 @@ class Assignment:
     # anchor for this label: its printed position is the one the page
     # contradicted.
     dropped_label: str | None = None
+    # Loci whose `HLA-` prefix was boxed apart and put back before this fit was
+    # tried. Non-empty means the page fitted the form once its labels were the
+    # words the form prints, which is a repair rather than an accommodation —
+    # and a caller that reads the page should read it from the repaired boxes,
+    # or the same displacement that broke the fit will hand the label's value
+    # to the next locus down.
+    merged_prefixes: tuple[str, ...] = ()
     # The best residual of any OTHER prototype, so the margin the assignment
     # won by is visible in provenance rather than only inside this function.
     runner_up_residual: float | None = None
@@ -203,6 +242,63 @@ def constant_label_boxes(boxes: list[Box]) -> dict[str, Box]:
             continue
         seen.setdefault(locus, []).append(box)
     return {locus: found[0] for locus, found in seen.items() if len(found) == 1}
+
+
+def merge_prefix_fragments(
+    boxes: list[Box],
+) -> tuple[list[Box], tuple[str, ...], dict[int, tuple[Box, Box]]]:
+    """Put back each `HLA-` the recognizer boxed apart from the label it prefixes.
+
+    Returns the boxes with every such pair joined into the word the form
+    actually prints, the loci that were repaired, and, for each joined box, the
+    two boxes it was made of — so a caller holding a map back to the page as
+    STORED can extend it rather than reporting a box in the levelled frame.
+    The joined box keeps the LABEL's text, not the fragment's: geometry is what
+    changes here, and the locus a box names must go on coming from the same
+    characters it came from before.
+
+    This is the direct repair of what the left-out fit accommodates. A label
+    whose prefix is boxed apart has its centre dragged right by half the
+    prefix, which is what pushes the page's stack past the template tolerance
+    — and the same displacement is what hands the label's own value to the
+    NEXT locus's label under the ownership gate. Joining the two boxes fixes
+    both; leaving the label out of the fit fixes only the first.
+    """
+    fragments = [box for box in boxes if PREFIX_FRAGMENT.match((box.text or "").strip())]
+    if not fragments:
+        return boxes, (), {}
+    joined: dict[int, Box] = {}
+    sources: dict[int, tuple[Box, Box]] = {}
+    consumed: set[int] = set()
+    repaired: list[str] = []
+    for box in boxes:
+        locus = canonical_locus_label(box.text or "")
+        if locus is None:
+            continue
+        for fragment in fragments:
+            if id(fragment) in consumed:
+                continue
+            gap = box.x0 - fragment.x1
+            if not -1e-9 <= gap <= FRAGMENT_MAX_GAP * box.height:
+                continue
+            if abs(fragment.centre_y - box.centre_y) > FRAGMENT_MAX_OFFSET * box.height:
+                continue
+            consumed.add(id(fragment))
+            merged = Box(
+                min(box.x0, fragment.x0),
+                min(box.y0, fragment.y0),
+                max(box.x1, fragment.x1),
+                max(box.y1, fragment.y1),
+                box.text,
+            )
+            joined[id(box)] = merged
+            sources[id(merged)] = (box, fragment)
+            repaired.append(locus)
+            break
+    if not joined:
+        return boxes, (), {}
+    out = [joined.get(id(box), box) for box in boxes if id(box) not in consumed]
+    return out, tuple(sorted(set(repaired))), sources
 
 
 def constant_label_positions(boxes: list[Box]) -> dict[str, tuple[float, float]]:
@@ -438,17 +534,19 @@ def assign_prototype(
     BUILT from a page one of whose labels contradicts it: this is an
     accommodation for reading, not evidence of a form.
     """
-    label_boxes = constant_label_boxes(boxes)
-    positions = {locus: (box.centre_x, box.centre_y) for locus, box in label_boxes.items()}
-    admissible = [p for p in prototypes if _admissible(positions, p, prototypes)]
 
-    scored: list[tuple[float, LayoutPrototype, SimilarityFit]] = []
-    for prototype in admissible:
-        fit = fit_similarity(positions, prototype)
-        if fit is not None and fit.residual <= MAX_RESIDUAL:
-            scored.append((fit.residual, prototype, fit))
-
-    if scored:
+    def plain(
+        positions: dict[str, tuple[float, float]], merged: tuple[str, ...]
+    ) -> Assignment | None:
+        """The ordinary fit, at the full tolerance, over these label positions."""
+        admissible = [p for p in prototypes if _admissible(positions, p, prototypes)]
+        scored: list[tuple[float, LayoutPrototype, SimilarityFit]] = []
+        for prototype in admissible:
+            fit = fit_similarity(positions, prototype)
+            if fit is not None and fit.residual <= MAX_RESIDUAL:
+                scored.append((fit.residual, prototype, fit))
+        if not scored:
+            return None
         scored.sort(key=lambda item: item[0])
         best_residual, prototype, fit = scored[0]
         margin = max(best_residual * AMBIGUITY_MARGIN, best_residual + 1e-9)
@@ -464,14 +562,42 @@ def assign_prototype(
             n_labels=fit.n_labels,
             tied_with=tuple(other.prototype_id for other in tied),
             runner_up_residual=scored[1][0] if len(scored) > 1 else None,
+            merged_prefixes=merged,
         )
 
-    if not leave_one_out or len(positions) < LOO_MIN_LABELS:
+    label_boxes = constant_label_boxes(boxes)
+    positions = {locus: (box.centre_x, box.centre_y) for locus, box in label_boxes.items()}
+    assignment = plain(positions, ())
+    if assignment is not None:
+        return assignment
+
+    if not leave_one_out:
         return None
 
-    # The plain fit refused. Try it once more with each printed label left out,
-    # at half the tolerance, and only where the dropped label looks like one
-    # the recognizer mis-boxed rather than a row this form does not have.
+    # The plain fit refused. Before accommodating the page, REPAIR it: a label
+    # whose `HLA-` prefix the recognizer boxed apart is not a label in the
+    # wrong place, it is half a label, and the other half is on the page. Put
+    # it back and ask the ordinary question again, at the ordinary tolerance.
+    # Only then is what remains the residue the left-out fit is for.
+    merged_boxes, merged, _ = merge_prefix_fragments(boxes)
+    if merged:
+        merged_label_boxes = constant_label_boxes(merged_boxes)
+        merged_positions = {
+            locus: (box.centre_x, box.centre_y) for locus, box in merged_label_boxes.items()
+        }
+        assignment = plain(merged_positions, merged)
+        if assignment is not None:
+            return assignment
+        # The left-out fit, too, asks about the page whose labels are whole.
+        label_boxes, positions = merged_label_boxes, merged_positions
+
+    if len(positions) < LOO_MIN_LABELS:
+        return None
+    admissible = [p for p in prototypes if _admissible(positions, p, prototypes)]
+
+    # The residue. Try the fit once more with each printed label left out, at
+    # half the tolerance, and only where the dropped label looks like one the
+    # recognizer mis-boxed rather than a row this form does not have.
     left_out: list[tuple[float, LayoutPrototype, SimilarityFit, str, float | None]] = []
     for dropped in sorted(positions):
         kept = {locus: point for locus, point in positions.items() if locus != dropped}
@@ -507,4 +633,5 @@ def assign_prototype(
         n_labels=fit.n_labels,
         dropped_label=dropped,
         runner_up_residual=runner_up,
+        merged_prefixes=merged,
     )

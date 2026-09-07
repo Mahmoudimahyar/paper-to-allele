@@ -92,6 +92,7 @@ from kidneymatch.ocr.templates import (  # noqa: E402
     assign_prototype,
     constant_label_positions,
     fit_similarity,
+    merge_prefix_fragments,
 )
 
 EXTRACTION_VERSION = "facts/v1"
@@ -139,12 +140,31 @@ FAMILY_RULE = ValueRule(
 #
 # `refuse_bare`: on a column form the only thing naming the gene is which
 # column the value stands in, and a column is what a photographed page shears.
-# Measured over the 305 pages the layout reader calls a column form, 765 of 765
-# values print their locus, so refusing the bare ones costs nothing and closes
-# the case where the column alone is wrong. It is deliberately NOT
-# `require_prefix=True`, which would also admit ten star-less spellings nobody
-# has measured on this layout and switch on `bind_in_lattice`'s ruled-row
-# branch — a branch that reads the row to the RIGHT of a header.
+# Measured over the pages the layout reader calls a column form, 727 of 727
+# values print their locus, so refusing the bare ones costs nothing here and
+# closes the case where the column alone is wrong. It is deliberately NOT
+# `require_prefix=True`, which would also admit star-less spellings nobody has
+# measured on this layout and switch on `bind_in_lattice`'s ruled-row branch —
+# a branch that reads the row to the RIGHT of a header.
+#
+# This object is SHARED: `page_ocr_bind.py`, `rerecognise_pass.py` and
+# `upright_bind.py` all import it, so `refuse_bare` changed their behaviour
+# too and had to be measured on them. Dry-run against today's database, this
+# build against the pre-change one, byte-identical on all three: page_ocr_bind
+# 204 documents (1 read below) and the same 13 cells; rerecognise 204
+# documents re-read and the same 18 cells; upright_bind 425 pages (14 read
+# below) binding 0 either way. The rulings the ruling gate needs are threaded
+# in by each caller, so a pass that has no lattice for a page (upright_bind,
+# whose page was turned) simply has no such gate.
+#
+# The placebo, corrected. The direction's safety story used to rest on
+# "forcing BELOW on right-reading pages binds nothing", and that is false.
+# Forced on 290 right-reading no-family pages matched to the column pages by
+# locus-anchor count (seed 20260907), the rule WITHOUT these gates binds 7
+# cells (C 3, DRB1 2, A 1, DQB1 1); the shipped rule binds 4 (DRB1 2, A 1,
+# DQB1 1), refuse_bare taking all three C. So `reading_direction` is the
+# operative gate, not the rule's own tolerances — which is exactly why the
+# direction gets its own review strata.
 BELOW_RULE = ValueRule(
     direction="below", align_overlap=0.3, max_gap=3.0, max_values=2, refuse_bare=True
 )
@@ -223,22 +243,47 @@ def connect(path: Path) -> sqlite3.Connection:
     # leaves an older database without them, and a positional insert would then
     # break the moment they were expected — so they are added here, named.
     columns = {row[1] for row in con.execute("PRAGMA table_info(document)")}
-    for name, ddl in (("tilt_deg", "REAL"), ("frame", "TEXT")):
+    for name, ddl in (
+        ("tilt_deg", "REAL"),
+        ("frame", "TEXT"),
+        # What `ocr/layout.py` counted on this page. The direction it decides
+        # settles which way 365 cells are read, and without the counts stored
+        # there is no per-page record of WHY: a later reader can see that a
+        # page was read down a column but not that 12 pairs of labels shared a
+        # line against 1 sharing a column. Four integers, written for every
+        # page whether or not the direction changed, so the population that
+        # nearly qualified is visible too.
+        ("loci_sharing_a_row", "INTEGER"),
+        ("loci_sharing_a_column", "INTEGER"),
+        ("values_along_the_row", "INTEGER"),
+        ("values_under_the_label", "INTEGER"),
+        # The label left out of the template fit, when one was — so which
+        # label the accommodation dropped is a column, not something to be
+        # recovered by parsing the rule ids of the cells it happened to gain.
+        ("dropped_label", "TEXT"),
+    ):
         if name not in columns:
             con.execute(f"ALTER TABLE document ADD COLUMN {name} {ddl}")
     con.commit()
     return con
 
 
-def load_geometry(path: Path | None) -> dict[str, tuple[str, float]]:
+def load_geometry(path: Path | None, read_only: bool = False) -> dict[str, tuple[str, float]]:
     """Per-document page geometry from `scripts/geometry_pass.py`: (decision, theta).
 
     Absent, the identity frame applies everywhere, which is the pipeline of
     today. Only a ROTATE decision — two estimators agreeing — moves anything.
+
+    `read_only`: a pass that only measures opens it that way, so a dry run
+    holds no writable handle on a store it never writes to.
     """
     if path is None or not path.exists():
         return {}
-    con = sqlite3.connect(path)
+    con = (
+        sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        if read_only
+        else sqlite3.connect(path)
+    )
     try:
         return {
             sha: (str(decision), float(theta))
@@ -262,9 +307,11 @@ def load_geometry(path: Path | None) -> dict[str, tuple[str, float]]:
 MIN_FRAME_TILT_DEG = 1.5
 
 
-def load_rulings(path: Path | None) -> dict[str, tuple[int, int, str, str]]:
+def load_rulings(
+    path: Path | None, read_only: bool = False
+) -> dict[str, tuple[int, int, str, str]]:
     """The stored rulings of every page under this geometry version (see `ocr.lattice`)."""
-    return load_stored_rulings(path, GEOMETRY_VERSION)
+    return load_stored_rulings(path, GEOMETRY_VERSION, read_only)
 
 
 def lattice_for(
@@ -587,13 +634,37 @@ def extract(
     assignment = assign_prototype(
         latin_level, prototypes or [], rule_of=rule_of, leave_one_out=True
     )
+    if assignment is not None and assignment.merged_prefixes:
+        # The page fitted once the `HLA-` fragments the recognizer boxed apart
+        # were put back. It must then be READ from the repaired boxes: the same
+        # displacement that broke the template fit also drags the label's own
+        # centre right, and the ownership gate hands its value to the next
+        # locus down (measured: 9 DRB1 cells refused as "closer to the DQB1
+        # label"). The joined box keeps the label's text, so no locus comes
+        # from anything but the characters that named it before.
+        latin_level, _, sources = merge_prefix_fragments(latin_level)
+        for merged_id, (label_box, fragment) in sources.items():
+            # Provenance must name the boxes as STORED, so the joined box gets
+            # a way back of its own: the union of what the two halves were
+            # before the page was levelled.
+            first = back.get(id(label_box), label_box)
+            second = back.get(id(fragment), fragment)
+            back[merged_id] = Box(
+                min(first.x0, second.x0),
+                min(first.y0, second.y0),
+                max(first.x1, second.x1),
+                max(first.y1, second.y1),
+                first.text,
+            )
     family = assignment.prototype_id if assignment else None
     family_path = family is not None and family in prefixed_families
     rule = FAMILY_RULE if family_path else DEFAULT_RULE
     rule_id = f"family/{family}" if family_path else "ADR0008/default-row-rule"
     if family_path and assignment is not None:
-        # Provenance for the two accommodations, so the review pack can
+        # Provenance for the three accommodations, so the review pack can
         # stratify on them and a reviewer sees which pages they hold up.
+        if assignment.merged_prefixes:
+            rule_id += f"(prefix:{','.join(assignment.merged_prefixes)})"
         if assignment.tied_with:
             rule_id += f"(tie:{','.join(assignment.tied_with)})"
         if assignment.dropped_label:
@@ -606,16 +677,23 @@ def extract(
     # recognised form has an authored rule, and that rule reads rightwards.
     role_reading = read_form_role(persian, latin)
     two_subjects = len({token.role for token in role_reading.tokens}) > 1
-    reads_down = (
-        family is None
-        and reading_direction(latin_level, row_slope, column_slope).direction == "below"
-    )
+    layout = reading_direction(latin_level, row_slope, column_slope)
+    reads_down = family is None and layout.direction == "below"
     if reads_down and not two_subjects:
         # A header row over two subject rows is exactly what a column layout
         # looks like from the geometry, and the page's own role words are the
         # only thing that can tell them apart. Measured cost: 13 cells on 10
         # pages of the 383.
-        rule = replace(BELOW_RULE, row_slope=row_slope, column_slope=column_slope)
+        #
+        # The page's own rulings travel with the rule: reading down a column,
+        # a ruling between two stacked values is the only thing on the page
+        # that separates one person's pair from two people's singles.
+        rule = replace(
+            BELOW_RULE,
+            row_slope=row_slope,
+            column_slope=column_slope,
+            row_rulings=lattice.horizontal if lattice is not None else (),
+        )
         rule_id = "ADR0008/below-rule"
     # The rows of this page, along the slope this page prints them at. On a
     # level page, or one whose rulings could not be measured, this is the rule
@@ -659,7 +737,7 @@ def extract(
     results, lattice_bound = read_page(rule)
     policy_family = family
     newly_assigned = assignment is not None and bool(
-        assignment.tied_with or assignment.dropped_label
+        assignment.tied_with or assignment.dropped_label or assignment.merged_prefixes
     )
     if (
         family_path
@@ -826,6 +904,14 @@ def extract(
         # applied to the stored boxes; 0 with the identity frame.
         "tilt_deg": float(level.theta_deg),
         "frame": "identity" if level.is_identity else "ROTATE",
+        # The layout reader's own counts, for every page. `reading_direction`
+        # is asked of every document; only a page with no family may act on
+        # the answer, and the counts say how close the others came.
+        "loci_sharing_a_row": layout.loci_sharing_a_row,
+        "loci_sharing_a_column": layout.loci_sharing_a_column,
+        "values_along_the_row": layout.values_along_the_row,
+        "values_under_the_label": layout.values_under_the_label,
+        "dropped_label": assignment.dropped_label if assignment is not None else None,
     }
     return rows, summary
 
@@ -952,6 +1038,11 @@ def run(
                 now,
                 summary["tilt_deg"],
                 summary["frame"],
+                summary["loci_sharing_a_row"],
+                summary["loci_sharing_a_column"],
+                summary["values_along_the_row"],
+                summary["values_under_the_label"],
+                summary["dropped_label"],
             )
         )
         tally["frame_rotate"] += summary["frame"] == "ROTATE"
@@ -974,7 +1065,9 @@ def run(
             con.executemany(
                 "INSERT OR REPLACE INTO document (sha256, extraction_version, rel_path, "
                 "quality_band, family, comparison_sheet, consistency, consistency_reason, "
-                "n_facts, created_utc, tilt_deg, frame) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "n_facts, created_utc, tilt_deg, frame, loci_sharing_a_row, "
+                "loci_sharing_a_column, values_along_the_row, values_under_the_label, "
+                "dropped_label) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 documents,
             )
             con.commit()

@@ -29,6 +29,18 @@ time. Four gates now stand between a candidate box and a RESOLVED value:
    label belongs to that label.
 4. **Cardinality** — a locus has at most two alleles.
 
+**Reading DOWN a column adds one more.** Two boxes stacked under one header
+are one person's two alleles or two people's one allele each; the picture is
+identical, and publishing the wrong reading merges two genotypes. The printed
+form is what separates them, so `ValueRule.row_rulings` carries the page's
+horizontal rulings and a ruling running between the two boxes at the header's
+own x refuses the cell (`_ruling_between`). Measured over the corpus's
+column-layout pages it costs 1 cell of 365 — a DRB1 on a page whose table
+really does draw the line between two rows — and 195 of the 198 two-box cells
+it inspects have no ruling anywhere around them, which is the limit of what
+this gate can do: it catches the ruled case and nothing else in this module
+can see the unruled one at all.
+
 **The rows are read along the page's own rulings.** `ValueRule.row_slope`
 carries the slope `ocr/rows.py` measured, and the alignment test compares a box
 where its printed row would have put it on a level page. Nothing is moved: this
@@ -46,7 +58,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from kidneymatch.hla.vocabulary import FirstFieldVocabulary, load_vocabulary
 from kidneymatch.ocr.glyphs import (
@@ -57,6 +69,9 @@ from kidneymatch.ocr.glyphs import (
     looks_like_locus_label,
     parse_allele_values,
 )
+
+if TYPE_CHECKING:  # `ocr.lattice` imports `ocr.geometry`, which imports this module.
+    from kidneymatch.ocr.lattice import Ruling
 
 Direction = Literal["right", "below"]
 
@@ -264,6 +279,17 @@ class ValueRule:
     # on a portrait page differ by more than four times. Used only by a rule
     # reading downwards, where "the same column" is the question.
     column_slope: float = 0.0
+
+    # The page's horizontal rulings (`ocr/lattice.py`), for a rule reading DOWN
+    # a column. Reading down, two values stacked under one header are that
+    # locus's two alleles — or two PEOPLE's one allele each, which is the same
+    # picture and a merged genotype if it is published. The printed table says
+    # which: a ruling drawn between them is the form separating two rows, and
+    # nothing this rule can see makes the pair one cell again. Empty is the
+    # behaviour of before, and is what a page with no measured rulings gets.
+    # Typed loosely on purpose — `ocr.lattice` imports `ocr.geometry`, which
+    # imports this module, so the concrete `Ruling` is a checking-time name.
+    row_rulings: tuple[Ruling, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,6 +540,38 @@ def _cross_offset(anchor: Box, box: Box, rule: ValueRule) -> float:
     if rule.direction == "right":
         return abs(box.centre_y - lift - anchor.centre_y)
     return abs(box.centre_x - lift - anchor.centre_x)
+
+
+def _ruling_between(anchor: Box, found: list[Box], rule: ValueRule) -> float | None:
+    """A printed ruling separating two of this header's candidate values, or None.
+
+    Only downwards, and only from the header's own x: a rule reading DOWN a
+    column cannot tell one person's two alleles from two people's one allele
+    each — both are two boxes stacked under one header, both parse, both name
+    the locus, and both stand in the header's column. The form can tell them
+    apart, because a table that prints two subjects draws a line between their
+    rows. So a horizontal ruling that spans the header's x and passes between
+    two candidates means they are in different printed cells, and the pair is
+    a question for a person rather than one cell's genotype.
+
+    Read AT the header's x rather than at the ruling's middle, for the reason
+    `lattice.Ruling.at_x` exists: on a page tilted a degree a ruling moves half
+    a row's height across the page. Centres, not edges: a ruling that clips the
+    top of the lower box still separates the two printed rows, and a value box
+    the detector stretched over the line must not evade the gate by touching it.
+    """
+    if rule.direction != "below" or len(found) < 2 or not rule.row_rulings:
+        return None
+    x = anchor.centre_x
+    ordered = sorted(found, key=lambda box: box.centre_y)
+    for upper, lower in zip(ordered, ordered[1:], strict=False):
+        for ruling in rule.row_rulings:
+            if not ruling.spans(x):
+                continue
+            at = ruling.at_x(x)
+            if upper.centre_y < at < lower.centre_y:
+                return at
+    return None
 
 
 def _owned_by_another_anchor(
@@ -797,6 +855,23 @@ def _bind(
                 value_boxes=found,
                 reason=f"candidate is closer to the {owner} label; another locus owns it",
             )
+    separator = _ruling_between(anchor, found, rule)
+    if separator is not None:
+        # The last gate, and the only one that can see a two-subject table read
+        # down a column. Everything else about the picture is legitimate: two boxes,
+        # two alleles, both under the header, both naming the locus. What the
+        # form says is that they are in different printed rows.
+        return LocusResolution(
+            locus,
+            ResolutionStatus.REVIEW_REQUIRED,
+            anchor_box=anchor,
+            value_boxes=found,
+            reason=(
+                "a printed ruling runs between the values stacked under this header; "
+                "they are in different rows of the table, and a column rule cannot say "
+                "whether that is one person's two alleles or two people's one"
+            ),
+        )
     # The text gates. A box that does not parse is noted and the OTHER boxes
     # are still put through every gate: a refusal for shape must mean that
     # nothing else on the row was wrong.
