@@ -71,6 +71,18 @@ from kidneymatch.ocr.rows import row_slope as measure_row_slope  # noqa: E402
 from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 
 PACK_SCHEMA = "hla-review-pack/v1"
+# Two DRB3/4/5 routes that assert values no person has checked. Both are keyed
+# by their RULE id rather than by the `source` string a pass happens to write:
+# a rule_id is emitted by `ocr/drbx.py` itself and therefore survives a full
+# re-extraction, while a source written by a one-off pass does not, and a
+# stratum keyed on a vanishing source silently draws zero.
+TOKEN_ANCHORED_RULE = "TOKEN_ANCHORED_DRBX/v1"
+WIDENED_HEADER_RULE = "GROUPED_DRBX_WIDENED/v1"
+# The `source` on a widened-header cell is `widened-drbx-header:<branch>[+...]`
+# — which of the four widenings let the header in. The pack spreads that
+# stratum across BRANCHES the way every other stratum is spread across layout
+# families, because the four are four different kinds of damage.
+WIDENED_HEADER_SOURCE = "widened-drbx-header"
 HLA_LOCI = ("A", "B", "C", "DRB1", "DQA1", "DQB1", "DPA1", "DPB1")
 DRBX_LOCI = ("DRB3", "DRB4", "DRB5")
 CELL_FIELDS = HLA_LOCI + DRBX_LOCI
@@ -125,6 +137,16 @@ STRATA: tuple[tuple[str, int, str], ...] = (
         "own label pitch, one row below DRB1; the gene is PRESENT because a token on that row "
         "names it. 479 pages, and only one of them carries an existing label — this stratum is "
         "the only thing that can measure whether the row was the right row",
+    ),
+    (
+        "widened_drbx_header",
+        20,
+        "the DRB3/4/5 header was read ONLY by the damage-tolerant pattern, and the page's own "
+        "row pitch then put it where a header belongs. 104 pages, 312 gene cells, 119 PRESENT "
+        "and 60 ABSENT — and an ABSENT here is a clinical negative resting on a glyph the "
+        "recognizer got wrong. No labelled page carries one; the nearest labelled stratum "
+        "(damaged header, add-on source) is wrong 5 times in 20. Cut with `--only "
+        "widened_drbx_header`, which spreads the sample across the four widenings",
     ),
     (
         "sloped_row",
@@ -516,12 +538,25 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("two_engine_reread")
     if any(c.source == "drbx-reread+ppocrv6" for c in doc.cells.values() if c.locus in DRBX_LOCI):
         tags.add("drbx_reread")
-    if any(c.source == "token-anchored-drbx" for c in doc.cells.values() if c.locus in DRBX_LOCI):
+    if any(c.rule_id == TOKEN_ANCHORED_RULE for c in doc.cells.values() if c.locus in DRBX_LOCI):
         # The row placed from geometry alone on a page whose printed enumeration
         # was never read. Nothing else in the pipeline can say whether it was
         # the right row: no header text corroborates it and the labels do not
         # reach it.
+        #
+        # Keyed on the RULE, not on the `source` string. The source was written
+        # only by the one-off `scripts/drbx_token_repass.py`; the extraction
+        # path writes the same rule_id but used to leave `source` NULL, so
+        # after any full re-extraction this stratum would have drawn zero — the
+        # exact failure this module's own header warns about.
         tags.add("token_anchored_drbx")
+    if any(c.rule_id == WIDENED_HEADER_RULE for c in doc.cells.values() if c.locus in DRBX_LOCI):
+        # The DRB3/4/5 header was read only by the damage-tolerant pattern and
+        # then corroborated by the page's geometry (route (c)). No labelled page
+        # carries one, so nothing has ever measured whether the widening reads a
+        # header or something else standing where one belongs — and these pages
+        # write ABSENT, which is a clinical negative.
+        tags.add("widened_drbx_header")
     if any(
         c.source in ("drbx-reread+ppocrv6", "ink-certified")
         for c in doc.cells.values()
@@ -583,14 +618,47 @@ def pinned_shas(sources: list[Path]) -> set[str]:
     return shas
 
 
+def spread_key(doc: Doc, tag: str) -> str | None:
+    """What a stratum is round-robined across, so one pool is not one thing.
+
+    Layout family everywhere, except the widened-header stratum, where the
+    thing that must not dominate the sample is the BRANCH — which of the four
+    widenings let this page's header in. They are four different kinds of
+    recognizer damage, and the pack exists to tell them apart; a sample that is
+    all `slash-as-4` measures one of them and is silent about the other three.
+    """
+    if tag != "widened_drbx_header":
+        return doc.family
+    branches = {
+        (c.source or "").split(":", 1)[1]
+        for c in doc.cells.values()
+        if c.locus in DRBX_LOCI and (c.source or "").startswith(f"{WIDENED_HEADER_SOURCE}:")
+    }
+    return "+".join(sorted(branches)) or None
+
+
 def choose(
-    docs: dict[str, Doc], n: int, seed: int, export: Path, pin: set[str] | None = None
+    docs: dict[str, Doc],
+    n: int,
+    seed: int,
+    export: Path,
+    pin: set[str] | None = None,
+    only: str | None = None,
 ) -> list[Doc]:
-    """Stratified, deterministic, spread across layout families inside a stratum."""
+    """Stratified, deterministic, spread across layout families inside a stratum.
+
+    `only` cuts a pack of ONE stratum: every document carrying that tag is
+    pooled there whatever rarer signal it also carries, and no other stratum is
+    drawn. That is how a route with no labelled page gets the >= 40 rows a
+    promotion decision needs, instead of the handful a weight would give it in
+    a general pack.
+    """
     rng = random.Random(seed)
     present: list[Doc] = []
     for doc in docs.values():
         doc.tags = tag_document(doc, export)
+        if only is not None:
+            doc.tags = [t for t in doc.tags if t == only]
         if doc.tags and (export / doc.rel_path).exists():
             present.append(doc)
     # A document belongs to its RAREST stratum, measured on this corpus rather
@@ -629,7 +697,7 @@ def choose(
     for tag, _, _ in STRATA:
         grouped: dict[str | None, list[Doc]] = defaultdict(list)
         for doc in pools[tag]:
-            grouped[doc.family].append(doc)
+            grouped[spread_key(doc, tag)].append(doc)
         for group in grouped.values():
             rng.shuffle(group)
         by_family[tag] = grouped
@@ -648,6 +716,15 @@ def choose(
                 if grouped[family] and taken < want and len(chosen) < n:
                     chosen.append(grouped[family].pop())
                     taken += 1
+
+    if only is not None:
+        # One stratum, so there is nothing for the one-per-stratum pass or the
+        # weights to balance, and the top-up would fill the rest of the pack at
+        # random. The whole of `n` goes to this stratum in ONE round-robin over
+        # its branches — running the one-per pass first would restart that
+        # round-robin and take the first branch twice.
+        take(only, n)
+        return chosen[:n]
 
     # ONE document from every stratum that has any, before a single stratum
     # takes a second. A pack is a diagnostic instrument, and a signal with no
@@ -1016,6 +1093,7 @@ def build_pack(
     drop: set[str] | None = None,
     geometry_db: Path | None = None,
     port: int = 8765,
+    only: str | None = None,
 ) -> dict[str, int]:
     con = sqlite3.connect(facts_db)
     docs = load_documents(con)
@@ -1023,7 +1101,7 @@ def build_pack(
     con.close()
     if drop:
         docs = {sha: doc for sha, doc in docs.items() if doc.short not in drop}
-    chosen = choose(docs, n, seed, export, pin)
+    chosen = choose(docs, n, seed, export, pin, only=only)
     if len({d.short for d in chosen}) != len(chosen):
         raise ValueError("two chosen documents share a 16-character id prefix")
     out.mkdir(parents=True, exist_ok=True)
@@ -1197,6 +1275,13 @@ def main() -> int:
         "the page keeps a reader's answers in the browser's storage for one origin",
     )
     parser.add_argument(
+        "--only",
+        default=None,
+        choices=[t for t, _, _ in STRATA],
+        help="cut a pack of ONE stratum. A route with no labelled page needs tens of rows "
+        "before its calls can be promoted, and a weight in a general pack gives it a handful",
+    )
+    parser.add_argument(
         "--page-only",
         action="store_true",
         help="replace index.html in an existing pack and touch nothing else",
@@ -1234,6 +1319,7 @@ def main() -> int:
         drop=drop,
         geometry_db=args.geometry,
         port=args.port,
+        only=args.only,
     )
     packed = json.loads((args.out / "pack.json").read_text(encoding="utf-8"))["n_documents"]
     print(f"packed {packed} documents into {args.out}")

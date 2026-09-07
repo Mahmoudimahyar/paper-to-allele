@@ -213,21 +213,83 @@ Never put secret values in this file.
 - **Decision (d), added 2026-09-07:** whether the enumeration licence survives
   when the header is PRINTED BUT UNREAD. `TOKEN_ANCHORED_DRBX/v1`
   (`ocr/drbx.resolve_token_anchored_drbx`, `scripts/drbx_token_repass.py`)
-  places the row on 479 pages that carry no readable header, from the page's
-  own label pitch, and reads the gene from the token standing on it. ADR 0008
-  Decision 4 grants the licence "only because the header prints the admissible
-  set", so this extends it. What was measured in its favour: 578 of 579
-  accepted rows DO carry a box in the label column, header-shaped on 534 —
-  the enumeration is printed and merely unread. What was cut to match the
-  thinner licence: PRESENT only (no absence is ever certified on this route),
-  no S-for-5 repair, the strict `DR[B8]` stem, and twelve geometry gates. The
-  facts carry `source='token-anchored-drbx'` and their own review stratum, so
-  the group can be withdrawn in one statement if the answer is no.
+  places the row from the page's own label pitch on pages carrying no readable
+  header, and reads the gene from the token standing on it. ADR 0008 Decision 4
+  grants the licence "only because the header prints the admissible set", so
+  this extends it.
+  - **Yield, re-measured 2026-09-07 read-only against the live stores:** 479
+    pages, 621 PRESENT cells (DRB3 349, DRB4 230, DRB5 42). An earlier version
+    of this entry said "578 of 579 accepted rows ... header-shaped on 534";
+    that pair of numbers came from a permissive reading of gates G3/G4/G9 and
+    from route (c) being absent, and no shipped build produced it.
+  - **What was measured in its favour:** on 476 of the 479 accepted rows a box
+    DOES stand in the label column of the placed row — 394 carrying the
+    header's `DR` stem in a spelling no header pattern reads, and 6 more
+    spelling an enumeration the damage-tolerant pattern reads but standing
+    where the geometry gate will not call it a header. The enumeration is
+    printed and merely unread.
+  - **What was cut to match the thinner licence:** PRESENT only (no absence is
+    ever certified on this route), no S-for-5 repair, the strict `DR[B8]` stem,
+    and twelve geometry gates.
+  - **The residual risk a reviewer of (d) must weigh, which geometry cannot
+    gate** (route (c)/stage-1 required fix 7): the proposal's own risk (1) is a
+    form that prints THREE separate headings across the value columns with one
+    of them unread. On such a page the "row" the pitch places is a row of that
+    table rather than the grouped row, and no geometric test distinguishes the
+    two — the gates measure where a box stands, not what table it belongs to.
+    That residual is bounded ONLY by DRB1 concordance, and the bound is a
+    rule-of-three one, not a measurement of the failure: on the 479 accepted
+    pages, 438 read a two-field DRB1 corroborating 573 of the 621 genes, with
+    479 CONSISTENT, 0 FORBIDDEN_GENE_PRESENT and 0 EXPECTED_GENE_ABSENT. Zero
+    failures in 573 gives an upper bound of 3/573 = **0.52%** on the
+    corroborated share, and says nothing at all about the 48 genes no two-field
+    DRB1 could check. No labelled page carries one of these calls.
+  - **How to withdraw it:** every fact carries `rule_id='TOKEN_ANCHORED_DRBX/v1'`
+    and `source='token-anchored-drbx'`, both now emitted by the RULE and not
+    only by the one-off pass, so a full re-extraction reproduces them. The
+    `token_anchored_drbx` review stratum is keyed on the rule_id for the same
+    reason.
+- **Decision (d2), added 2026-09-07 — the same question about route (c),** the
+  widened grouped header (`GROUPED_DRBX_WIDENED/v1`,
+  `ocr/drbx.GROUPED_DRBX_HEADER` + `find_grouped_headers`). Here the header IS
+  read, but only by a damage-tolerant pattern, and the page's own row pitch is
+  what says the box is a header at all.
+  - **Yield, measured 2026-09-07:** 104 of the 9,207 no-header pages, 312 gene
+    cells — 119 PRESENT, 60 ABSENT, 91 REVIEW_REQUIRED, 42 UNKNOWN. By branch
+    (pages, a page can need two): b-slot-glyph 39, slash-as-4 29, final-3 16,
+    b-slot-empty 16, bla 4.
+  - **Why it needs a human and not just a test:** unlike the token route this
+    one writes ABSENT — a clinical negative — and no labelled page carries one
+    of its calls, so its precision is entirely unmeasured. The nearest labelled
+    stratum, a DRB3/4/5 call from an add-on source on a page whose header only
+    the damage-tolerant pattern reads, is wrong 5 times in 20.
+  - **The gate before promotion:** cut a pack of at least 40 of these rows —
+    `python scripts/review_pack.py --only widened_drbx_header --n 40`, which
+    spreads the sample across the four widenings rather than filling with the
+    commonest — and require 0 false acceptances. Until then these are calls the
+    pipeline makes and nobody has checked.
+  - **What was already cut without waiting for the answer:** the `final-3`
+    branch no longer certifies absence. A header read by substituting a `3` for
+    its printed final `5` has none of the three measurements that license
+    S-for-5 inside a cell (corpus-wide the final slot reads `5` 13,555 times,
+    `S` 975 and `3` 25), so on those 16 pages the two-token ABSENT is
+    REVIEW_REQUIRED instead: 15 cells moved, the 24 PRESENT kept.
+  - **How to withdraw it:** `rule_id='GROUPED_DRBX_WIDENED/v1'` on every cell,
+    and `source='widened-drbx-header:<branch>'` naming the widening. The
+    distinct rule_id also keeps `drbx_ink_pass.py` and `drbx_reread.py` off
+    these pages, which costs nothing — `scripts/precision_gates.py` gate 2
+    withdraws every add-on DRB3/4/5 call on a page with no cleanly spelled
+    header, and 0 of the 104 carries one.
+  - **What route (c) is actually worth,** so the answer is not given on an
+    inflated number: 46 of the 104 pages the token route would have placed
+    anyway (62 PRESENT cells; turning the widening off moves that route from
+    479/621 to 525/683). Of the 58 it could not have read, the token route
+    refuses 39 on its own gates and could never have reached 19.
 - **Secret?** No.
 - **Blocking now?** Blocks grammar v2 only; the one-row review question and
-  presence typing need no spec change. Decision (d) does not block the route
-  from being reviewed — that is what the stratum is for — but it does block
-  treating its PRESENT calls as settled.
+  presence typing need no spec change. Decisions (d) and (d2) do not block
+  either route from being reviewed — that is what the strata are for — but they
+  do block treating their calls as settled.
 
 ### HA-010 — Cloud model API keys, only if a synthetic-only comparison is wanted
 - **Needed by:** the OCR model survey's cloud rows (Claude, GPT, Gemini).

@@ -142,10 +142,10 @@ _LABEL_SHAPED = re.compile(
 _GROUPED_DRBX = re.compile(
     r"^[\s\-–—.,:;'\"]*"
     r"(?P<hla>[HIB]{0,3}L?A[\s\-–—]*)?"
-    r"DR(?:[A-RT-Za-z?8$])?\s*3"
-    r"(?:[\s/,.\-\\|'\"AMUV14]*4[\s/,.\-\\|'\"AMUV14]*"
+    r"DR(?P<slot>[A-RT-Za-z?8$])?\s*3"
+    r"(?P<mid>[\s/,.\-\\|'\"AMUV14]*4[\s/,.\-\\|'\"AMUV14]*"
     r"|(?(hla)[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV14]*|(?!)))"
-    r"[5S3][\s*:;.,)\-]*$"
+    r"(?P<final>[5S3])[\s*:;.,)\-]*$"
 )
 
 _DIGIT_SLOT = "0-9" + "".join(sorted(set(_DIGIT_REPAIRS)))

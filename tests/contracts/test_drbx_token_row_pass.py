@@ -78,16 +78,22 @@ def test_the_geometry_gate_passes_the_headers_the_corpus_already_has(calibration
     pages that HAVE one put theirs.
 
     Measured 2026-09-06 over the whole corpus (14,315 pages carrying exactly one
-    header the strict pattern reads): the gate passes 85.5% of them outright and
-    **94.98% of the ones it can be applied to** — those with one DRB1 label and
-    a measurable label-column pitch. The rest fail for want of an anchor, not
-    for standing in the wrong place, and on those pages a WIDENED header has
-    nothing to corroborate it either, which is the refusal the gate exists for.
+    header the strict pattern reads): the gate passes **12,245 of 14,315 =
+    85.540%** of them outright and **12,245 of 12,895 = 94.959% of the ones it
+    can be applied to** — those with one DRB1 label and a measurable
+    label-column pitch. The rest fail for want of an anchor, not for standing in
+    the wrong place, and on those pages a WIDENED header has nothing to
+    corroborate it either, which is the refusal the gate exists for.
+
+    Those two figures are the committed fixture's own `corpus` block, re-read
+    from the live stores 2026-09-07 and equal field for field. (An earlier
+    version of this docstring said 12,234 and 94.98%; neither was the
+    measurement, and the fixture always held 12,245.)
 
     The verifier's fix asked for ">= 95% of current headers"; the same fix's own
-    calibration figure is 12,363 of 14,359 = 86.1%, which is the number this
-    reproduces (12,234 of 14,315 = 85.5%). Both floors below are set under what
-    was measured, so a regression in either direction fails here.
+    calibration figure is 12,363 of 14,359 = 86.1%, which is what this
+    reproduces. Both floors below are set under what was measured, so a
+    regression in either direction fails here.
     """
     corpus = calibration["corpus"]
     measured = corpus["strict headers measured"]
@@ -142,6 +148,11 @@ PAGES = {
         Box(0.30, 0.10, 0.38, 0.11, "Donor"),
         Box(0.55, 0.10, 0.66, 0.11, "Recipient"),
     ),
+    # a header only the damage-tolerant pattern reads, standing exactly one row
+    # pitch below DRB1 in the label column: route (c) claims it
+    "widened": form(label("DR3/4/5", ROW_Y), token("DRB3", 0.40), token("DRB4", 0.70)),
+    # the same, with the printed final 5 read as a 3
+    "widened_final3": form(label("HLA-DRB3/4/3", ROW_Y), token("DRB3", 0.40), token("DRB4", 0.70)),
 }
 
 
@@ -363,4 +374,107 @@ def test_a_dry_run_never_opens_the_store_for_writing(tmp_path: Path) -> None:
     con = module.open_read_only(facts)
     with pytest.raises(sqlite3.OperationalError):
         con.execute("UPDATE fact SET status='RESOLVED' WHERE field='DRB3'")
+    con.close()
+
+
+# --- 4. the markers a re-extraction must reproduce ---------------------------
+
+
+def marks_of(facts: Path, sha: str) -> dict[str, tuple]:
+    con = sqlite3.connect(facts)
+    rows = {
+        row[0]: row[1:]
+        for row in con.execute(
+            "SELECT field, rule_id, source, status, value FROM fact "
+            "WHERE sha256=? AND field IN ('DRB3','DRB4','DRB5')",
+            (sha,),
+        )
+    }
+    con.close()
+    return rows
+
+
+def test_the_geometry_placed_row_carries_its_source_out_of_the_EXTRACTION(
+    tmp_path: Path,
+) -> None:
+    """`review_pack.py` built this route's stratum from `source`, and only the
+    one-off `scripts/drbx_token_repass.py` ever wrote it. Every full
+    re-extraction — the derived store keeps a dozen `facts.before-*` backups, so
+    they happen — dropped it and emptied the stratum. The rule emits it now, so
+    the extraction path writes what the pass writes."""
+    facts, shas = extracted(tmp_path)
+    marks = marks_of(facts, shas["no_header"])
+    assert marks["DRB3"][:2] == (TOKEN_ANCHORED_RULE_ID, "token-anchored-drbx")
+    assert marks["DRB4"][:2] == (TOKEN_ANCHORED_RULE_ID, "token-anchored-drbx")
+    # the gene this route declined to claim is not claimed by the marker either
+    assert marks["DRB5"][1] is None
+
+
+def test_a_widened_header_is_marked_and_branch_named_out_of_the_EXTRACTION(
+    tmp_path: Path,
+) -> None:
+    """Route (c) required fix 6, end to end. Nothing else in a stored fact
+    distinguishes a page whose DRB3/4/5 header only the damage-tolerant pattern
+    reads from one the strict pattern reads — so without this the 104 such pages
+    could not be sampled as a stratum and their 312 cells could not be withdrawn
+    as a group."""
+    facts, shas = extracted(tmp_path)
+    marks = marks_of(facts, shas["widened"])
+    assert {m[0] for m in marks.values()} == {"GROUPED_DRBX_WIDENED/v1"}
+    assert {m[1] for m in marks.values()} == {"widened-drbx-header:b-slot-empty"}
+    # a B-slot substitution damages a slot the enumeration does not depend on,
+    # so this row may still certify the third gene absent
+    assert marks["DRB5"][2:] == ("RESOLVED", "ABSENT")
+    # and the strict-header page keeps the rule the add-on passes select on
+    assert {m[0] for m in marks_of(facts, shas["header"]).values()} == {"GROUPED_DRBX/v1"}
+    assert {m[1] for m in marks_of(facts, shas["header"]).values()} == {None}
+
+
+def test_a_final_3_header_certifies_no_absence_out_of_the_EXTRACTION(tmp_path: Path) -> None:
+    """Route (c) required fix 2, second clause. The header was read only by
+    substituting a 3 for its printed final 5, and no measurement licenses that
+    substitution the way three independent ones license S-for-5 inside a cell.
+    The named genes stand; the clinical negative does not."""
+    facts, shas = extracted(tmp_path)
+    marks = marks_of(facts, shas["widened_final3"])
+    assert {m[1] for m in marks.values()} == {"widened-drbx-header:final-3"}
+    assert marks["DRB3"][2:] == ("RESOLVED", "PRESENT")
+    assert marks["DRB4"][2:] == ("RESOLVED", "PRESENT")
+    assert marks["DRB5"][2:] == ("REVIEW_REQUIRED", None)
+
+
+def test_the_summary_verdict_is_computed_from_what_the_page_stores(tmp_path: Path) -> None:
+    """The comparison-sheet downgrade used to be applied to a local copy of the
+    status while the summary's consistency check still read the row rule's
+    original calls. The stored cells said REVIEW_REQUIRED and the document
+    summary judged the DRB1 row against values nobody had accepted."""
+    facts, shas = extracted(tmp_path)
+    con = sqlite3.connect(facts)
+    verdict, reason = con.execute(
+        "SELECT consistency, consistency_reason FROM document WHERE sha256=?",
+        (shas["comparison"],),
+    ).fetchone()
+    con.close()
+    assert {m[2] for m in marks_of(facts, shas["comparison"]).values()} == {"REVIEW_REQUIRED"}
+    assert verdict == "NOT_CHECKABLE"
+    assert "produced no call" in (reason or "")
+
+
+def test_the_pass_refuses_to_run_when_it_can_name_no_comparison_sheet(tmp_path: Path) -> None:
+    """`comparison_sheets` fails closed on an EMPTY RESULT, not only on a
+    missing table. A `document` table populated under a different
+    `extraction_version` answers the query perfectly well and answers it with
+    nothing — and 444 of the pass's 456 refusals come from that stored flag, so
+    losing it silently would put the right gene of the wrong person in the
+    store."""
+    module = load("drbx_token_repass")
+    con = sqlite3.connect(tmp_path / "empty.sqlite")
+    con.execute("CREATE TABLE document (sha256, extraction_version, comparison_sheet)")
+    con.execute("INSERT INTO document VALUES ('a', 'facts/v2', 1)")  # another version
+    con.commit()
+    with pytest.raises(RuntimeError, match="no comparison sheets"):
+        module.comparison_sheets(con)
+    con.execute("INSERT INTO document VALUES ('b', 'facts/v1', 1)")
+    con.commit()
+    assert module.comparison_sheets(con) == {"b"}
     con.close()

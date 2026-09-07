@@ -3,11 +3,22 @@
 
 9,207 documents carry no box the grouped-header pattern reaches, and all three
 genes UNKNOWN with the reason `no grouped DRB3/4/5 header on this document`.
-Measured over that population, 578 of them still print a gene token standing on
-the row the page's own label pitch puts one row below `DRB1`, and on 578 of 579
-accepted rows a box DOES stand in the label column — header-shaped on 534 of
-them, the header with its digits misread. What is missing on those pages is the
-READING of the enumeration, not the enumeration.
+
+The yield, MEASURED 2026-09-07 against the live stores with every gate the rule
+now ships (an earlier 578/579 in this docstring described no build that ever
+shipped, and is corrected here): the rule places the row on **479 pages and
+writes 621 PRESENT cells** — DRB3 349, DRB4 230, DRB5 42. On 476 of those 479
+accepted rows a box DOES stand in the label column of the placed row; 394 carry
+the header's `DR` stem in a spelling no header pattern reads and 6 more spell an
+enumeration the damage-tolerant pattern reads but standing where the geometry
+gate will not call it a header. What is missing on those pages is the READING of
+the enumeration, not the enumeration.
+
+Against the DRB1 row on the same 479 pages: 479 CONSISTENT, 0
+FORBIDDEN_GENE_PRESENT, 0 EXPECTED_GENE_ABSENT, with 438 pages whose DRB1 read
+two fields corroborating 573 of the 621 genes. Zero failures in 573 is a
+rule-of-three upper bound of 3/573 = 0.52% on the corroborated share, which is
+the ONLY bound this route has: no labelled page carries one of its calls.
 
 `ocr/drbx.resolve_token_anchored_drbx` is the rule and carries the twelve gates
 and the evidence for each; this script is only the pass that applies it to the
@@ -29,7 +40,9 @@ corpus. What matters here is what it is allowed to touch:
 * `source='token-anchored-drbx'` and `rule_id='TOKEN_ANCHORED_DRBX/v1'` on
   every fact, so the whole group can be found, reviewed as its own stratum
   (`review_pack.py`) and withdrawn in one statement if HA-011 decides against
-  the route.
+  the route. Both now come from the RULE as well as from this pass, so a full
+  re-extraction reproduces them; the review stratum is keyed on the rule_id,
+  which is the half that a re-extraction cannot drop.
 
 `--dry-run` is the DEFAULT. Pass `--no-dry-run` to write.
 """
@@ -109,15 +122,28 @@ def comparison_sheets(con: sqlite3.Connection) -> set[str]:
     """Pages holding two people. Raises rather than returning an empty set.
 
     An empty set from a query that could not run is indistinguishable from a
-    corpus with no comparison sheets in it, and the second is not true here.
+    corpus with no comparison sheets in it, and the second is not true here:
+    450 documents carry the flag today. A missing table or column raises on its
+    own; an EMPTY RESULT does not, and that is the shape this fails closed on —
+    a `document` table populated under a different `extraction_version` answers
+    the query perfectly well and answers it with nothing. 444 of the 456
+    refusals this pass makes come from the stored flag, so losing it silently
+    would put the right gene of the wrong person into the store.
     """
-    return {
+    sheets = {
         sha
         for (sha,) in con.execute(
             "SELECT sha256 FROM document WHERE extraction_version=? AND comparison_sheet=1",
             (EV,),
         )
     }
+    if not sheets:
+        raise RuntimeError(
+            f"no comparison sheets found under extraction_version={EV!r}; the corpus has 450, "
+            "so this is a query that ran and found nothing rather than a corpus without them. "
+            "Refusing to run: a row on a two-subject sheet cannot say whose gene it prints."
+        )
+    return sheets
 
 
 def run(

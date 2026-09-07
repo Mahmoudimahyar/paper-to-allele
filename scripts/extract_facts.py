@@ -616,24 +616,43 @@ def extract(
         if token_row.facts is not None:
             read_genes = token_row.facts
     genes = {gene: restore_drbx(fact, back) for gene, fact in read_genes.items()}
+    # The comparison-sheet downgrade is applied to `genes` ITSELF, not to a
+    # local copy of the status. The document summary's consistency verdict is
+    # built from this dict further down, and while the downgrade lived only in
+    # the loop below the summary judged a comparison sheet as if its genes had
+    # been resolved — the stored cells said REVIEW_REQUIRED and the summary
+    # said CONSISTENT about values nobody had accepted.
+    if comparison:
+        # The same guard the loci get. Two subjects on one page and the row
+        # rule cannot say whose gene the row prints. Today no comparison
+        # sheet in the corpus has a readable grouped header, so this changes
+        # nothing measurable — it fails closed for the ones that will.
+        genes = {
+            gene: (
+                replace(
+                    fact,
+                    status=ResolutionStatus.REVIEW_REQUIRED,
+                    reason="this page prints donor and recipient columns for two subjects",
+                )
+                if fact.status is ResolutionStatus.RESOLVED
+                else fact
+            )
+            for gene, fact in genes.items()
+        }
     for gene, fact in genes.items():
-        gene_status = fact.status
-        gene_reason = fact.reason
-        if comparison and gene_status is ResolutionStatus.RESOLVED:
-            # The same guard the loci get. Two subjects on one page and the row
-            # rule cannot say whose gene the row prints. Today no comparison
-            # sheet in the corpus has a readable grouped header, so this changes
-            # nothing measurable — it fails closed for the ones that will.
-            gene_status = ResolutionStatus.REVIEW_REQUIRED
-            gene_reason = "this page prints donor and recipient columns for two subjects"
         add(
             gene,
-            gene_status.value,
-            value=fact.call.value if gene_status is ResolutionStatus.RESOLVED else None,
+            fact.status.value,
+            value=fact.call.value if fact.status is ResolutionStatus.RESOLVED else None,
             raw=fact.raw_text,
             repaired=fact.repaired,
-            reason=gene_reason,
+            reason=fact.reason,
             rule_id=fact.rule_id,
+            # Which route read this row, when it was not the plain header
+            # route: `token-anchored-drbx`, or `widened-drbx-header:<branch>`.
+            # It comes from the RULE, so a re-extraction reproduces it and the
+            # review strata keyed on it cannot silently empty.
+            source=fact.source,
             anchor_box=_box(fact.header_box),
             # Every box on the row that named this gene, not only the first:
             # a row can print one gene twice, and the second box is what a
@@ -697,8 +716,19 @@ def extract(
     consistency = ConsistencyOutcome.NOT_CHECKABLE
     consistency_reason = "the DRB1 row or the DRB3/4/5 row was not read"
     if drb1 is not None and drb1.status is ResolutionStatus.RESOLVED:
-        present = {g for g, f in genes.items() if f.call is GeneCall.PRESENT}
-        absent = {g for g, f in genes.items() if f.call is GeneCall.ABSENT}
+        # Only cells the page actually STORES as findings. A call the row rule
+        # made and the extraction then withdrew to review is not a finding, and
+        # the summary must not check the DRB1 row against it.
+        present = {
+            g
+            for g, f in genes.items()
+            if f.call is GeneCall.PRESENT and f.status is ResolutionStatus.RESOLVED
+        }
+        absent = {
+            g
+            for g, f in genes.items()
+            if f.call is GeneCall.ABSENT and f.status is ResolutionStatus.RESOLVED
+        }
         checked = check_drb1_drbx([v.first_field for v in drb1.parsed_values], present, absent)
         consistency, consistency_reason = checked.outcome, checked.reason
 

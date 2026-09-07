@@ -108,10 +108,15 @@ STRICT_GROUPED_DRBX_HEADER = re.compile(
 )
 
 # W5, the damage the strict pattern above does not reach (route (c),
-# 2026-09-06). 213 boxes corpus-wide match this and not the strict pattern; on
-# 156 of the 162 measurable ones the box sits at exactly 1.00 DRB1 row pitch,
-# which is what a header does and what nothing else on these pages does. Four
-# widenings, each with its own measured shape, and one deliberate refusal:
+# 2026-09-06; every count below re-measured 2026-09-07 against the live stores,
+# replacing an earlier "213 boxes / 156 of 162" that this build does not
+# produce). 152 boxes corpus-wide match this and not the strict pattern, 151 of
+# them on pages carrying no strict header at all. On 119 of those the page also
+# reads one DRB1 label and a label-column pitch, so the box's row is
+# measurable — and 108 of the 119 sit inside the 0.6-1.3 window, at a median
+# 0.984 DRB1 row pitches, which is what a header does and what nothing else on
+# these pages does. Four widenings, each with its own measured shape, and one
+# deliberate refusal:
 #
 # * the B slot reads as any LETTER or `?` or is lost entirely — `DRd3/4/5`,
 #   `DR3/4/5`, `DR?3/4/5`, `HLA-DRA345`. The class is written out rather than
@@ -132,6 +137,37 @@ STRICT_GROUPED_DRBX_HEADER = re.compile(
 #
 # A box matched ONLY by this widening is not a header until the page's geometry
 # corroborates it: see `find_grouped_headers`.
+#
+# ## What this route is worth, measured against the route beside it
+#
+# All read-only against the live stores, 2026-09-07. The widening admits 104 of
+# the 9,207 no-header pages, by branch: b-slot-glyph 39, slash-as-4 29,
+# final-3 16, b-slot-empty 16, bla 4 (a page can need two). Those 104 pages
+# carry 312 gene cells — 119 PRESENT, 60 ABSENT, 91 REVIEW_REQUIRED, 42
+# UNKNOWN, after the final-3 routing in `resolve_grouped_drbx`.
+#
+# Its EXCLUSIVE gain is smaller than that number looks, and route (c) required
+# fix 8 asks that this be recorded rather than assumed:
+#
+# * 46 of the 104 the token route below would have placed anyway had this
+#   widening not claimed them first — 62 PRESENT cells. Turning the widening
+#   off moves the token route from 479 pages / 621 cells to 525 / 683;
+# * of the 58 the token route could not have read, it REFUSES 39 on its own
+#   gates (G10 12, G6 12 — the zero-token rows — G7 8, G4 7) and could never
+#   have reached the other 19 (DRB1 unread, or a comparison sheet);
+# * every re-read and ink add-on on these pages was going to be withdrawn
+#   anyway. `scripts/precision_gates.py` gate 2 withdraws a DRB3/4/5 add-on
+#   call on any page with no cleanly spelled header, and 0 of the 104 carries
+#   one. `WIDENED_RULE_ID` below now keeps those passes off by construction
+#   rather than leaving the withdrawal to a later script;
+# * 83 of the 104 already print a strict `DR[B8][345S]` gene token on the
+#   header's band, so what the widening buys on most of them is the ABSENT and
+#   the third gene, not the PRESENT.
+#
+# The marker cannot reach the pages the add-on passes DO work on: 14,359 pages
+# carry a box the strict pattern reads, 152 carry a widened-only box, and
+# exactly ONE carries both — and that page has two headers, so it is
+# REVIEW_REQUIRED either way.
 GROUPED_DRBX_HEADER = re.compile(
     r"^[\s\-–—.,:;'\"]*"  # leading punctuation and crop noise
     r"(?P<hla>[HIB]{0,3}L?A[\s\-–—]*)?"  # HLA- and its misreads, BLA among them
@@ -140,13 +176,61 @@ GROUPED_DRBX_HEADER = re.compile(
     # SUPERSET of that one. Without them `HLA-DR83/4/5` and `DR$3/4/5` would be
     # headers to `drbx.py` and not to `glyphs.py`, and a box that is a header to
     # one and a locus label to the other is how an allele reaches three genes.
-    r"DR(?:[A-RT-Za-z?8$])?\s*"
+    r"DR(?P<slot>[A-RT-Za-z?8$])?\s*"
     r"3"
-    r"(?:[\s/,.\-\\|'\"AMUV14]*4[\s/,.\-\\|'\"AMUV14]*"
+    r"(?P<mid>[\s/,.\-\\|'\"AMUV14]*4[\s/,.\-\\|'\"AMUV14]*"
     r"|(?(hla)[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV14]*|(?!)))"
-    r"[5S3]"  # the final 5 read as S, or as 3
+    r"(?P<final>[5S3])"  # the final 5 read as S, or as 3
     r"[\s*:;.,)\-]*$"
 )
+
+# The four widenings, named, so a fact can say which one let its header in and
+# a review pack can be stratified by them. Measured 2026-09-07 over the 104
+# pages the geometry gate admits: b-slot-glyph 39, slash-as-4 29, final-3 16,
+# b-slot-empty 16, bla 4 (a page can need two, and none of the 104 needed none).
+B_SLOT_GLYPH = "b-slot-glyph"
+B_SLOT_EMPTY = "b-slot-empty"
+SLASH_AS_4 = "slash-as-4"
+FINAL_3 = "final-3"
+BLA_PREFIX = "bla"
+# Whatever the widening admits that none of the four names. Empty on today's
+# corpus, and a test pins that; it exists so an unclassified header is still
+# marked and still lands in the pack rather than passing as an ordinary one.
+UNCLASSIFIED = "unclassified"
+
+# What the STRICT pattern already accepts in each widened slot, so the branch
+# classifier can say which slot the widening actually paid for.
+STRICT_B_SLOT = "B8RE$HD"
+STRICT_HEADER_SEPARATORS = re.compile(
+    r"^(?:[\s/,.\-\\|'\"AMUV1]*4[\s/,.\-\\|'\"AMUV1]*"
+    r"|[\s/,.\-\\|'\"1]*[AMUV][\s/,.\-\\|'\"AMUV1]*)$"
+)
+
+
+def widened_header_branches(text: str) -> tuple[str, ...]:
+    """Which widening(s) this header needed, or `()` if the strict pattern reads it.
+
+    The classification is what makes the widened group reviewable: the four
+    branches are four different kinds of recognizer damage with four different
+    risks, and a pack that samples them as one pool cannot tell them apart.
+    """
+    match = GROUPED_DRBX_HEADER.match(text)
+    if match is None or STRICT_GROUPED_DRBX_HEADER.match(text):
+        return ()
+    branches: list[str] = []
+    slot = match.group("slot")
+    if slot is None:
+        branches.append(B_SLOT_EMPTY)
+    elif slot not in STRICT_B_SLOT:
+        branches.append(B_SLOT_GLYPH)
+    if not STRICT_HEADER_SEPARATORS.match(match.group("mid") or ""):
+        branches.append(SLASH_AS_4)
+    if match.group("final") == "3":
+        branches.append(FINAL_3)
+    if "B" in (match.group("hla") or ""):
+        branches.append(BLA_PREFIX)
+    return tuple(branches) or (UNCLASSIFIED,)
+
 
 # The geometry that corroborates a widened header, all of it relative to the
 # page's own DRB1 label (verifier fix 3, calibrated on the 14,359 pages that
@@ -211,6 +295,28 @@ RULE_ID = "GROUPED_DRBX/v1"
 # `rule_id='GROUPED_DRBX/v1'`, so neither touches these facts, and the whole
 # group can be found and withdrawn by rule or by `source`.
 TOKEN_ANCHORED_RULE_ID = "TOKEN_ANCHORED_DRBX/v1"
+TOKEN_ANCHORED_SOURCE = "token-anchored-drbx"
+# The row read from a header only the damage-tolerant pattern reaches (route
+# (c)). Distinct for the same three reasons the token route's id is:
+#
+# 1. it is the only thing that makes the group FINDABLE. Nothing else in a
+#    stored fact distinguishes a widened-header page from a strict one, so
+#    without it `review_pack.py` can build no stratum for these cells, the
+#    reviewer cannot be shown them, and the 194 RESOLVED cells they carry on
+#    today's corpus cannot be withdrawn in one statement if HA-011 says no;
+# 2. it puts `scripts/precision_gates.py` gate 2 into the extraction instead of
+#    after it. Gate 2 withdraws every DRB3/4/5 call from an add-on source on a
+#    page with no cleanly spelled header, and MEASURED 2026-09-07, 0 of the 104
+#    gated widened pages carries one — so every re-read and ink add-on on them
+#    was going to be withdrawn anyway. `drbx_ink_pass.py` and `drbx_reread.py`
+#    select `rule_id='GROUPED_DRBX/v1'`; this id keeps them off by construction;
+# 3. it carries the marker through a RE-EXTRACTION. A `source` a one-off pass
+#    writes is lost the next time the corpus is extracted; a rule_id the rule
+#    itself emits is not.
+WIDENED_RULE_ID = "GROUPED_DRBX_WIDENED/v1"
+# `source` on the same facts, carrying the BRANCH so the pack can be stratified
+# by it: `widened-drbx-header:final-3`, `widened-drbx-header:b-slot-glyph`, ...
+WIDENED_SOURCE = "widened-drbx-header"
 
 # The reason the header route gives when it read no header. The token route
 # runs only where this is what the page holds, so the string is shared rather
@@ -252,6 +358,9 @@ class DrbxFact:
     tokens_on_row: int = 0
     reason: str = ""
     rule_id: str = RULE_ID
+    # Which route wrote this, when that is not the plain header route. Emitted
+    # by the RULE rather than by a pass, so a re-extraction reproduces it.
+    source: str | None = None
 
 
 def _all(
@@ -260,6 +369,8 @@ def _all(
     reason: str,
     header: Box | None = None,
     tokens: int = 0,
+    rule_id: str = RULE_ID,
+    source: str | None = None,
 ) -> dict[str, DrbxFact]:
     return {
         gene: DrbxFact(
@@ -269,6 +380,8 @@ def _all(
             header_box=header,
             reason=reason,
             tokens_on_row=tokens,
+            rule_id=rule_id,
+            source=source,
         )
         for gene in GENES
     }
@@ -421,12 +534,27 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
         # the patient lacks the genes.
         return _all(GeneCall.UNKNOWN, ResolutionStatus.UNKNOWN, NO_GROUPED_HEADER_REASON)
 
+    # Which pattern read the header decides how this row is MARKED, for every
+    # outcome below and not only the resolved ones: a widened-header page that
+    # ends in REVIEW is still a page whose header the recognizer damaged, and
+    # the reviewer needs to see those beside the ones it resolved.
+    branches: list[str] = []
+    for text in ((box.text or "").strip() for box in headers):
+        for branch in widened_header_branches(text):
+            if branch not in branches:
+                branches.append(branch)
+    widened = tuple(branches)
+    rule_id = WIDENED_RULE_ID if widened else RULE_ID
+    source = f"{WIDENED_SOURCE}:{'+'.join(widened)}" if widened else None
+
     if len(headers) > 1:
         return _all(
             GeneCall.UNKNOWN,
             ResolutionStatus.REVIEW_REQUIRED,
             f"{len(headers)} grouped headers; cannot decide which row owns the value",
             header=headers[0],
+            rule_id=rule_id,
+            source=source,
         )
 
     header = headers[0]
@@ -440,6 +568,8 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             "an allele on this presence row has damaged digits",
             header=header,
             tokens=len(band),
+            rule_id=rule_id,
+            source=source,
         )
 
     named: list[tuple[str, Box, bool]] = []
@@ -448,14 +578,17 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             repaired = symbol == "S"
             named.append((f"DRB{'5' if repaired else symbol}", box, repaired))
 
-    if named and not STRICT_GROUPED_DRBX_HEADER.match((header.text or "").strip()):
+    if named and widened:
         # The leak guard on a WIDENED header (verifier fix 4). The widening
-        # reads a header the recognizer damaged, and on 6 of 159 such pages a
-        # counted gene token sat nearer the DRB1 label's line than the header's
-        # — 5.6x the 0.67% rate on pages whose header the strict pattern reads.
-        # Two-token rows write ABSENT for the third gene, and the DRB1
-        # concordance check cannot see this failure: a gene name derived from a
-        # DRB1 allele agrees with DRB1 by construction.
+        # reads a header the recognizer damaged, and a counted gene token then
+        # sits nearer the DRB1 label's line than the header's far more often
+        # than it does behind a header the strict pattern reads. Re-measured
+        # 2026-09-07 against the live stores: **6 of the 90** gated widened
+        # pages that count a token at all, against **88 of 12,322** strict
+        # single-header pages that count one and read one DRB1 label — 6.7%
+        # against 0.71%, 9.3x. Two-token rows write ABSENT for the third gene,
+        # and the DRB1 concordance check cannot see this failure: a gene name
+        # derived from a DRB1 allele agrees with DRB1 by construction.
         anchors = find_anchors(boxes, "DRB1")
         if len(anchors) == 1 and any(
             abs(box.centre_y - anchors[0].centre_y) < abs(box.centre_y - header.centre_y)
@@ -468,6 +601,8 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
                 "token on its band lies nearer the DRB1 label's line than the header's",
                 header=header,
                 tokens=len(named),
+                rule_id=rule_id,
+                source=source,
             )
 
     if len(named) > 2:
@@ -479,6 +614,8 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             f"{len(named)} DRBX gene tokens on one row; at most two are possible",
             header=header,
             tokens=len(named),
+            rule_id=rule_id,
+            source=source,
         )
 
     if not named:
@@ -494,6 +631,8 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             "header present but no gene token was read on its row",
             header=header,
             tokens=0,
+            rule_id=rule_id,
+            source=source,
         )
 
     # Both haplotype slots are only accounted for when two tokens were read.
@@ -517,6 +656,32 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
         others_reason = (
             "a slot on this row rests on an S read as 5; the other genes' absence "
             "is not certified (7 of 10 such labelled cells printed the gene)"
+        )
+    elif len(named) == 2 and FINAL_3 in widened:
+        # The same asymmetry, one level up: this row's ABSENT rests on the
+        # ENUMERATION having been read, and the enumeration was read only by
+        # substituting a `3` for the printed final `5` (`HLA-DRB3/4/3`).
+        #
+        # What licenses `S`-for-`5` inside a cell is three independent
+        # measurements (this module's header docstring). `3`-for-`5` has
+        # nothing comparable, and the one measurement that exists says the
+        # substitution is rare rather than that it is safe: over the whole
+        # corpus, 2026-09-07, the header's final slot reads `5` on 13,555
+        # boxes, `S` on 975 and `3` on 25 — 0.17% of header boxes, far too few
+        # for the shifted-share and DRB1-concordance legs the `S` rule rests
+        # on. Route (c) required fix 2 offered either that measurement or this
+        # routing; this is the routing.
+        #
+        # The named genes stay PRESENT: a token that spells `DRB4` spells it
+        # whatever the header's last digit read as. It is the ABSENT — a
+        # clinical negative — that may not rest on the substitution. Measured
+        # on today's corpus: 16 gated pages, 24 PRESENT kept, 15 ABSENT moved
+        # here.
+        others = GeneCall.UNKNOWN
+        others_status = ResolutionStatus.REVIEW_REQUIRED
+        others_reason = (
+            "the grouped header was read only by substituting a 3 for its printed final 5; "
+            "the enumeration this row's absence claim rests on was not read as printed"
         )
 
     facts: dict[str, DrbxFact] = {}
@@ -544,6 +709,8 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
             repaired=repaired,
             gene_boxes=(box,),
             tokens_on_row=len(named),
+            rule_id=rule_id,
+            source=source,
         )
 
     for gene in GENES:
@@ -555,6 +722,8 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
                 header_box=header,
                 tokens_on_row=len(named),
                 reason=others_reason,
+                rule_id=rule_id,
+                source=source,
             )
 
     return {gene: facts[gene] for gene in GENES}
@@ -563,11 +732,22 @@ def resolve_grouped_drbx(boxes: list[Box]) -> dict[str, DrbxFact]:
 # --- the same row on a page whose header was never read ----------------------
 #
 # 9,207 documents hold no box the header pattern reaches, and all three genes
-# UNKNOWN. On 578 of them a gene token still stands on the row the page's own
-# geometry places one label pitch below the DRB1 label — and on 578 of 579
-# accepted rows there IS a box in the label column, header-shaped on 534 of
-# them (the header with its digits misread). What is missing is the READING of
-# the enumeration, not the enumeration.
+# UNKNOWN. On some of them a gene token still stands on the row the page's own
+# geometry places one label pitch below the DRB1 label.
+#
+# The yield, MEASURED 2026-09-07 against the live stores with every gate this
+# module now ships, replacing an earlier 578/579 that no shipped build ever
+# produced (it came from a permissive reading of G3/G4/G9 and from route (c)
+# being absent): **479 pages, 621 PRESENT cells (DRB3 349, DRB4 230, DRB5 42)**.
+# With route (c)'s widened headers turned off — the header route then keeps
+# fewer pages, so the token route sees more — 525 pages and 683 cells.
+#
+# And on 476 of those 479 accepted rows there IS a box standing in the label
+# column of the placed row: 394 of them carry the header's `DR` stem in a
+# spelling no header pattern can read, and 6 more spell an enumeration the
+# damage-tolerant pattern DOES read but standing where the geometry gate will
+# not call it a header. What is missing is the READING of the enumeration, not
+# the enumeration.
 #
 # ADR 0008 Decision 4 licenses reading a gene name from this row because the
 # printed header fixes the admissible set. Here that header was not read, so
@@ -864,6 +1044,12 @@ def resolve_token_anchored_drbx(
             tokens_on_row=len(named),
             reason=TOKEN_PRESENT_REASON,
             rule_id=TOKEN_ANCHORED_RULE_ID,
+            # The same `source` `scripts/drbx_token_repass.py` writes, emitted
+            # by the RULE so a full re-extraction reproduces the provenance
+            # instead of silently dropping it. Only the PRESENT facts carry it,
+            # exactly as the pass writes it: the UNKNOWN genes are cells this
+            # route declined to claim.
+            source=TOKEN_ANCHORED_SOURCE,
         )
     for gene in GENES:
         if gene not in facts:

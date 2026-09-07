@@ -948,3 +948,98 @@ def test_the_page_carries_an_optional_note_on_every_answer() -> None:
     # Enter inside a note saves it and does not confirm the row underneath
     handler = page.split("panel.addEventListener('keydown'")[1][:900]
     assert "data-notetext" in handler and "stopPropagation" in handler
+
+
+def test_the_geometry_placed_row_stratum_survives_a_re_extraction(tmp_path: Path) -> None:
+    """The stratum is keyed on the RULE, not on the `source` string.
+
+    Only `scripts/drbx_token_repass.py` ever wrote `source='token-anchored-drbx'`.
+    The extraction path writes the same `rule_id` and used to leave `source`
+    NULL, so after any full re-extraction — the derived store holds a dozen
+    `facts.before-*` backups, so this happens — the cells kept their rule and
+    lost their source, `tag_document` stopped firing, and this stratum drew
+    zero. That is exactly the failure this module's own header warns about.
+    """
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=3)
+    con = sqlite3.connect(db)
+    shas = [row[0] for row in con.execute("SELECT DISTINCT sha256 FROM fact ORDER BY sha256")]
+    con.execute(
+        "UPDATE fact SET source=NULL, status='RESOLVED', value='PRESENT', "
+        "rule_id='TOKEN_ANCHORED_DRBX/v1' WHERE sha256=? AND field='DRB4'",
+        (shas[0],),
+    )
+    con.commit()
+    docs = module.load_documents(con)
+    con.close()
+    assert docs[shas[0]].cells["DRB4"].source is None  # the re-extraction shape
+    assert "token_anchored_drbx" in module.tag_document(docs[shas[0]], export)
+    assert "token_anchored_drbx" not in module.tag_document(docs[shas[1]], export)
+
+
+def test_a_widened_grouped_header_is_a_stratum_of_its_own(tmp_path: Path) -> None:
+    """Route (c) required fix 6. A DRB3/4/5 header read only by the
+    damage-tolerant pattern writes 119 PRESENT and 60 ABSENT cells over 104
+    pages, and an ABSENT is a clinical negative. No labelled page carries one,
+    so the pack is the only instrument that can measure the route — and without
+    a tag keyed on the rule_id nothing in a stored fact tells a widened-header
+    page from a strict one."""
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=3)
+    con = sqlite3.connect(db)
+    shas = [row[0] for row in con.execute("SELECT DISTINCT sha256 FROM fact ORDER BY sha256")]
+    con.execute(
+        "UPDATE fact SET rule_id='GROUPED_DRBX_WIDENED/v1', "
+        "source='widened-drbx-header:final-3' WHERE sha256=? AND field IN ('DRB3','DRB4','DRB5')",
+        (shas[0],),
+    )
+    con.commit()
+    docs = module.load_documents(con)
+    con.close()
+    assert "widened_drbx_header" in module.tag_document(docs[shas[0]], export)
+    assert "widened_drbx_header" not in module.tag_document(docs[shas[1]], export)
+    assert {t for t, _, _ in module.STRATA} >= {"widened_drbx_header"}
+
+
+def test_one_stratum_can_be_cut_on_its_own_and_is_spread_across_its_branches(
+    tmp_path: Path,
+) -> None:
+    """`--only` exists because a weight cannot deliver what a promotion needs.
+
+    Route (c) may not be promoted until at least 40 of its rows have been read
+    with 0 false acceptances, and in a general pack a weight of 20 out of ~350
+    gives that stratum a handful of documents. `--only` pools every carrier
+    there and draws nothing else.
+
+    Inside it the round-robin runs over the BRANCH — which of the four
+    widenings let the header in — rather than over the layout family. They are
+    four different kinds of recognizer damage; a sample that is all
+    `slash-as-4` measures one of them and is silent about the other three.
+    """
+    module = load()
+    db, export = synthetic_corpus(tmp_path, n_docs=12)
+    con = sqlite3.connect(db)
+    shas = [row[0] for row in con.execute("SELECT DISTINCT sha256 FROM fact ORDER BY sha256")]
+    branches = ["b-slot-glyph"] * 5 + ["slash-as-4"] * 3 + ["final-3"] * 2
+    for sha, branch in zip(shas, branches, strict=False):
+        con.execute(
+            "UPDATE fact SET rule_id='GROUPED_DRBX_WIDENED/v1', source=? "
+            "WHERE sha256=? AND field IN ('DRB3','DRB4','DRB5')",
+            (f"widened-drbx-header:{branch}", sha),
+        )
+    con.commit()
+    docs = module.load_documents(con)
+    con.close()
+
+    chosen = module.choose(docs, 3, 20260907, export, only="widened_drbx_header")
+    assert len(chosen) == 3
+    assert all(doc.tags == ["widened_drbx_header"] for doc in chosen)
+    # Three documents drawn from three branches, not three from the commonest.
+    assert {module.spread_key(doc, "widened_drbx_header") for doc in chosen} == {
+        "b-slot-glyph",
+        "slash-as-4",
+        "final-3",
+    }
+    # And the cut really is exclusive: nothing outside the stratum is drawn.
+    everything = module.choose(docs, 12, 20260907, export, only="widened_drbx_header")
+    assert len(everything) == 10

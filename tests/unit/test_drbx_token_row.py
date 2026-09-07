@@ -6,12 +6,15 @@ required fixes (workflow `design-drbx-gene-token-row`, 2026-09-06).
 `resolve_grouped_drbx` needs the printed enumeration `{DRB3, DRB4, DRB5}` to
 license reading a gene name from the row. On 9,207 documents the recognizer
 produced no box that pattern reaches, and those documents hold all three genes
-UNKNOWN. Measured on that population, 578 of them still print a gene token on
-the row the page's OWN GEOMETRY puts one label pitch below `DRB1` — and on 578
-of 579 accepted rows a box does stand in the label column, header-shaped on 534
-of them (the header with its digits misread). The row is therefore placed by
-geometry exactly as the header route places it; what is missing is the reading
-of the header, not the header.
+UNKNOWN. The shipped gates accept 479 of them, writing 621 PRESENT cells
+(measured 2026-09-07 against the live stores; the 578/579 this docstring used to
+quote came from a permissive reading of G3/G4/G9 and no build ever shipped it).
+On 476 of those 479 accepted rows a box DOES stand in the label column of the
+placed row — 394 carrying the header's `DR` stem in a spelling no header pattern
+reads, and 6 more spelling an enumeration the damage-tolerant pattern does read
+but standing where the geometry gate will not call it a header. The row is
+therefore placed by geometry exactly as the header route places it; what is
+missing is the reading of the header, not the header.
 
 The route emits **PRESENT only**. Nothing here ever says a gene is absent: the
 counting argument that licenses ABSENT rests on the enumeration having been
@@ -438,3 +441,29 @@ def test_a_ROTATE_frame_restores_provenance_to_the_boxes_as_stored() -> None:
     assert restored["DRB3"].gene_boxes == (stored[2],)
     assert restored["DRB3"].header_box is stored[1]  # the DRB1 label as stored
     assert restored["DRB5"].header_box is None
+
+
+# --- the group's provenance comes from the RULE, not from a one-off pass -----
+
+
+def test_the_present_facts_carry_the_pass_source_from_the_rule_itself() -> None:
+    """`scripts/drbx_token_repass.py` writes `source='token-anchored-drbx'`, and
+    `review_pack.py` used to build this route's stratum from that string alone.
+    A full re-extraction writes the same facts through `extract_facts.py`, which
+    never set the source — so the cells kept their `rule_id`, lost the `source`,
+    and the stratum silently drew zero. That is the failure `review_pack.py`'s
+    own header warns about, and the store holds a dozen `facts.before-*` backups
+    to show how often a re-extraction happens.
+
+    The rule now emits it, so both paths agree. Only the PRESENT facts carry it,
+    exactly as the pass writes it: the UNKNOWN genes are cells this route
+    declined to claim, and marking them would claim them."""
+    from kidneymatch.ocr.drbx import TOKEN_ANCHORED_SOURCE
+
+    row = read(page(token("DRB3")))
+    assert row.facts is not None
+    assert row.facts["DRB3"].source == TOKEN_ANCHORED_SOURCE
+    assert row.facts["DRB3"].rule_id == TOKEN_ANCHORED_RULE_ID
+    assert row.facts["DRB4"].source is None
+    assert row.facts["DRB5"].source is None
+    assert {f.rule_id for f in row.facts.values()} == {TOKEN_ANCHORED_RULE_ID}
