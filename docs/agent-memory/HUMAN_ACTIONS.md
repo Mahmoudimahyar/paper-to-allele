@@ -16,6 +16,61 @@ Never put secret values in this file.
 - **Decision required:** reword the sentence in `AGENTS.md` so the constitution
   and the code agree — or reverse the decision, in which case every fact with
   `source='prefix-bound'` is withdrawn as a group, which is why they carry it.
+- **There is now a SECOND documented exception, and the wording must cover it.**
+  `scripts/column_bind.py` (`CV_RESEARCH_2026-09-05.md` s12-b) takes the locus
+  from the printed prefix on a comparison sheet with one filled column, and
+  takes the PERSON from which column the values sit in. So the sentence has to
+  admit two things, not one: a fully-qualified allele naming its own gene, and
+  a printed column heading naming the subject. Both groups are withdrawable on
+  their own — `source='prefix-bound'`, `source='column-bound'` — and the
+  column-bound facts additionally record in `rule_id` which ROLE source gated
+  them (measured over the 276 binds the shipped code makes: `CAPTION_CLAIM` 150
+  = 54%, `FORM_FIELD_BARE` 84 = 30%, a strong printed field 42 = 15%), so the
+  operator may withdraw the weakest tier alone rather than all of it.
+- **Two further points for the same wording pass, both measured:** 5 of the 276
+  bound pages label one or three OTHER loci, which s12's phrase "a page that
+  labels no row" does not cover — the fence is per-locus in both passes, and
+  either the wording says so or a page-level anchor fence is wanted instead;
+  and `find_anchors` does not see a bare `DRB1*` box as a label (the star stops
+  `canonical_locus_label`), which `column_bind.py` handles by tainting the
+  locus rather than by treating the stub as an anchor.
+- **Secret?** No. **Blocking now?** No.
+
+
+### HA-019 — A page that pictures two people has no way to be recorded
+- **Needed by:** nothing today; 15 comparison sheets that PRINT two subjects
+  are refused to review because of it (a further 25 are refused because a
+  column that should be blank is not, which is a different question and carries
+  a different reason), and every future two-subject form will be.
+- **Why:** `fact` is keyed `(sha256, field, extraction_version)` with no
+  subject column, and ENTITY-001's "a conflicting blood group or role blocks a
+  link rather than weakening it" is written for one subject per document. So
+  `scripts/column_bind.py` binds only where ONE column is filled and refuses
+  the rest to `REVIEW_REQUIRED` with crops (`source='column-bind-refused'`).
+  That is the conservative branch, not a design. `docs/architecture/
+  DATA_MODEL.md`'s `FieldClaim.subject_candidate_id` already anticipates
+  subject-keyed claims, so the target model has room for the answer.
+- **Decision required:** whether a document may carry two subjects' facts at
+  all, and if so what `fact`'s key becomes, what matching does with the second
+  set, and how entity resolution links each one. An agent must not invent this.
+- **Secret?** No. **Blocking now?** No.
+
+
+### HA-018 — Keep the printed Bw4/Bw6 epitopes as a consistency gate?
+- **Needed by:** nothing; this is evidence currently being thrown away.
+- **Why:** `src/kidneymatch/ocr/glyphs.py` now reads `B*35,*51,Bw4,Bw6` and
+  DROPS the tail, because the epitopes are serology and not alleles. But they
+  are patient-specific, not a template constant: expected-versus-printed on the
+  corpus is 38/80/113 on the diagonal against 5 off it, and every one of the 5
+  is "the alleles imply Bw4+Bw6, the page printed Bw4 only" — a truncated tail,
+  not a misread. Used as a gate, the epitopes would catch **50% of single
+  misread digits** (2,067 of 4,114 admissible substitutions change the epitope
+  set), which is the one error class no other gate on this path can see.
+- **Decision required:** whether a printed Bw set contradicting the parsed
+  alleles' serology should send the cell to `REVIEW_REQUIRED`. Cost measured:
+  5 of 236 decidable tokens. It needs a versioned Bw4/Bw6 table from
+  IPD-IMGT/HLA — never one an LLM supplies — and B*15/B*27 are undecidable at
+  the first field, so they must abstain.
 - **Secret?** No. **Blocking now?** No.
 
 

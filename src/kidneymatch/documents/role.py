@@ -250,6 +250,96 @@ def _persian_tokens(boxes: list[Box]) -> list[RoleToken]:
     return tokens
 
 
+@dataclass(frozen=True, slots=True)
+class ColumnHeaderRow:
+    """One row of a comparison table's column headings, and its geometry.
+
+    `is_comparison_sheet` answers "are there two people on this page"; this
+    answers "where is each of them". The difference matters because a page
+    printing two headings and filling ONE column describes one person, and the
+    heading above the filled column is then the only thing on the page that
+    says which (`scripts/column_bind.py`).
+
+    `extra` holds any FURTHER role word on the same row. Three role words is
+    more than two subjects, and nothing here can say whose column is whose.
+    """
+
+    donor: Box
+    recipient: Box
+    extra: tuple[Box, ...] = ()
+
+    @property
+    def height(self) -> float:
+        """The unit every distance under this header is measured in."""
+        return max((self.donor.height + self.recipient.height) / 2, 1e-6)
+
+    @property
+    def centre_y(self) -> float:
+        return (self.donor.centre_y + self.recipient.centre_y) / 2
+
+    @property
+    def midline(self) -> float:
+        """Halfway between the two headings' LEFT edges, not their centres.
+
+        Values are left-aligned under their heading — measured median offset
+        -0.37 header heights — so the left edge is what a column is pinned to.
+        """
+        return (self.donor.x0 + self.recipient.x0) / 2
+
+    @property
+    def recipient_is_left(self) -> bool:
+        return self.recipient.x0 < self.donor.x0
+
+    def role_at(self, x0: float) -> Role:
+        """Which subject's column a box with this left edge sits in."""
+        return Role.RECIPIENT if (x0 < self.midline) == self.recipient_is_left else Role.DONOR
+
+    def header_for(self, role: Role) -> Box:
+        return self.recipient if role is Role.RECIPIENT else self.donor
+
+
+def comparison_columns(latin_boxes: list[Box]) -> list[ColumnHeaderRow]:
+    """Every row printing BOTH English role words, topmost first.
+
+    The same evidence `is_comparison_sheet` reduces to a boolean, built from
+    the same two patterns so the two can never disagree about what a comparison
+    sheet is. A list rather than one row because a page may print the identity
+    block's pair above the table's own, and which pair a value sits under is
+    decided by the caller from the values' geometry, not here.
+    """
+    words: list[tuple[Role, Box]] = [
+        (Role.DONOR, b) for b in latin_boxes if _EN_DONOR.match((b.text or "").strip())
+    ]
+    words += [
+        (Role.RECIPIENT, b) for b in latin_boxes if _EN_RECIPIENT.match((b.text or "").strip())
+    ]
+    words.sort(key=lambda pair: pair[1].centre_y)
+
+    grouped: list[list[tuple[Role, Box]]] = []
+    for role, box in words:
+        for group in grouped:
+            if _same_row(group[0][1], box):
+                group.append((role, box))
+                break
+        else:
+            grouped.append([(role, box)])
+
+    rows: list[ColumnHeaderRow] = []
+    for group in grouped:
+        donors = [b for r, b in group if r is Role.DONOR]
+        recipients = [b for r, b in group if r is Role.RECIPIENT]
+        if not donors or not recipients:
+            continue
+        rows.append(
+            ColumnHeaderRow(
+                donors[0],
+                recipients[0],
+                tuple(b for _, b in group if b is not donors[0] and b is not recipients[0]),
+            )
+        )
+    return rows
+
+
 def is_comparison_sheet(latin_boxes: list[Box]) -> bool:
     """Does this page print BOTH English role words as column headings on one row?
 

@@ -389,6 +389,133 @@ whole group can be found and withdrawn if the decision is reversed.
 HA-017 records that the sentence in `AGENTS.md` now has a documented exception
 and should be reworded by a person rather than by an agent.
 
+## 12-b. A comparison sheet with ONE filled column (amended 2026-09-06)
+
+s12 above says "**a comparison sheet is refused outright**". This amends that,
+narrowly, and the amendment is recorded here because s12 is the operator's own
+decision and an agent may not quietly reverse one.
+
+**The operator's instruction, this session:** all eight segments of the s18
+loss are to be resolved. Comparison sheets are segment 2, and the refusal above
+is what makes them a segment: 450 pages, 0 cells, on one laboratory template.
+
+**What the pages actually are.** Family `None` on all 450. An identity block,
+then a header row `Recipient | Frequency | Donor | Frequency` — Recipient LEFT
+on 445 of 449 pages — then allele rows printed one locus per box with NO row
+labels at all (0 locus anchors on 427 of 450). On **419 of 450, only ONE column
+holds fully-qualified alleles**. Such a page prints two headings and describes
+ONE person. The heading above the filled column is the only thing on the page
+that says which.
+
+**The amendment, and the condition on it.** A comparison sheet may be bound
+when, and only when, the **subject-agreement gate** holds:
+
+> exactly one column holds fully-qualified values, the other column holds
+> nothing a person could have typed, and the document's own independent ROLE
+> fact is RESOLVED and names the same subject as the heading above the filled
+> column.
+
+The locus still comes from the value's printed prefix, exactly as s12 allows,
+and still only where the page anchors no label for it. What is NEW is that
+geometry now decides the PERSON as well: which column, plus the row-order and
+alignment constraints of the template. `scripts/column_bind.py` implements it
+with `source='column-bound'`, so the whole group is withdrawable — and each
+fact records in `rule_id` which ROLE source gated it, because that gate is 54%
+caption claims (150 of 276 binds) and 30% bare role words (84), against 15% on
+a strong printed field (42), so the weakest tier can be withdrawn on its own.
+
+**Everything the amendment does NOT permit.** A page with values under both
+headings, a third role word on the header row, a box reaching both columns, or
+a second column holding anything typed at all, is refused to `REVIEW_REQUIRED`
+with the tokens and the filled heading boxed (`source='column-bind-refused'`):
+40 pages, which the reviewer previously saw as three.
+
+**Those 40 are two groups, and they are not the same claim.** 15 pages / 26
+cells are refused because the PAGE prints two subjects, and only those carry
+"this page prints donor and recipient columns for two subjects"
+(`rule_id='column/two-subjects'`). The other 25 pages / 53 cells are refused
+because the column that should be empty is not blank, and what is in it is a
+date, a frequency or an 11-digit identifier rather than anything shaped like a
+typing: they carry a reason that says exactly that, under
+`rule_id='column/other-column-unread'`, and `review_pack` samples them as their
+own stratum. The emptiness predicate is deliberately wider than the parser — it
+has to be, or five of twelve real two-people pages bind — so it also catches
+the form's own printing, and writing a two-subject claim over a reference
+number would put a false statement about a patient's record into the medical
+review queue.
+
+A page whose geometry is clean but whose ROLE fact is missing is NEVER resolved
+— it is named for review only (`source='column-named+role-unconfirmed'`, 50
+pages / 108 cells), and the reason deliberately does not say which role,
+because the review page prints the reason beside the Role question the reviewer
+is meant to answer independently. That reason also states how many printed rows
+on the page got no crop at all because the second allele is printed without its
+own star (89 rows on 77 pages corpus-wide); `parse_allele_values` will not
+guess between a pair and one two-field value, so those rows are not proposals.
+
+**Why the gate is the condition and not a detail.** Sliding every token under
+the OTHER heading, with the gate off, binds 333 pages and names the wrong
+person on 272 of them. With it on, on the shipped code: 276 of 276 bound pages
+refuse the slide, and 276 of 276 refuse a MIRROR of their own filled column
+into the vacant one. It is the whole wrong-person defence, and the residual it
+does not cover is stated in the pass's docstring — pixels cannot certify a
+column blank, so a second column no engine boxed at all is gated by the ROLE
+fact alone.
+
+**Worth, measured from the shipped code by `--dry-run` against the live stores
+with every connection forced read-only:** 276 pages / 699 cells (A 219,
+DRB1 216, DQB1 146, B 118); 50 pages / 108 cells named; 40 pages / 79 cells
+into review; 84 refused outright; 276 + 50 + 40 + 84 = 450. Applied to a copy
+of `facts.sqlite`: 699 rows written, all RESOLVED, every one of them UNKNOWN
+"no anchor on this document" beforehand, and 0 already-RESOLVED cells changed
+anywhere. On the four label exports (1,287 cells scored, 774 judged): 616 to
+618 correct, 121 to 119 missed, 18 to 18 contradicted, nothing lost.
+
+**The B row, stated exactly.** B binds at all only because `glyphs.py` now
+reads the `Bw4,Bw6` epitope tail this template prints after the B pair. That
+parser change alone newly reads **279 tokens on 279 pages** (270 `B*`, 3 `8*`,
+6 other spellings; 180 of them comparison sheets, 99 not) and changes **ZERO
+mainline cells on every locus** — there is no B anchor on any of those pages,
+so the ordinary resolver never sees them. Its own yield is **+97 B cells
+through `scripts/prefix_bind.py`** (`--dry-run`, read-only, against the live
+stores), all on non-sheet pages, all two-valued, and 0 on comparison sheets —
+the 3,535 sheet cells stay behind the guard. No human label covers any of the
+97. The "+1 correct" belongs to `column_bind`, not to the parser.
+
+**That acceptance evidence has now been produced.** A full corpus extraction
+with the parser was compared by `refresh_facts.compare` against a full corpus
+extraction with the pre-branch `glyphs.py`, both written to scratch databases
+from the same read-only sources:
+
+    A     13,306 -> 13,306      DQB1  13,024 -> 13,024
+    B     13,136 -> 13,136      DRB1  12,912 -> 12,912
+    C      3,998 ->  3,998      DRB3  11,323 -> 11,323
+    DPA1      29 ->     29      DRB4   9,550 ->  9,550
+    DPB1      32 ->     32      DRB5  10,815 -> 10,815
+    DQA1     839 ->    839
+    0 second alleles gained, 0 dropped, 0 SWAPPED, no status transition at all
+
+0 RESOLVED deltas on every one of the eleven loci, which is what was owed.
+
+`prefix_bind.py` was hardened before that landed: its comparison-sheet guard
+returned an empty set on a query error — indistinguishable from a corpus with
+no sheets in it, and 180 two-role pages' B rows now sit behind it — and its
+star-less same-locus token was skipped past rather than tainting the page,
+which hid it from `MAX_VALUES`. Both are `tests/contracts/test_prefix_binding.py`.
+
+**Counting is the default.** `python scripts/column_bind.py` with no argument
+does not write: this pass reverses a recorded operator decision on 450 pages of
+real patient facts, so the write is `--write`, asked for by name. That differs
+from `prefix_bind.py` and `anchor_row_bind.py` deliberately.
+
+**Pass order.** `column_bind.py` runs AFTER `prefix_bind` and
+`anchor_row_bind`, and after any pass that writes ROLE (`caption_pass`,
+`role_repass`): it re-checks every `column-bound` fact against the current ROLE
+fact at the head of each run and withdraws the ones that no longer agree, so
+re-running it in order is the repair when a later pass changes a role.
+
+HA-017 now carries the second exception as well as the first.
+
 ## s13 — the whole-page fields, and two strata that were silently empty
 
 The reviewer, on where the rest of the answer lives:

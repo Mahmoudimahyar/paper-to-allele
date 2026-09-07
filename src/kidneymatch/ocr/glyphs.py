@@ -179,6 +179,46 @@ _PAIR = re.compile(
     re.VERBOSE,
 )
 
+# One laboratory's B row prints the Bw4/Bw6 epitopes after the pair:
+# `B*35,*51,Bw4,Bw6`. `_PAIR` returns nothing for it, so B was unreachable on
+# every page of that form — 279 tokens on 279 pages, and the human's labelled B
+# cells on those sheets were all misses.
+#
+# It is a SECOND pattern, tried only after `_PAIR` fails, and `_PAIR` itself is
+# untouched: that structure was measured to change zero mainline cells on any
+# locus, which is the only reason a corpus-wide parser change is admissible
+# here at all.
+#
+# The gates are narrow on purpose, and each was probed against a constructed
+# counterexample (`tests/unit/test_printed_pair.py`):
+#
+# * the tail attaches only to a COMPLETE pair — both alleles carrying their own
+#   star — so `B*35,51,Bw4` (the one-star form, HA-015) and `B*35,Bw6` (a single
+#   allele) stay unread, as they do without a tail;
+# * the prefix must be B. Bw4/Bw6 are B-locus serological epitopes; a tail after
+#   an A, C, Cw or DRB1 pair is a misread, not a wider grammar;
+# * exactly `Bw4` or `Bw6`, one or two of them, separated by a comma and ending
+#   the token. `Bw5`, `BWE`, `Bd6`, `(Bw4)`, `Bw4:`, `.Bw4` and a trailing comma
+#   are all refused — accepting any separator or any short word as a tail was
+#   the placebo that gained tokens for no reason;
+# * case-insensitivity applies to the TAIL GROUP ALONE, inline. Compiling the
+#   whole pattern with IGNORECASE would also loosen `[NLSQCA]`, and `A*02s` is
+#   not the secreted allele `A*02S`.
+#
+# The epitopes themselves are dropped: they are serology, not alleles. Keeping
+# them as a consistency gate against the pair's implied Bw group is real
+# evidence the parser throws away, and it is recorded as a human decision
+# (HA-018) rather than taken here.
+#
+# The tail group is `+` rather than `{1,2}` and the count is checked in code:
+# with a bounded repeat the non-greedy `pair` simply swallows the surplus tail
+# and a three-epitope token parses as a clean pair. Matching EVERY trailing
+# tail and then refusing more than two is the difference between a gate and the
+# appearance of one.
+_BW_TAIL = r"(?:\s*,\s*(?i:Bw\s*[46]))"
+_TAILED_PAIR = re.compile(rf"^(?P<pair>.+?)(?P<tails>{_BW_TAIL}+)$")
+MAX_BW_TAILS = 2
+
 # The recognizer's B/8 confusion in the PREFIX slot: `8*44` for `B*44`,
 # 56 cells corpus-wide. Repaired only when a star follows; a bare `844` is a
 # number, and which locus a number belongs to is never decided from its text.
@@ -267,6 +307,32 @@ def is_grouped_drbx_header(token: str) -> bool:
     return bool(_GROUPED_DRBX.match((token or "").strip()))
 
 
+def _pair_with_a_bw_tail(stripped: str) -> list[AlleleValue]:
+    """`B*35,*51,Bw4,Bw6` — the complete pair, with the epitopes dropped.
+
+    Everything that is not exactly that shape returns nothing, exactly as
+    before this pattern existed. See `_TAILED_PAIR` for why each gate is here.
+    """
+    tailed = _TAILED_PAIR.match(stripped)
+    if not tailed:
+        return []
+    if len(re.findall(r"[Bb][Ww]", tailed.group("tails"))) > MAX_BW_TAILS:
+        return []  # a B allele carries at most one Bw4 and one Bw6
+    values = parse_allele_values(tailed.group("pair"))
+    if len(values) != 2:
+        return []  # a single allele, or the one-star form: unread as before
+    if any(v.separator_missing for v in values):
+        return []
+    if values[0].locus_prefix != "B":
+        # Bw4/Bw6 are B-locus epitopes. A tail after another gene's pair says
+        # the reading is wrong, not that the grammar is wider. The `8*` prefix
+        # repair reaches B by the ordinary route and is accepted here with it;
+        # a pass for which the printed prefix is the ONLY locus evidence is
+        # where that repair has to be refused, and `column_bind.py` does.
+        return []
+    return values
+
+
 def parse_allele_values(token: str) -> list[AlleleValue]:
     """Every allele this ONE box states: usually one, sometimes a printed pair.
 
@@ -284,7 +350,7 @@ def parse_allele_values(token: str) -> list[AlleleValue]:
         return [single]
     found = _PAIR.match(stripped)
     if not found:
-        return []
+        return _pair_with_a_bw_tail(stripped)
     first = parse_allele_value(found.group("first"))
     if first is None or first.locus_prefix is None:
         # Without a locus on the first half there is nothing to carry over, and
