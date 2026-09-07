@@ -128,6 +128,22 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     ("low_res", 5, "quality band LOW"),
     ("digits_lost", 15, "the constrained decode dropped a digit the recognizer saw"),
     ("proposal", 10, "the resolver refused the cell for shape; the decode reads a clean allele"),
+    (
+        "column_bound",
+        20,
+        "a comparison sheet with only ONE column filled: the values were bound to the person "
+        "named by the heading above that column, checked against the document's own role fact "
+        "(`column-bound`). It reverses s12's flat refusal of these pages under s12-b, the role "
+        "agreement is the whole wrong-person defence, and 61% of it rests on a caption claim",
+    ),
+    (
+        "column_named",
+        14,
+        "the same geometry, but nothing was resolved: either no independent role confirms the "
+        "person (`column-named+role-unconfirmed`, 60 documents) or the page genuinely holds two "
+        "(`column-bind-refused`, 29). Both now carry the tokens and the header box where the "
+        "reviewer previously saw no crop at all, and the question asked of them is the ROLE",
+    ),
     ("review_refused", 15, "boxes sat on the row but the resolver refused the cell"),
     ("unread_second", 10, "a second allele the pipeline could not read"),
     ("decode_split", 20, "the reading changes under one-pixel jitter"),
@@ -442,10 +458,19 @@ def odd_value_box(resolved: list[Cell]) -> bool:
     return any(h / middle > ODD_BOX_TALL or h / middle < ODD_BOX_SHORT for h in heights)
 
 
+# `scripts/column_bind.py` writes these, and every one of them is a REVIEW or a
+# RESOLVED cell that the two generic refusal strata below would otherwise
+# swallow: `review_refused` is 7,798 documents at quota 15, so a page pooled
+# there is never sampled, and `zero_fact_refused` ("labels anchored but every
+# cell refused") is not even true of a page that anchors nothing.
+COLUMN_SOURCES = frozenset({"column-bound", "column-named+role-unconfirmed", "column-bind-refused"})
+
+
 def tag_document(doc: Doc, export: Path) -> list[str]:
     """Every stratum this document belongs to, in `STRATA` order."""
     hla = [c for c in doc.cells.values() if c.locus in HLA_LOCI]
     resolved = [c for c in hla if c.status == "RESOLVED"]
+    generic = [c for c in hla if c.source not in COLUMN_SOURCES]
     verdicts = {c.locus: (c.decode or {}).get("verdict") for c in hla}
     # A cell is "contradicted" when ANY independent reader disputes it; a
     # stratum keyed on one engine would go quiet the moment that engine did.
@@ -473,7 +498,7 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("decode_split")
     if any(v == "PROPOSAL" for v in verdicts.values()):
         tags.add("proposal")
-    if any(c.status == "REVIEW_REQUIRED" and c.value_boxes for c in hla):
+    if any(c.status == "REVIEW_REQUIRED" and c.value_boxes for c in generic):
         tags.add("review_refused")
     if any(c.second_allele == "UNREAD" for c in resolved):
         tags.add("unread_second")
@@ -496,7 +521,7 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     if doc.family is None and resolved:
         tags.add("default_rule")
     if not resolved:
-        anchored = any(c.status == "REVIEW_REQUIRED" for c in hla)
+        anchored = any(c.status == "REVIEW_REQUIRED" for c in generic)
         tags.add("zero_fact_refused" if anchored else "zero_fact_no_anchor")
     if any((c.reason or "").find("and its own label height") >= 0 for c in resolved):
         tags.add("template_band")
@@ -525,6 +550,10 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
         tags.add("bare_role")
     if any(c.source == "anchor-row-prefix" for c in resolved):
         tags.add("anchor_row")
+    if any(c.source == "column-bound" for c in resolved):
+        tags.add("column_bound")
+    if any(c.source in ("column-named+role-unconfirmed", "column-bind-refused") for c in hla):
+        tags.add("column_named")
     if odd_value_box(resolved):
         tags.add("odd_box")
     if doc.blank_cells >= MIN_BLANK_CELLS:
@@ -670,7 +699,14 @@ def choose(
 
 def cell_crop_box(cell: Cell, width: int, height: int) -> tuple[int, int, int, int] | None:
     boxes = list(cell.value_boxes)
-    if cell.anchor_box:
+    if cell.anchor_box and not (cell.source in COLUMN_SOURCES and cell.value_boxes):
+        # On a comparison sheet the "anchor" is the column HEADING, and it sits
+        # a long way above the row. Measured over the 131 named cells, unioning
+        # it in gives a strip 6.8 header heights tall at 0.12 page widths, 59%
+        # of which contain one to three OTHER loci's rows — unreadable at the
+        # 58px the page shows a crop at, and an invitation to read the wrong
+        # row. The heading is still stored, and `highlight()` draws and zooms
+        # to it on the full image, which is where it can actually be read.
         boxes.append(cell.anchor_box)
     if not boxes:
         return None

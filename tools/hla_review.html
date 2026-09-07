@@ -632,6 +632,12 @@ kbd { font: 600 11px/1.6 var(--mono); background: var(--surface-2); border: 1px 
     const why = (cell.suggestions && cell.suggestions.pipeline && cell.suggestions.pipeline.reason) || '';
     if (/no anchor on this document|no grouped DRB3\/4\/5 header/.test(why)) return 'NOT_PRINTED';
     if (/no box at all/.test(why)) return 'BLANK';       // label printed, cell empty
+    // A comparison sheet's column, named or refused (`column_bind.py`). These
+    // pages print no row label at all, so they USED to fall into NOT_PRINTED
+    // above with no crop behind them; now the tokens are boxed and the row is
+    // there to be read, which is VALUE. Named here rather than left to fall
+    // through, so the default cannot drift when the wording changes.
+    if (/values printed under one header of a comparison table|prints donor and recipient columns/.test(why)) return 'VALUE';
     return 'VALUE';                                       // boxes are there: read them
   }
   function fmtVotes(votes) {

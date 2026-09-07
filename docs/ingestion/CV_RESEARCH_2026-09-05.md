@@ -389,6 +389,90 @@ whole group can be found and withdrawn if the decision is reversed.
 HA-017 records that the sentence in `AGENTS.md` now has a documented exception
 and should be reworded by a person rather than by an agent.
 
+## 12-b. A comparison sheet with ONE filled column (amended 2026-09-06)
+
+s12 above says "**a comparison sheet is refused outright**". This amends that,
+narrowly, and the amendment is recorded here because s12 is the operator's own
+decision and an agent may not quietly reverse one.
+
+**The operator's instruction, this session:** all eight segments of the s18
+loss are to be resolved. Comparison sheets are segment 2, and the refusal above
+is what makes them a segment: 450 pages, 0 cells, on one laboratory template.
+
+**What the pages actually are.** Family `None` on all 450. An identity block,
+then a header row `Recipient | Frequency | Donor | Frequency` — Recipient LEFT
+on 445 of 449 pages — then allele rows printed one locus per box with NO row
+labels at all (0 locus anchors on 427 of 450). On **419 of 450, only ONE column
+holds fully-qualified alleles**. Such a page prints two headings and describes
+ONE person. The heading above the filled column is the only thing on the page
+that says which.
+
+**The amendment, and the condition on it.** A comparison sheet may be bound
+when, and only when, the **subject-agreement gate** holds:
+
+> exactly one column holds fully-qualified values, the other column holds
+> nothing a person could have typed, and the document's own independent ROLE
+> fact is RESOLVED and names the same subject as the heading above the filled
+> column.
+
+The locus still comes from the value's printed prefix, exactly as s12 allows,
+and still only where the page anchors no label for it. What is NEW is that
+geometry now decides the PERSON as well: which column, plus the row-order and
+alignment constraints of the template. `scripts/column_bind.py` implements it
+with `source='column-bound'`, so the whole group is withdrawable — and each
+fact records in `rule_id` which ROLE source gated it, because that gate is 61%
+caption claims and 25% bare role words, so the weakest tier can be withdrawn on
+its own.
+
+**Everything the amendment does NOT permit.** A page with values under both
+headings, a straddling box, a third role word on the header row, or a second
+column holding anything typed at all, is refused to `REVIEW_REQUIRED` with the
+tokens and the header pair boxed (`source='column-bind-refused'`): 29 pages,
+which the reviewer previously saw as three. A page whose geometry is clean but
+whose ROLE fact is missing is NEVER resolved — it is named for review only
+(`source='column-named+role-unconfirmed'`, 60 pages), and the reason
+deliberately does not say which role, because the review page prints the reason
+beside the Role question the reviewer is meant to answer independently.
+
+**Why the gate is the condition and not a detail.** Sliding every token under
+the OTHER heading, with the gate off, binds 333 pages and names the wrong
+person on 272 of them. With it on: four, none of them flipped. It is the whole
+wrong-person defence, and the residual it does not cover is stated in the
+pass's docstring — pixels cannot certify a column blank, so a second column no
+engine boxed at all is gated by the ROLE fact alone.
+
+**Worth, as re-measured by the verifying session on the real 450:** 305 pages /
+665 cells (A ~220, DRB1 ~211, DQB1 ~155), 0 overlap with an already-RESOLVED
+cell, +3 correct and 0 contradicted on the 1,342 human labels.
+
+**The B row, stated exactly.** B binds at all only because `glyphs.py` now
+reads the `Bw4,Bw6` epitope tail this template prints after the B pair. That
+parser change alone newly reads **279 tokens on 279 pages** (270 `B*`, 3 `8*`,
+6 other spellings; 180 of them comparison sheets, 99 not) and changes **ZERO
+mainline cells on every locus** — there is no B anchor on any of those pages,
+so the ordinary resolver never sees them. Its own yield is **+99 B cells
+through `scripts/prefix_bind.py`**, all on non-sheet pages, all two-valued, and
+**0 of the 1,342 labels move** (661/534/123/19/5 before and after). No human
+label covers any of the 99. The "+1 correct" belongs to `column_bind`, not to
+the parser. Acceptance evidence for the parser change is therefore
+`refresh_facts.py`'s per-locus comparison showing 0 RESOLVED deltas on every
+locus, and then `prefix_bind.py --dry-run` reporting "bound from its own
+prefix: B" at 99 (+/-6 for the non-`B*` spellings) and 0 on sheets.
+
+`prefix_bind.py` was hardened before that landed: its comparison-sheet guard
+returned an empty set on a query error — indistinguishable from a corpus with
+no sheets in it, and 180 two-role pages' B rows now sit behind it — and its
+star-less same-locus token was skipped past rather than tainting the page,
+which hid it from `MAX_VALUES`. Both are `tests/contracts/test_prefix_binding.py`.
+
+**Pass order.** `column_bind.py` runs AFTER `prefix_bind` and
+`anchor_row_bind`, and after any pass that writes ROLE (`caption_pass`,
+`role_repass`): it re-checks every `column-bound` fact against the current ROLE
+fact at the head of each run and withdraws the ones that no longer agree, so
+re-running it in order is the repair when a later pass changes a role.
+
+HA-017 now carries the second exception as well as the first.
+
 ## s13 — the whole-page fields, and two strata that were silently empty
 
 The reviewer, on where the rest of the answer lives:

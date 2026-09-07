@@ -20,14 +20,20 @@ tried and it is fenced:
 * the locus must have **no anchor anywhere on the page**. Geometry gets first
   refusal, always, and this never overrules a printed label;
 * the token must carry its own star. `B35` without one may be a serological
-  spelling (HLA_VALIDATION_SPEC s4), and a bare number names nothing;
+  spelling (HLA_VALIDATION_SPEC s4), and a bare number names nothing. A
+  star-less token that names THIS locus taints the page rather than being
+  skipped past: it parses with the prefix, and skipping it hides it from
+  `MAX_VALUES`, so three printed tokens could bind two as a complete pair;
 * the value must be admissible for the locus it claims;
 * every box taken for one locus must sit on **one printed row**, because two
   rows are two people as easily as two alleles;
-* a **comparison sheet is refused outright**. Two patients on one page means a
-  prefix cannot say whose value it is, and that is the wrong-locus failure in
-  its most dangerous form — a value bound to the correct gene of the wrong
-  person;
+* a **comparison sheet is refused outright**, and the guard **fails CLOSED**:
+  if the sheet query cannot run, no page is processed. Two patients on one page
+  means a prefix cannot say whose value it is, and that is the wrong-locus
+  failure in its most dangerous form — a value bound to the correct gene of the
+  wrong person. `scripts/column_bind.py` handles the one case s12-b admits, a
+  sheet with a single filled column, and it does so with the document's own
+  role fact agreeing; this pass still refuses every sheet;
 * a box claimed by two loci withdraws both, as everywhere else.
 
 Every fact it writes carries `source='prefix-bound'` and a reason that says the
@@ -101,16 +107,22 @@ def unanchored(con: sqlite3.Connection) -> dict[str, list[str]]:
 
 
 def comparison_sheets(con: sqlite3.Connection) -> set[str]:
-    try:
-        return {
-            row[0]
-            for row in con.execute(
-                "SELECT sha256 FROM document WHERE extraction_version=? AND comparison_sheet=1",
-                (EV,),
-            )
-        }
-    except sqlite3.OperationalError:
-        return set()
+    """Pages holding two people. Raises rather than returning an empty set.
+
+    This used to swallow an `OperationalError` and hand the pass an empty set,
+    which is indistinguishable from a corpus with no comparison sheets in it —
+    and this corpus has 450. It is the only thing standing between the pass and
+    binding the right gene of the WRONG PERSON, so it fails CLOSED, as
+    `anchor_row_bind.comparison_sheets` already did. Since the B row's Bw4/Bw6
+    tail parses, 180 two-role pages' B values sit directly behind this guard.
+    """
+    return {
+        row[0]
+        for row in con.execute(
+            "SELECT sha256 FROM document WHERE extraction_version=? AND comparison_sheet=1",
+            (EV,),
+        )
+    }
 
 
 def claims_for(boxes: list[Box], locus: str, vocabulary, slope: float) -> list[Box] | None:
@@ -128,7 +140,13 @@ def claims_for(boxes: list[Box], locus: str, vocabulary, slope: float) -> list[B
         if any(v.locus_prefix is None or v.locus_prefix.upper() != locus.upper() for v in values):
             continue
         if any(v.separator_missing for v in values):
-            continue  # `B35` may be a serological spelling, not an allele
+            # `B35` may be a serological spelling rather than an allele, but it
+            # is not NOTHING: it parses WITH this locus's prefix. Skipping past
+            # it hid it from `MAX_VALUES` entirely, so a page printing three
+            # tokens could bind two and report a complete pair. It taints the
+            # page, exactly as `anchor_row_bind.on_the_anchors_row` taints its
+            # row.
+            return None
         if not vocabulary.covers(locus) or any(
             not vocabulary.is_admissible(locus, v.first_field) for v in values
         ):

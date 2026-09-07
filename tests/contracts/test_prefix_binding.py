@@ -96,6 +96,33 @@ def test_an_inadmissible_value_taints_the_page(vocabulary) -> None:
     assert claims_for([at("A*999", 0.30)], "A", vocabulary, 0.0) is None
 
 
+def test_a_star_less_token_naming_this_locus_taints_the_page(vocabulary) -> None:
+    """`A24` parses WITH a prefix and `separator_missing`. It used to be
+    skipped past, which hid it from MAX_VALUES entirely: a page printing three
+    tokens could bind two of them and report a complete pair. The mainline
+    already taints its row for this (`on_the_anchors_row`); this pass, which
+    has no row at all, has more reason to and not less."""
+    boxes = [at("A24", 0.18), at("A*02", 0.30), at("A*11", 0.42)]
+    assert claims_for(boxes, "A", vocabulary, 0.0) is None
+    # A star-less token for ANOTHER gene is not this locus's business.
+    assert claims_for([at("B35", 0.18), at("A*02", 0.30)], "A", vocabulary, 0.0) is not None
+
+
+def test_the_prefix_bind_comparison_sheet_guard_fails_closed() -> None:
+    """It returned an empty set on a query error, which is indistinguishable
+    from a corpus with no comparison sheets — and this corpus has 450. Since
+    the B row's Bw4/Bw6 tail parses, 180 two-role pages' B values sit directly
+    behind this guard."""
+    import sqlite3
+
+    import prefix_bind
+
+    con = sqlite3.connect(":memory:")
+    with pytest.raises(sqlite3.OperationalError):
+        prefix_bind.comparison_sheets(con)
+    con.close()
+
+
 # --- anchor_row_bind: the label was read, the cell rectangle was not --------
 
 
