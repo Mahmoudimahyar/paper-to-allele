@@ -1282,3 +1282,81 @@ a yield, a provenance, a guarantee. The fourth is a wrong-value path.
 None of the four is merged. A fix round is applying the reviews' required fixes
 in the same worktrees, to be re-reviewed against the same measurements.
 
+## s21 — items 1, 2 and 8 merged and applied; what the fix round changed
+
+The four rejected builds (s20) went back to their worktrees with the reviews as
+the specification. Three came back approved and are merged; item 3 was rejected
+a second time, on a defect its own fix round introduced.
+
+### What the fix round actually closed
+
+Each of these was a path that could publish something untrue, and none was
+visible without running the code:
+
+* **item 1** — the partial-contradiction gate ran on one rescue route and not
+  the other, so 3 pages published over a contradicting sign printed in the
+  label's own cell; 2 of them would have published a POSITIVE Rh over a printed
+  `-` the moment the caption branch became reachable. The caption branch was
+  itself dead code: `reconcile_abo` accepted claims and no caller passed any.
+* **item 2** — the straddle test crossed a midline that, on a
+  `Recipient | Frequency | Donor | Frequency` template, falls INSIDE the
+  Frequency column. Wide boxes holding an 11-digit identifier read as "a value
+  straddles the midline": 85 pages refused where the design priced 5, and
+  **224 of 252 review cells asserted two people on the evidence of an ID
+  number**. The test is now geometric — a box must reach into both columns'
+  own spans.
+* **item 8** — a widened header whose printed final `5` was read as a `3` was
+  certifying **ABSENT**, a clinical negative resting on a glyph substitution
+  with no measurement behind it where the sibling `S`-for-`5` rule has three
+  independent legs. Those absences now go to review.
+
+### Applied to the corpus
+
+| pass | written |
+|---|---|
+| `abo_label_repass` (band + centre rescue) | 44 newly resolved, 12 caption rows upgraded to a form reading, 13 uncorroborated candidates to review |
+| `column_bind` | 699 cells bound on 276 comparison sheets, 108 named for review on 50, 79 refused with crops |
+| `drbx_token_repass` | 621 PRESENT on 479 pages |
+
+Measured against the 1,342 labels: **662 → 664 correct, 122 → 120 missed,
+contradictions unchanged at 5.** Corpus: HLA value cells 65,574 → 66,273, ABO
+47.1% → **47.3%**, RH 42.2% → **42.4%**, and ABO gains a labelled correct (47 →
+48) with Rh (46 → 47), still 0 wrong on either.
+
+The labelled movement is small because these rules were aimed at populations
+the four review rounds had barely sampled — 276 comparison sheets scored 0
+correct on every labelled cell before, and 479 no-header DRB3/4/5 pages had
+none. Their accuracy is unmeasured, which is why each ships with its own
+`source`, its own review stratum, and a withdrawal handle.
+
+### A quota that was a share, and had to become a count
+
+Merging exposed something neither review could see alone. `abo_centre_rescue`
+was weighted so a default pack drew 21 documents, meeting HA-019's gate of 20
+readings before promotion. Item 2's two strata landed beside it, the total
+weight grew, and the same weight drew **19**. Raising it to 112 bought one
+merge; item 8's two strata took it back to 19 on the very next one.
+
+A weight is a share of a total that other work keeps changing. A promotion gate
+is an absolute count. `MIN_DRAW` now states the count and is drawn before the
+weighted share, so a stratum landing beside it cannot quietly repeal the gate,
+and the test asserts the guarantee rather than re-deriving arithmetic that kept
+going stale. It was item 1's own test that caught it, twice — which is the
+argument for writing the arithmetic down.
+
+### Item 3, rejected again
+
+Its fix round introduced a wrong-crop path. `family_repass` re-derived its
+provenance map from a **second, independent** `merge_prefix_fragments()` call,
+so the map's keys were `id()` values of objects that were garbage before the
+next line ran. The lookup never matched, 43 resolved cells got an anchor box in
+the levelled frame while their value boxes were in the raw one — the anchor
+crop and the value crops of one fact in different frames — and, worse, a dead
+`id()` is recyclable: a freshly constructed `Box` can take one of those
+addresses, and the restore would hand a live box the wrong provenance, silently
+and differently on each run.
+
+It also still justified `refuse_bare` with "765 of 765 values print their
+locus" from the pre-fix build, where the shipped extraction reads 290 pages and
+727 of 727. That is the same class of defect the first review rejected it for.
+

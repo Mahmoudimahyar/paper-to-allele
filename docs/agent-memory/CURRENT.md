@@ -37,16 +37,14 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   HLA: recall **85.1%** of cells a person read (692/813), precision 98.0%, 14
   wrong. ROLE recall 84.4%. **ABO recall 47.9%, RH 46.9%** (precision 100%;
   50/51 misses). Round four, the hard one: HLA 81.9%, ABO 36%.
-- **The loss is segmented (s18) and being worked in order (s19).** Done:
-  items 5+6 (`precision_gates.py`: repaired+SPLIT and damaged-header DRBX
-  add-ons withdrawn to review — **contradicted 14 -> 5, precision 99.2%**,
-  recall 81.8%), item 7 (ABO label pair route, +221), item 4 (Persian backlog
-  DONE: every report document now read, 21,948 rows; ROLE -> **79.9%**). Being
-  implemented from verified specs in worktrees:
-  items 1-3 (ABO cell window, comparison sheets, no-family pages) and item 8
-  (DRB3/4/5 row anchored from its gene tokens; 4,615 pages print them).
-- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE. READ THEM** — under
-  `notes`, printed by `label_score.py` (s9).
+- **The s18 loss list, worked in order (s19-s21). SEVEN OF EIGHT DONE.**
+  5+6 `precision_gates.py` (**contradicted 14 -> 5, precision 99.2%**), 7 ABO
+  label spellings, 4 Persian backlog (21,948 rows, ROLE **79.9%**), and 1/2/8
+  merged (ABO cell window, column binding on two-person sheets, the DRB3/4/5
+  row with no readable header): +699 +621 cells, labels **664 correct, 5
+  wrong**. Item 3 (no-family pages) rejected twice, still in its worktree.
+- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE** — under `notes`,
+  printed by `label_score.py` (s9).
 - **Rows are read along the page's own slope** (`ocr/rows.py`): the DOMINANT
   ruling cluster, floored at 0.008. It was already measured on every tilted
   page and thrown away by thresholds meant for rotating pixels. **+209**.
@@ -59,10 +57,9 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
   anchored any locus. Turned, 425 anchor and **801 cells resolve**. The metric
   is box height>width IN PIXELS — normalised coords make it meaningless.
 - **A bare `A`/`B`/`C` can be a locus label** when structure says so (+106 per
-  4,000). One box may print both alleles; `A*24,02` is HA-015.
+  4,000). `A*24,02` is HA-015.
 - **A pack rebuild pins labelled documents (`--keep-labelled`)** or the sample
   reshuffles: 11 of 220 survived the first rebuild.
-- **Google Vision measured, NOT adopted (s8):** ours 62 of 160, Vision 28.
 - **The chat is a source of record** (`caption_pass.py`, s13/s16): caption ABO
   validated at 14 correct, 0 wrong; the s15 worry was a question mismatch.
 - **One printed value can be detected twice** (`_one_token_read_twice`, s16):
@@ -71,15 +68,16 @@ empty (`CV_RESEARCH` s13). Check the instrument before the pipeline.
 - **A bare role word IS read** (`FORM_FIELD_BARE`, `role_repass.py`, s15):
   refusing it double-charged evidence already gated above. **ROLE 78.1%**;
   measured 8 right, 1 wrong on the labels.
-- **A stratum reporting zero looks like a signal that does not occur** — it
-  happened three times. The pack summary now prints what each is CARRIED by.
-- **A value box unlike its page's others is wrong 5x as often** (25% vs 5%,
-  `ocr/boxsize.py`); n=8, so it MARKS for review and gates nothing yet.
-- **A locus can come from the allele's printed prefix** (`prefix_bind.py`, s12):
-  **4,767 cells**. HA-017 holds the wording.
-- **`anchor_row_bind.py` (s14): 80 cells, UNMEASURED.** Its first version bound
-  458 and 83% failed the project's own rules. **Review a write-rule
-  adversarially BEFORE believing its yield** (s14, s16).
+- **A stratum reporting zero looks like a signal that does not occur** (3x).
+  The summary prints what each is CARRIED by; a gate naming a COUNT uses
+  `MIN_DRAW`, not a weight share (s21).
+- **A value box unlike its page's others is wrong 5x as often** (`boxsize.py`,
+  25% vs 5%, n=8): marks for review, gates nothing yet.
+- **A locus can come from the allele's printed prefix** (s12): 4,767 cells;
+  and from its COLUMN on a two-person sheet (s21, `column_bind.py`, +699).
+- **Review a write-rule adversarially BEFORE believing its yield** (s14/16/20):
+  one rule's first version had 83% fail the project's own gates, a workflow
+  refused 28 of 28 proposals, and all four s20 builds were rejected.
 - **Two form facts:** DPA1/DPB1 printed but never filled (HA-009); the
   letterhead disclaims its blood-group field (KI-014).
 
