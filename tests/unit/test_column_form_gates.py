@@ -12,8 +12,9 @@ four readings the code path RESOLVES and should not:
    `max_values` but never counts the alleles parsed out of them, and one box
    can print a whole pair. A header with two pair-token boxes beneath it —
    which is what a two-subject column table looks like — resolved with four
-   values, i.e. two people's genotypes merged into one. 0 of the 383 gained
-   cells are lost by counting them, and no RESOLVED fact in the corpus holds
+   values, i.e. two people's genotypes merged into one. 0 of the 364 gained
+   cells are lost by counting them — measured by neutralising the gate on this
+   build, which claims the same 364 — and no RESOLVED fact in the corpus holds
    more than two alleles.
 2. **The wrong header owns the value.** `_owned_by_another_anchor` breaks a
    near-tie by comparing centre `y` offsets. Reading down, `y` IS the reading
@@ -179,8 +180,9 @@ def test_reading_rightwards_still_breaks_a_tie_by_the_row() -> None:
 
 def test_a_bare_value_under_a_column_header_is_refused() -> None:
     """Nothing but the column says which gene it is, and a column is what a
-    photograph shears. Measured: 765 of 765 values on the corpus's column
-    pages print their locus, so this costs nothing."""
+    photograph shears. Measured on this build with the gate neutralised: the
+    727 values on the 290 column pages' resolved cells all print their locus,
+    so this costs nothing — the same 364 cells either way."""
     boxes = [header(0.20, "HLA-A"), under(0.20, "01", 0.26)]
     result = resolve_locus(boxes, "A", COLUMN_RULE)
     assert result.status is ResolutionStatus.REVIEW_REQUIRED

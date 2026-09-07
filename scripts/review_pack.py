@@ -416,6 +416,14 @@ def attach_signals(docs: dict[str, Doc], con: sqlite3.Connection, geometry: Path
         try:
             segments = json.loads(horizontal or "[]")
         except ValueError:
+            # Rulings that cannot be parsed are rulings this pack cannot see,
+            # which is the same position as a page with none — and the default
+            # here is True, so falling through would call the page fully ruled
+            # and keep it OUT of the stratum that samples the unruled ones.
+            # Four lines above, the no-rulings branch says False for exactly
+            # this reason; an unreadable measurement must not be safer than an
+            # absent one.
+            doc.ruled_below_cells = False
             continue
         doc.row_slope = measure_row_slope(segments, width, height) or 0.0
         doc.ruled_below_cells = _below_cells_are_ruled(doc, build_lattice(sha, stored, None))
@@ -673,7 +681,7 @@ def tag_document(doc: Doc, export: Path) -> list[str]:
     if below:
         tags.add("below_rule")
         # The two sub-strata the direction's own safety case needs. A flat
-        # sample of the 305 pages is drawn mostly from pages where a ruled
+        # sample of the 290 pages is drawn mostly from pages where a ruled
         # cell or a printed role word would have caught a two-subject table;
         # these two are the populations where neither would.
         if any(len(c.value_boxes) >= 2 and not doc.ruled_below_cells for c in below):

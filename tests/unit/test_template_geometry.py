@@ -308,12 +308,14 @@ def test_the_registry_prototypes_are_one_form_under_lean() -> None:
 
 # --- the left-out fit ------------------------------------------------------
 #
-# 318 pages of the no-family population fit a prototype except at ONE label.
-# Measured, that label is a MIDDLE label of the printed stack on 241 of them
-# and its deviation under the full fit is in x on 310: the recognizer boxed
-# that label's `HLA-` prefix separately, or did not box it at all, which moves
-# the label's centre right. It is not a perspective effect and not the end of
-# the stack.
+# The rule reaches 209 pages of the no-family population on this build, because
+# the `HLA-` repair is tried first; with the repair disabled the same pass
+# assigns 263 by this fit. The survey that authored the rule looked at 318 such
+# pages and found the dropped label to be a MIDDLE label of the printed stack on
+# 241 of them, with its deviation under the full fit in x on 310: the recognizer
+# boxed that label's `HLA-` prefix separately, or did not box it at all, which
+# moves the label's centre right. It is not a perspective effect and not the end
+# of the stack.
 
 
 def displaced(locus: str, dx: float, dy: float = 0.0) -> list[Box]:
@@ -477,9 +479,11 @@ def test_a_prototype_translated_by_one_row_is_refused_at_the_plain_stage() -> No
 # --- putting a boxed-apart `HLA-` prefix back on its label -----------------
 #
 # The direct repair of the population the left-out fit accommodates. Measured
-# over the 11,210 no-family pages: joining the fragment back assigns 162 pages
-# at the ORDINARY tolerance that the left-out fit reached only by dropping a
-# printed label, and leaves 209 pages for that fit — the residue.
+# over the no-family pages on this build: joining the fragment back assigns 162
+# pages at the ORDINARY tolerance and leaves 209 for that fit — the residue. Of
+# those 162, 54 are pages the left-out fit would otherwise have taken by
+# dropping a printed label (it reaches 263 with the repair disabled, 209 with
+# it), and the other 108 were refused outright before the repair existed.
 
 
 def split_prefix(locus: str, gap: float = 0.004) -> list[Box]:

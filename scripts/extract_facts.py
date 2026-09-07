@@ -682,8 +682,11 @@ def extract(
     if reads_down and not two_subjects:
         # A header row over two subject rows is exactly what a column layout
         # looks like from the geometry, and the page's own role words are the
-        # only thing that can tell them apart. Measured cost: 13 cells on 10
-        # pages of the 383.
+        # only thing that can tell them apart. Measured on THIS build with the
+        # gate neutralised (`family_repass.py --dry-run`, live stores, read-only):
+        # 305 pages read as a column layout and claim 381 cells without it, 290
+        # and 364 with it — so the role words cost 15 pages and 17 cells, and
+        # they are what stands between this direction and a comparison table.
         #
         # The page's own rulings travel with the rule: reading down a column,
         # a ruling between two stacked values is the only thing on the page

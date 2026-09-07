@@ -243,9 +243,13 @@ class ValueRule:
     # labels are COLUMN HEADERS. Reading down a column, the thing that decides
     # the locus is which column the value stands in, and a column is what a
     # photographed page shears; the value's own prefix is the only independent
-    # check available, so a bare number goes to a human. Measured over the 305
-    # column-layout pages: 765 of 765 values print their locus, so this refuses
-    # nothing the corpus actually holds.
+    # check available, so a bare number goes to a human. Measured on THIS build,
+    # read-only against the live stores (`family_repass.py --dry-run`, 2026-09-07):
+    # the direction reads 290 pages — 305 before the page's own role words refuse
+    # 15 as two-subject sheets — and with this gate neutralised the cells they
+    # resolve carry 727 values, 727 of which print their locus. So it refuses
+    # nothing the corpus actually holds: the pass claims the same 364 cells with
+    # the gate on and off.
     refuse_bare: bool = False
 
     # A tolerance for the overlap test, in anchor heights, used ONLY when the
@@ -984,9 +988,11 @@ def _bind(
         # print a whole pair, so `max_values` boxes can hold twice `max_values`
         # values and the count above never sees it. Two subjects' pairs stacked
         # in one column is exactly that shape, and it resolved as one person's
-        # four-allele genotype. Measured: no RESOLVED fact in the corpus holds
-        # more than two alleles, and the 383 cells the column layout gains all
-        # pass.
+        # four-allele genotype. Measured on THIS build: no RESOLVED fact in the
+        # corpus holds more than two alleles, and with this gate neutralised the
+        # column direction claims the same 364 cells — not one of its gains is
+        # lost by counting them. It refuses 142 anchors on those 290 pages, none
+        # of them a cell this direction would otherwise have claimed.
         return LocusResolution(
             locus,
             ResolutionStatus.REVIEW_REQUIRED,

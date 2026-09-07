@@ -142,7 +142,7 @@ def resolved_per_locus(con: sqlite3.Connection) -> dict[str, int]:
     `docs/agent-memory/CURRENT.md`: ALWAYS compare per locus, because the
     totals looked plausible on the day the letterhead's `LAB` became an HLA-B
     anchor and only the per-locus fall showed it. A pass that writes cells is
-    under the same obligation as a re-extraction, and this pass writes 1,271.
+    under the same obligation as a re-extraction, and this pass writes 1,376.
     """
     placeholders = ",".join("?" * len(LOCI))
     return {
@@ -242,13 +242,20 @@ def rule_for_page(
     row_slope: float,
     column_slope: float,
     lattice=None,
-) -> tuple[str, ValueRule, str, object, list] | None:
-    """Which of the four findings applies to this page, the rule it brings, and
-    the boxes to read it from.
+) -> tuple[str, ValueRule, str, object, list, dict[int, tuple[OcrBox, OcrBox]]] | None:
+    """Which of the four findings applies to this page, the rule it brings, the
+    boxes to read it from, and what each REPAIRED box was made of.
 
     `None` when none of them does — which is the answer for the overwhelming
     majority of pages with no family, and the answer this pass must give
     whenever it is not sure.
+
+    The last element is `merge_prefix_fragments`'s own source map, and it is
+    returned rather than re-derived because it is keyed by `id()`. A second
+    call builds a second set of joined boxes, and the ids it hands back belong
+    to objects nobody kept — so they match nothing the page is read from, and
+    CPython is free to hand one of those addresses to a live box later. The
+    boxes are therefore built ONCE, here, and the map travels with them.
     """
     rule_of = {
         proto.prototype_id: ("family" if proto.prototype_id in prefixed else "default")
@@ -263,23 +270,24 @@ def rule_for_page(
             rule = replace(rule, row_slope=row_slope)
         rule_id = f"family/{assignment.prototype_id}"
         read_from = boxes
+        merged_sources: dict[int, tuple[OcrBox, OcrBox]] = {}
         if assignment.merged_prefixes:
             # Read the page from the repaired boxes, as `extract_facts.extract`
             # does: a label whose prefix was boxed apart hands its own value to
             # the next locus down under the ownership gate, so joining the two
             # halves is part of the finding and not only of the fit.
-            read_from = merge_prefix_fragments(boxes)[0]
+            read_from, _, merged_sources = merge_prefix_fragments(boxes)
             rule_id += f"(prefix:{','.join(assignment.merged_prefixes)})"
         if assignment.tied_with:
             rule_id += f"(tie:{','.join(assignment.tied_with)})"
         if assignment.dropped_label:
             rule_id += f"(loo:{assignment.dropped_label})"
         if assignment.dropped_label:
-            return LOO, rule, rule_id, assignment, read_from
+            return LOO, rule, rule_id, assignment, read_from, merged_sources
         if assignment.tied_with:
-            return TIE, rule, rule_id, assignment, read_from
+            return TIE, rule, rule_id, assignment, read_from, merged_sources
         if assignment.merged_prefixes:
-            return PREFIX, rule, rule_id, assignment, read_from
+            return PREFIX, rule, rule_id, assignment, read_from, merged_sources
         # It fits outright, with no accommodation — so the page was already
         # being assigned before this change and the stored `family IS NULL`
         # comes from a different families file or an older extraction. That is
@@ -306,6 +314,7 @@ def rule_for_page(
         "ADR0008/below-rule",
         None,
         boxes,
+        {},
     )
 
 
@@ -391,11 +400,15 @@ def run(
         if chosen is None:
             tally["no finding applies to this page"] += 1
             continue
-        source, rule, rule_id, assignment, read_from = chosen
-        if read_from is not boxes:
+        source, rule, rule_id, assignment, read_from, merged_sources = chosen
+        if merged_sources:
             # A joined label box is not in the way back; give it one, or a
-            # rotated page's crop would name a box in the levelled frame.
-            for merged_id, (label_box, fragment) in merge_prefix_fragments(boxes)[2].items():
+            # rotated page's crop would name a box in the levelled frame. The
+            # map comes from the SAME call that built `read_from`: keyed by
+            # `id()`, it is only meaningful for boxes that are still alive, and
+            # a second `merge_prefix_fragments` call would key it on objects
+            # that are garbage before the loop starts.
+            for merged_id, (label_box, fragment) in merged_sources.items():
                 first = back.get(id(label_box), label_box)
                 second = back.get(id(fragment), fragment)
                 back[merged_id] = OcrBox(

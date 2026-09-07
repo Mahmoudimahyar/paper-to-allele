@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import math
 import sqlite3
 import sys
 from pathlib import Path
@@ -33,6 +34,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from kidneymatch.ocr.anchors import Box  # noqa: E402
+from kidneymatch.ocr.geometry import PageFrame  # noqa: E402
+from kidneymatch.ocr.rulings import GEOMETRY_VERSION  # noqa: E402
 
 WIDTH, HEIGHT = 1000, 1300
 ROW_ORDER = ("A", "B", "C", "DQB1", "DRB1", "DPB1", "DPA1", "DQA1")
@@ -87,7 +90,85 @@ COLUMN_PAGE = [
     )
 ]
 
-PAGES = {"tie": TIE_PAGE, "column": COLUMN_PAGE}
+# A page photographed at a tilt whose stack fits only once a label's boxed-apart
+# `HLA-` is put back. Its STORED boxes are what a camera leaning by `TILT_DEG`
+# would have recorded, so `PageFrame.rectify` lands the levelled page exactly on
+# the straight stack the other fixtures use and the fit is the identity case's.
+# What is left to test is then entirely the FRAME the provenance is written in.
+TILT_DEG = 2.0
+
+
+def photographed(box: Box, theta: float = TILT_DEG) -> Box:
+    """The box a camera tilted by `theta` stores for this printed one.
+
+    The inverse of `PageFrame.rectify_box`: the centre rotates the other way,
+    and the size grows into the axis-aligned hull a detector draws around a
+    rotated rectangle.
+    """
+    inverse = PageFrame(-theta, WIDTH, HEIGHT)
+    cx, cy = inverse.rotate_pixel(box.centre_x * WIDTH, box.centre_y * HEIGHT)
+    width, height = (box.x1 - box.x0) * WIDTH, (box.y1 - box.y0) * HEIGHT
+    phi = abs(math.radians(theta))
+    cos, sin = math.cos(phi), math.sin(phi)
+    hull_w, hull_h = width * cos + height * sin, width * sin + height * cos
+    return Box(
+        (cx - hull_w / 2) / WIDTH,
+        (cy - hull_h / 2) / HEIGHT,
+        (cx + hull_w / 2) / WIDTH,
+        (cy + hull_h / 2) / HEIGHT,
+        box.text,
+    )
+
+
+PREFIX_Y = 0.20 + ROW_ORDER.index("DQB1") * PITCH
+# The two halves of the one printed word `HLA-DQB1`, as the recognizer boxed
+# them, on the LEVEL page. `PREFIX_PAGE` stores their photographed selves.
+PREFIX_FRAGMENT_LEVEL = Box(0.15, PREFIX_Y, 0.19, PREFIX_Y + 0.025, "HLA-")
+PREFIX_LABEL_LEVEL = Box(0.194, PREFIX_Y, 0.25, PREFIX_Y + 0.025, "DQB1")
+PREFIX_PAGE = [
+    photographed(box)
+    for box in (
+        *(
+            Box(0.15, 0.20 + i * PITCH, 0.25, 0.225 + i * PITCH, f"HLA-{locus}")
+            for i, locus in enumerate(ROW_ORDER)
+            if locus != "DQB1"
+        ),
+        PREFIX_FRAGMENT_LEVEL,
+        PREFIX_LABEL_LEVEL,
+        Box(0.40, PREFIX_Y, 0.50, PREFIX_Y + 0.025, "DQB1*03"),
+        Box(0.60, PREFIX_Y, 0.70, PREFIX_Y + 0.025, "DQB1*05"),
+    )
+]
+
+PAGES = {"tie": TIE_PAGE, "column": COLUMN_PAGE, "prefix": PREFIX_PAGE}
+
+
+def tilted_geometry(tmp_path: Path, shas: dict[str, str]) -> Path:
+    """A geometry store declaring the prefix page ROTATE, and nothing else."""
+    path = tmp_path / "geometry.sqlite"
+    con = sqlite3.connect(path)
+    con.execute(
+        "CREATE TABLE page_geometry (sha256 TEXT, geometry_version TEXT, rel_path TEXT, "
+        "width INTEGER, height INTEGER, decision TEXT, theta_deg REAL, "
+        "h_rulings_json TEXT, v_rulings_json TEXT)"
+    )
+    con.execute(
+        "INSERT INTO page_geometry VALUES (?,?,?,?,?,?,?,?,?)",
+        (
+            shas["prefix"],
+            GEOMETRY_VERSION,
+            "photos/prefix.jpg",
+            WIDTH,
+            HEIGHT,
+            "ROTATE",
+            TILT_DEG,
+            None,
+            None,
+        ),
+    )
+    con.commit()
+    con.close()
+    return path
 
 
 def corpus(tmp_path: Path) -> tuple[Path, Path, Path, dict[str, str]]:
@@ -299,3 +380,83 @@ def test_every_source_this_pass_writes_has_a_review_stratum() -> None:
     strata = {name for name, _, _ in pack.STRATA}
     for source in (repass.TIE, repass.LOO, repass.BELOW, repass.PREFIX):
         assert source.replace("-", "_") in strata, source
+
+
+# --- the repaired box's way back to the page as STORED ---------------------
+#
+# A joined label box is built on the LEVELLED page and exists nowhere in the
+# stored one, so it needs an entry in the way-back map or `geometry.restore`
+# writes a levelled box into provenance and the review page crops the wrong
+# part of a tilted photograph. The map `merge_prefix_fragments` returns for
+# that purpose is keyed by `id()`, which makes it meaningful ONLY for boxes the
+# caller kept alive: re-deriving it from a second call keys it on objects that
+# are garbage before the loop runs, and CPython may hand one of those addresses
+# to a live box later — a wrong crop that differs run to run.
+
+
+def test_a_repaired_anchor_on_a_tilted_page_is_stored_in_the_stored_frame(tmp_path: Path) -> None:
+    """The union of the two halves as PHOTOGRAPHED, not as levelled."""
+    module = load("family_repass")
+    src, families, _, shas = corpus(tmp_path)
+    facts = facts_db(tmp_path, shas)
+    module.run(
+        facts,
+        src,
+        tilted_geometry(tmp_path, shas),
+        tmp_path / "no-persian.sqlite",
+        families,
+        dry_run=False,
+    )
+    con = sqlite3.connect(facts)
+    status, source, anchor = con.execute(
+        "SELECT status, source, anchor_box FROM fact WHERE sha256=? AND field='DQB1'",
+        (shas["prefix"],),
+    ).fetchone()
+    con.close()
+    assert status == "RESOLVED" and source == "family-prefix"
+    assert anchor, "a resolved medical value with no crop is the defect this pass exists after"
+
+    fragment, label = photographed(PREFIX_FRAGMENT_LEVEL), photographed(PREFIX_LABEL_LEVEL)
+    as_stored = [
+        min(fragment.x0, label.x0),
+        min(fragment.y0, label.y0),
+        max(fragment.x1, label.x1),
+        max(fragment.y1, label.y1),
+    ]
+    as_levelled = [
+        min(PREFIX_FRAGMENT_LEVEL.x0, PREFIX_LABEL_LEVEL.x0),
+        min(PREFIX_FRAGMENT_LEVEL.y0, PREFIX_LABEL_LEVEL.y0),
+        max(PREFIX_FRAGMENT_LEVEL.x1, PREFIX_LABEL_LEVEL.x1),
+        max(PREFIX_FRAGMENT_LEVEL.y1, PREFIX_LABEL_LEVEL.y1),
+    ]
+    assert json.loads(anchor) == pytest.approx(as_stored, abs=1e-9)
+    # The failure this pins: the levelled box is a DIFFERENT crop of the
+    # photograph, and the value boxes beside it are in the stored frame.
+    assert json.loads(anchor) != pytest.approx(as_levelled, abs=1e-6)
+
+
+def test_the_repair_hands_back_the_boxes_it_actually_built(tmp_path: Path) -> None:
+    """Provenance is keyed by `id()`, so the map must describe LIVE boxes.
+
+    A second `merge_prefix_fragments` call returns ids of joined boxes nobody
+    holds: every one of them misses the page's own joined box, and the fix-up
+    that reads it silently does nothing. This asserts the shape that cannot do
+    that — every key of the returned map is the identity of a box the page is
+    READ from, and the two halves are gone from that list.
+    """
+    module = load("family_repass")
+    _, families, _, _ = corpus(tmp_path)
+    prototypes, prefixed = module.load_families(families)
+    boxes, _ = PageFrame(TILT_DEG, WIDTH, HEIGHT).rectify(PREFIX_PAGE)
+    chosen = module.rule_for_page(boxes, [], PREFIX_PAGE, prototypes, prefixed, 0.0, 0.0, None)
+    assert chosen is not None
+    source, _, rule_id, _, read_from, sources = chosen
+    assert source == module.PREFIX and "(prefix:DQB1)" in rule_id
+    assert sources, "a repaired page reports what each joined box was made of"
+    live = {id(box) for box in read_from}
+    assert set(sources) <= live, "a key that names no live box restores nothing"
+    for merged_id, (label_box, fragment) in sources.items():
+        assert id(label_box) not in live and id(fragment) not in live
+        joined = next(box for box in read_from if id(box) == merged_id)
+        assert joined.x0 == pytest.approx(min(label_box.x0, fragment.x0))
+        assert joined.x1 == pytest.approx(max(label_box.x1, fragment.x1))

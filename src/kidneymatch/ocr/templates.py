@@ -34,9 +34,11 @@ that the page is a different form. `assign_prototype` asks three questions,
 and the order is the point: the ordinary fit first, then the REPAIR, and only
 what is left over reaches the accommodation.
 
-1. **A near-tie between prototypes of ONE form.** 987 pages fit inside
+1. **A near-tie between prototypes of ONE form.** Measured on this build over
+   the 11,198 no-family pages that still hold an unread cell: 983 fit inside
    `MAX_RESIDUAL` and were refused only because a second prototype fitted
-   nearly as well — and the prototypes that tie are the same printed form
+   nearly as well, and 965 of those go on to read a cell — and the prototypes
+   that tie are the same printed form
    photographed at different leans. `assign_prototype` assigns those, but only
    when the caller says the tied prototypes author one cell rule AND their rows
    agree under a y-only fit. It is not "the closest one wins": two genuinely
@@ -45,13 +47,17 @@ what is left over reaches the accommodation.
    carries the label's printed left edge away and drags its centre right,
    which is what pushes the page's stack past the tolerance. The fragment is
    ON THE PAGE, so it is put back (`merge_prefix_fragments`) and the ORDINARY
-   question is asked again at the ORDINARY tolerance. Measured over the 11,210:
-   162 pages assign this way, +267 cells, and the 2,000 already-assigned pages
-   sampled are untouched — the merge is tried only after the plain fit has
-   refused. The repaired boxes are also what the page is then READ from, or
-   the same displacement hands the label's value to the next locus down.
+   question is asked again at the ORDINARY tolerance. Measured on this build:
+   206 of the 11,198 assign this way and 162 of them read a cell the repass can
+   write (+267 in a re-extraction, per
+   `.artifacts/no-family/extraction-diff-vs-pre-change.log`), and the 2,000
+   already-assigned pages sampled there are untouched — the merge is tried only
+   after the plain fit has refused. The repaired boxes are also what the page is
+   then READ from, or the same displacement hands the label's value to the next
+   locus down.
 3. **A stack that fits except at ONE label, with no fragment to explain it.**
-   The residue: 209 pages, +259 cells. The left-out fit admits them at half
+   The residue: 212 pages assign this way on this build and 209 read a cell
+   (+259 in a re-extraction). The left-out fit admits them at half
    the tolerance. It is not a perspective correction — the dropped label is a
    MIDDLE label on most of them — and it is not a licence to drop an
    inconvenient point: the dropped box must still stand in the page's label
@@ -127,13 +133,23 @@ AMBIGUITY_MARGIN = 1.5
 # that form" already does.
 LEAN_MAX_RESIDUAL = MAX_RESIDUAL
 
-# A page whose printed stack fits a form except at ONE label. Measured over the
-# same population: 318 pages of 1,405 refused >= 6-label pages fit within 0.02
-# with one label left out, and on 310 of them that label's deviation under the
-# full fit is in x — the recognizer boxed its `HLA-` prefix separately (138) or
-# did not box the prefix at all (103), which moves the label's centre right.
-# The dropped label is a MIDDLE label of the stack on 241, so this is not
-# perspective and not the end of the stack.
+# A page whose printed stack fits a form except at ONE label.
+#
+# What the rule REACHES, measured on this build read-only against the live
+# stores (`family_repass.py --dry-run`, 2026-09-07): 209 pages, because the
+# `HLA-` repair below is tried first and takes 162 pages at the ordinary
+# tolerance. With the repair disabled the same pass assigns 263 pages by this
+# fit, so the repair removes 54 of them and the rest of its 162 were refused
+# outright.
+#
+# The tolerance and the two conditions below were CALIBRATED on the earlier
+# survey of 1,405 refused >= 6-label pages, before the repair was tried first:
+# 318 of them fitted within 0.02 with one label left out, on 310 the dropped
+# label's deviation under the full fit was in x — the recognizer boxed its
+# `HLA-` prefix separately (138) or did not box the prefix at all (103) —
+# and the dropped label was a MIDDLE label of the stack on 241, so this is not
+# perspective and not the end of the stack. Those are the survey's figures and
+# not this build's; what this build produces is the 209 above.
 #
 # Half the plain tolerance, because a point was removed: five remaining labels
 # fitted at 0.04 is a weaker claim than eight fitted at 0.04.
@@ -142,10 +158,12 @@ LOO_MAX_RESIDUAL = 0.02
 # case there is (it costs 82 pages against a five-label gate).
 LOO_MIN_LABELS = 6
 # The dropped label's box must still stand in the page's own label column. On
-# the 318 it sits a median 3.3 label heights right of it (p90 23); on the 44
-# pages the rule would otherwise admit it sits a median 26 heights right,
-# which is the VALUE area — there the dropped box is a value the recognizer
-# read as a bare locus name, not a label whose prefix was boxed apart.
+# the calibration survey's 318 it sits a median 3.3 label heights right of it
+# (p90 23); on the 44 pages the rule would otherwise admit it sits a median 26
+# heights right, which is the VALUE area — there the dropped box is a value the
+# recognizer read as a bare locus name, not a label whose prefix was boxed
+# apart. Survey figures: this gate has not been re-swept since the repair
+# started running first.
 LABEL_COLUMN_HEIGHTS = 6.0
 
 # The `HLA-` a recognizer boxes apart from the label it belongs to. This is the
@@ -488,12 +506,14 @@ def _left_out_fit(
 ) -> bool:
     """Is the dropped label one the recognizer mis-boxed, on this prototype?
 
-    Two conditions, both measured on the 318 pages the rule admits. The box
-    must still stand in the page's own label column — a box out in the value
-    area is a VALUE read as a bare locus name, which is a different page and a
-    different question — and its deviation under the FULL fit must be in x,
-    because that is what boxing a label's `HLA-` prefix apart does to its
-    centre. A label off in y is a different row order.
+    Two conditions, both calibrated on the 318-page survey that authored this
+    rule — not on what it admits today, which is the 209-page residue left once
+    `merge_prefix_fragments` has run first. The box must still stand in the
+    page's own label column — a box out in the value area is a VALUE read as a
+    bare locus name, which is a different page and a different question — and
+    its deviation under the FULL fit must be in x, because that is what boxing
+    a label's `HLA-` prefix apart does to its centre. A label off in y is a
+    different row order.
     """
     box = label_boxes.get(dropped)
     full = fit_similarity(positions, prototype)
