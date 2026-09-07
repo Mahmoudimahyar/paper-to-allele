@@ -298,18 +298,21 @@ def test_every_rescued_reading_has_a_review_stratum() -> None:
 def test_the_centre_quota_can_actually_reach_twenty_documents() -> None:
     """HA-019 blocks promotion until >= 20 centre-route documents are read.
 
-    A quota that cannot deliver that at the DEFAULT pack size is a plan nobody
-    executes, so the arithmetic `choose` performs is asserted here: one
-    document per stratum first, then `round(room * weight / total) - 1` more.
-    Measured on the live store at `--n 150`, this draws 21.
+    This was a weight — a SHARE of the total — and it drew 21 when written.
+    Two strata then landed beside it in one merge sequence, the total grew, and
+    the same weight drew 19; raising the weight bought one merge and broke on
+    the next. A promotion gate names a COUNT, so `MIN_DRAW` states the count
+    and the weight only tops it up. The guarantee is asserted here rather than
+    the arithmetic, so the next stratum to land cannot quietly repeal it.
     """
     review_pack = load("review_pack")
-    weights = {name: weight for name, weight, _ in review_pack.STRATA}
-    total = sum(weights.values())
-    n = 150
-    room = n - len(review_pack.STRATA)
-    drawn = 1 + max(0, round(room * weights["abo_centre_rescue"] / total) - 1)
-    assert drawn >= 20, f"a default pack would draw {drawn} centre-route documents, not 20"
+    assert review_pack.MIN_DRAW.get("abo_centre_rescue", 0) >= 20
+    # And the floor is honoured before the weights, so it survives whatever
+    # share arithmetic the rest of the table happens to produce.
+    source = Path(review_pack.__file__).read_text(encoding="utf-8")
+    floor_at = source.index("for tag, floor in MIN_DRAW.items()")
+    weights_at = source.index("total_weight = sum(w for _, w, _ in STRATA)")
+    assert floor_at < weights_at, "the floor must be drawn before the weighted share"
 
 
 def test_the_uncorroborated_band_candidate_is_scored_by_no_pass_as_a_value(extracted) -> None:

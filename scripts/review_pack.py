@@ -108,12 +108,10 @@ STRATA: tuple[tuple[str, int, str], ...] = (
     # the arithmetic is written out in HA-019.
     (
         "abo_centre_rescue",
-        # 112, not 100: HA-019 blocks promotion until 20 of these are read, and
-        # the quota is a share of the total. Two strata landed beside this one
-        # in the same session (`column_bound`, `column_named`), the total went
-        # 469 -> 603, and the same weight quietly drew 19. A quota that cannot
-        # deliver the number its gate names is a plan nobody executes.
-        112,
+        # The weight only tops this stratum up; `MIN_DRAW` is what guarantees
+        # the 20 readings HA-019 blocks promotion on, because a share of the
+        # total silently shrinks whenever a stratum lands beside it.
+        40,
         "this page rules no row around the blood-group field, so nothing but distance places "
         "the value: its box missed the label's LINE and was admitted by a 0.75 label-height "
         "band above the label's centre, behind six gates. 38 documents on the live store, ZERO "
@@ -293,6 +291,13 @@ STRATA: tuple[tuple[str, int, str], ...] = (
 # Ties in rarity fall back to the order STRATA is written in, so a pack stays
 # reproducible for a seed.
 STRATA_ORDER = {name: i for i, (name, _, _) in enumerate(STRATA)}
+# A stratum whose promotion gate names a COUNT gets that count, not a share of
+# the total weight. `abo_centre_rescue` is weighted 112 of 603 and drew 21 when
+# it was written; two strata then landed beside it in the same merge sequence,
+# the total grew, and the same weight drew 19 — twice. HA-019 blocks promoting
+# the centre-band route until 20 of its readings have been read by a person, so
+# 20 is what the pack draws, whatever else is added later.
+MIN_DRAW = {"abo_centre_rescue": 20}
 FLAGGED_CONSISTENCY = {"EXPECTED_GENE_ABSENT", "FORBIDDEN_GENE_PRESENT"}
 # Nearly every report leaves SOME printed cell empty, so one is no signal at
 # all. Three is a form the laboratory filled in only partly, which is the
@@ -841,6 +846,11 @@ def choose(
         spare = [d for d in carriers[tag] if d.sha256 not in taken]
         if spare and len(chosen) < n:
             chosen.append(rng.choice(spare))
+    # A promotion gate's own count comes before the weights, so that adding a
+    # stratum elsewhere cannot quietly take it below the number it names.
+    for tag, floor in MIN_DRAW.items():
+        already = sum(1 for doc in chosen if tag in doc.tags)
+        take(tag, max(0, min(floor, n) - already))
     # Then the weights, over whatever room is left.
     total_weight = sum(w for _, w, _ in STRATA)
     room = max(0, n - len(chosen))
