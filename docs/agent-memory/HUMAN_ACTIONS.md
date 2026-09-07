@@ -4,6 +4,40 @@ Never put secret values in this file.
 
 ## Open
 
+### HA-021 — `verify_repo.py` and CI install an extra that can no longer run the suite
+- **Needed by:** every claim of the form "the gate is green". It is not, and it
+  has not been for longer than this branch.
+- **Why:** `scripts/verify_repo.py` pins `EXTRA = "hist"` and CI runs
+  `uv sync --frozen --extra hist` before it, but the code that gate checks now
+  imports packages that live in OTHER extras:
+  `src/kidneymatch/hla/drbx_consistency.py:46` imports `pyard` (extra `hla`)
+  at module scope, and `src/kidneymatch/ocr/{crops,ctc,ink,rulings}.py` import
+  `cv2`/`numpy` (extras `image`, `ocr`). Measured in this worktree:
+  - `uv run --frozen --extra hist mypy src` — 36 errors in those four OCR
+    files, all cascading from "Cannot find implementation or library stub for
+    module named cv2". Adding `--extra image --extra ocr` to the same command:
+    **Success, no issues found in 48 source files**.
+  - `uv run --frozen --extra hist pytest -q --cov` — 7 collection ERRORs, every
+    one `ModuleNotFoundError: No module named 'pyard'`. Reproduced on a single
+    file that no branch has touched:
+    `uv run --frozen --extra hist pytest tests/unit/test_drbx_consistency.py`.
+  - All eight files involved are byte-identical to `main`, so this is not a
+    branch's doing. With the project interpreter the suite is green:
+    `.venv/Scripts/python.exe -m pytest tests -q` exits 0 over 1,631 tests, and
+    `-m mypy src` reports no issues.
+- **Decision required:** which extras the gate and CI install.
+  `--extra hist --extra hla --extra image --extra ocr` is the smallest set that
+  matches what `src/` imports; a single `all` extra is the other shape. It is a
+  human decision because it raises CI install cost and because
+  `tests/contracts/test_harness_baseline.py:91-93` pins the string
+  `--extra hist` in THREE places at once (CI workflow, bootstrap,
+  `verify_repo.py`) — the contract has to move with them, and an agent must not
+  quietly relax a harness contract to make its own gate green.
+- **Secret?** No. **Blocking now?** Yes for any statement that
+  `python scripts/verify_repo.py` passed. Not blocking the extraction work,
+  which runs and is verified under the project interpreter.
+
+
 ### HA-020 — The column direction may not be promoted on the default pack
 - **Needed by:** any decision to keep `ADR0008/below-rule` — the reading that
   takes a value from the cell BENEATH its own label instead of along a row. It
