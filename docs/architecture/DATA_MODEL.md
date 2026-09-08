@@ -185,6 +185,14 @@ Structured claims/statuses for kidney function, imaging, anatomy, etc. Historica
 - created_at
 
 ### `MatchResult`
+> Superseded by MATCH-001 v2.0.0. The implementation records a pair's outcome
+> as a `Bucket` plus a `BucketDecision` (`src/kidneymatch/matching/gates.py`)
+> and a row as a `RankedPair` carrying a `SortKey`
+> (`src/kidneymatch/matching/core.py`, `ranking.py`). The difference is
+> deliberate: `status` here is one position on a linear pipeline, and a pair
+> can satisfy several gate conditions at once, so every blocking reason is
+> reported rather than only the furthest stage reached. See
+> `docs/clinical/MATCHING_POLICY_V2.md` section 5.
 - match_run_id
 - donor_id
 - rank

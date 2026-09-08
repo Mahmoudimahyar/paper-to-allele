@@ -287,7 +287,7 @@ act on it.
 | 0 | `RANKED` | all gates clear; both blood groups laboratory-measured; DRB1 and B known both sides | proceed to clinical evaluation |
 | 1 | `PROVISIONAL_ABO` | as `RANKED`, but a blood group is patient-reported or a caption claim | obtain a laboratory blood group |
 | 2 | `INSUFFICIENT_HLA` | gates clear, but DRB1 or B unknown on either side | obtain HLA typing |
-| 3 | `INSUFFICIENT_ABO` | blood group unknown on either side | obtain a laboratory blood group |
+| 3 | `INSUFFICIENT_ABO` | blood group absent, or present but not an ABO letter, on either side | obtain a laboratory blood group |
 | 4 | `ABO_INCOMPATIBLE` | letters incompatible donor→recipient | not a candidate |
 | 5 | `BLOCKED_DSA_OR_LAB_REVIEW` | reviewed unacceptable antigen or DSA targets a reviewed donor value | laboratory review |
 | 6 | `BLOCKED_POSITIVE_CROSSMATCH` | valid current positive physical crossmatch | direct pathway blocked |
@@ -304,6 +304,16 @@ assignment runs in two passes:
    `ABO_INCOMPATIBLE`. The first condition that holds wins and assignment stops.
 2. **Informational pass**, only if no blocking condition held:
    `INSUFFICIENT_ABO`, `INSUFFICIENT_HLA`, `PROVISIONAL_ABO`, `RANKED`.
+
+**An unreadable blood group is a missing one, not a weak one.** `PROVISIONAL_ABO`
+is a *ranked* bucket: it says the letters are known and compatible and only the
+provenance is short of a laboratory measurement. A cell that holds something
+which is not an ABO letter at all - an OCR garble, an Rh-carrying string such as
+`O+`, a stray value from a neighbouring column - carries no letters to be
+compatible about, so it fails the readability check before provenance is
+consulted and lands in `INSUFFICIENT_ABO`. Routing it on provenance instead
+would put an unreadable group into a ranked list, which is the one place it must
+never reach. Provenance is only asked about a value that has already been read.
 
 Every blocking reason that applied is additionally listed in the explanation's
 `blockers` array, so a pair blocked for two reasons reports both even though it
@@ -429,13 +439,15 @@ poorly typed profile from winning by having fewer countable mismatches: a
 candidate with unknown loci sorts after an otherwise equal candidate that is
 fully typed.
 
-**Positions 5 and 6 count every locus this policy can score, including
-DRB3/4/5.** Without that, deleting a typing could improve a rank: a confirmed
-DRB3/4/5 presence conflict costs 10 in the tie-breaker, so removing the typing
-would remove the charge. Counting the now-unknown gene at position 5 offsets it,
-which preserves the invariant that **losing information never improves a
-candidate's position**. That invariant is tested directly, per locus, including
-the DRB3/4/5 case.
+**Positions 5 and 6 prefer the better-typed candidate among equals**, but they
+cannot be what enforces the monotonicity invariant. An earlier draft of this
+section claimed that counting a now-unknown locus at position 5 offsets the
+tie-breaker charge that vanished when its typing was deleted. That is
+arithmetically impossible in a lexicographic key: position 3 is compared and
+decided before position 5 is ever read, so no later position can offset an
+earlier one. The claim was wrong and the implementation that followed it let
+deleting a mismatched typing improve a candidate's rank. Property-based tests
+caught it. The invariant is enforced in the tie-breaker itself instead (§6.4).
 
 ### 6.4 The numeric tie-breaker
 
@@ -467,12 +479,23 @@ way: class I matching benefit disappears once a DR mismatch is present
 summing both at full weight double-counts one haplotype (Charnaya 2024, where
 each fell from about 1.15 to 1.08 when both entered one model).
 
-An `UNKNOWN` locus contributes **nothing** to the penalty and is counted at tuple
-position 5 instead.
+**An `UNKNOWN` locus is charged at its worst case**, as if it carried two
+mismatches. This is the rule that enforces monotonicity, and it is the same
+conservative rule the policy already applies to a partially typed locus: the
+worse end decides. Missing is never cheaper than known-bad, so deleting a typing
+can never lower the penalty and therefore can never improve a rank. An unknown
+DRB1 leaves the DR gate closed, and a DRB3/4/5 gene whose presence was never
+established is charged like a conflict, for the same reason.
+
+Note the consequence, which is intended: a locus that is unknown costs the same
+as one that is fully mismatched, not more. Absence is treated as the worst the
+data could be, never as worse than that.
 
 ### 6.5 Worked example
 
-One recipient, blood group A, DRB1 fully typed. Eight candidate donors.
+One recipient, blood group A. All five scored loci are typed on both sides, and
+HLA-C is matched in every row, so the penalties below are not carrying an
+unknown-locus charge (§6.4). Eight candidate donors.
 
 | Donor | ABO | DR mm | B mm | A mm | DQ mm | Bucket | Level | Penalty | Rank |
 |---|---|---|---|---|---|---|---|---|---|

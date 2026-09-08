@@ -28,6 +28,9 @@ re-cut on the HLA-DR gate and extended with HLA-DQ, per the policy.
   asymmetry (a patient-reported group may exclude a pair but never clear one).
   Tested. Not yet wired into the core.
 - `src/kidneymatch/matching/models.py` — `PairStage`, `MatchResult` skeleton.
+  Superseded and inert: the V2 outcome model is `Bucket` + `BucketDecision` +
+  `RankedPair`. Left in place with the divergence documented in the module and
+  in `docs/architecture/DATA_MODEL.md`; removing it is a human call.
 - `src/kidneymatch/matching/core.py` — a placeholder that raises
   `MatchingNotImplemented`.
 - `config/locus_genotype_frequencies.json` — measured chance-match rates per

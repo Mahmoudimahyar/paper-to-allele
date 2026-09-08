@@ -1,3 +1,23 @@
+"""The V1 result skeleton. Superseded, retained, and not to be imported.
+
+`PairStage` and `MatchResult` were the shape sketched in
+`docs/architecture/DATA_MODEL.md` before MATCH-001 was designed. The V2 design
+does not use them: a pair's outcome is a `gates.Bucket` with a
+`gates.BucketDecision`, and a row is a `core.RankedPair` carrying a
+`ranking.SortKey`. The two models disagree on the thing that matters, which is
+why this file is inert rather than adapted. `PairStage` is a LINEAR pipeline in
+which a pair advances through stages, so a pair that is simultaneously
+under-typed and crossmatch-blocked has one position on that line. `Bucket` is
+not a line: assignment runs blocking conditions first and reports every blocking
+reason that applied, precisely so an informational state cannot hide a blocking
+one.
+
+Nothing imports this module and nothing should. It is kept only so that a reader
+arriving from the architecture document finds the disagreement written down
+rather than finding a file that quietly vanished. Deleting it, and amending that
+document, is a human decision this task did not take.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

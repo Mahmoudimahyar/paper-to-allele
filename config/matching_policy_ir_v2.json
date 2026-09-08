@@ -63,7 +63,8 @@
       "B": {"ratio": 0.50, "evidence_median_r": 0.50, "series": 3},
       "A": {"ratio": null, "evidence_median_r": 0.12, "series": 1, "note": "no independent survival signal"}
     },
-    "unknown_locus_contributes": 0
+    "unknown_locus_charged_as_mismatches": 2,
+    "unknown_locus_rationale": "An unknown locus is charged at its worst case. Charging nothing let deleting a mismatched typing improve a rank, because the penalty is compared at sort position 3 and the unknown count only at position 5, so no later position can offset an earlier one. Missing is never cheaper than known-bad."
   },
 
   "mismatch_function": {
@@ -89,7 +90,9 @@
   "abo": {
     "implemented_in": "src/kidneymatch/matching/abo.py",
     "unknown_is_never_compatible": true,
-    "patient_reported_may_exclude_but_never_clear": true
+    "patient_reported_may_exclude_but_never_clear": true,
+    "unreadable_group_routes_to": "INSUFFICIENT_ABO",
+    "unreadable_group_rationale": "A value that is not an ABO letter carries no letters to be compatible about, so it fails the readability check before provenance is consulted. PROVISIONAL_ABO is a ranked bucket and must not be reachable by an unreadable group."
   },
 
   "equity": {
