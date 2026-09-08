@@ -963,6 +963,7 @@ def test_an_unread_field_cannot_change_the_order() -> None:
     check_an_unread_field_cannot_change_the_order(rank_donors_for)
 
 
+@pytest.mark.invariant("MATCH-001", "same input snapshot+policy gives same output")
 def test_the_same_input_gives_the_same_output() -> None:
     check_the_same_input_gives_the_same_output(rank_donors_for)
 
@@ -987,6 +988,7 @@ def test_the_worst_crossmatch_on_either_side_decides() -> None:
     check_the_worst_crossmatch_on_either_side_decides(rank_donors_for)
 
 
+@pytest.mark.invariant("MATCH-001", "matching core cannot read compensation")
 def test_no_matching_module_imports_compensation() -> None:
     """`scripts/architecture_lint.py` enforces this outside the test suite. It
     is asserted here too so the MATCH-EVAL-001 acceptance run cannot pass while

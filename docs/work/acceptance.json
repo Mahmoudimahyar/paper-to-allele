@@ -2,52 +2,6 @@
   "version": 1,
   "note": "Default-FAIL contract. Every criterion starts false and may only be set true via `python scripts/acceptance.py mark` with a real evidence file. taskctl re-runs the commands regardless of what this file claims.",
   "tasks": {
-    "HIST-001": {
-      "spec": "specs/features/HIST-001-telegram-html-ingestion.json",
-      "commands": [
-        "uv run --frozen pytest --task HIST-001 -q"
-      ],
-      "criteria": [
-        {
-          "criterion": "normal/joined/forwarded/reply/image-only/text-only/service fixtures parse",
-          "passes": true,
-          "evidence": ".artifacts/HIST-001/acceptance-1.log"
-        },
-        {
-          "criterion": "same export imported twice produces no duplicate source records",
-          "passes": true,
-          "evidence": ".artifacts/HIST-001/acceptance-1.log"
-        },
-        {
-          "criterion": "unparsed source fragments are preserved or explicitly classified",
-          "passes": true,
-          "evidence": ".artifacts/HIST-001/acceptance-1.log"
-        }
-      ]
-    },
-    "HIST-002": {
-      "spec": "specs/features/HIST-002-message-bundles.json",
-      "commands": [
-        "uv run --frozen pytest --task HIST-002 -q"
-      ],
-      "criteria": [
-        {
-          "criterion": "multi-image joined submission bundles once",
-          "passes": true,
-          "evidence": ".artifacts/HIST-002/acceptance-1.log"
-        },
-        {
-          "criterion": "reply context links without overwriting primary sender",
-          "passes": true,
-          "evidence": ".artifacts/HIST-002/acceptance-1.log"
-        },
-        {
-          "criterion": "ambiguous adjacency yields review suggestion not automatic merge",
-          "passes": true,
-          "evidence": ".artifacts/HIST-002/acceptance-1.log"
-        }
-      ]
-    },
     "MEDIA-001": {
       "spec": "specs/features/DEDUPE-001-media-dedupe.json",
       "commands": [
@@ -76,6 +30,50 @@
           "criterion": "source provenance count survives dedupe",
           "passes": false,
           "evidence": null
+        }
+      ]
+    },
+    "MATCH-001": {
+      "spec": "specs/features/MATCH-001-ranking.json",
+      "commands": [
+        "uv run --frozen pytest -q tests/unit/test_matching_mismatch.py tests/unit/test_matching_ranking.py tests/unit/test_matching_gates.py tests/unit/test_matching_directions.py tests/unit/test_matching_explanation.py tests/unit/test_matching_policy.py tests/unit/test_matching_abo.py tests/contracts/test_matching_invariants.py tests/property/test_matching_properties.py",
+        "uv run --frozen python scripts/architecture_lint.py"
+      ],
+      "criteria": [
+        {
+          "criterion": "positive physical crossmatch hard-stops direct pathway",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
+        },
+        {
+          "criterion": "amount changes do not change ordering",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
+        },
+        {
+          "criterion": "rank explanation exactly reconstructs sort keys",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
+        },
+        {
+          "criterion": "ranking donors for a recipient and ranking recipients for a donor both run and agree on the mismatch vector for the same ordered pair",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
+        },
+        {
+          "criterion": "a donor with two HLA-B mismatches and zero DRB1 mismatch outranks a donor with zero HLA-B and one DRB1 mismatch",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
+        },
+        {
+          "criterion": "a partially typed locus yields a range and never a bare zero",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
+        },
+        {
+          "criterion": "deleting any locus typing from a candidate never improves its rank, including DRB3/4/5",
+          "passes": true,
+          "evidence": ".artifacts/MATCH-001/acceptance-1.log"
         }
       ]
     }

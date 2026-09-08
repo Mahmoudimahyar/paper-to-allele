@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "active_task": "HIST-001",
+  "active_task": "MATCH-001",
   "status_values": [
     "COMPLETE",
     "ACTIVE",
@@ -332,7 +332,7 @@
     },
     {
       "id": "MATCH-001",
-      "status": "BACKLOG",
+      "status": "ACTIVE",
       "title": "Top-N scientific pre-screen ranking",
       "phase": "V1-MATCH",
       "spec": "specs/features/MATCH-001-ranking.json",
@@ -342,8 +342,24 @@
         "MATCH-IMMUNE-001"
       ],
       "context": [
-        "docs/clinical/MATCHING_POLICY_V1.md",
-        "docs/clinical/HLA_VALIDATION_SPEC.md"
+        "docs/clinical/MATCHING_POLICY_V2.md",
+        "docs/clinical/HLA_MATCHING_EVIDENCE_V2_2026-09-08.md",
+        "docs/clinical/HLA_EVIDENCE_METHODS_2026-09-08.md",
+        "config/matching_policy_ir_v2.json"
+      ],
+      "plan": "docs/exec-plans/active/MATCH-001-bidirectional-ranking.md",
+      "acceptance": [
+        "uv run --frozen pytest -q tests/unit/test_matching_mismatch.py tests/unit/test_matching_ranking.py tests/unit/test_matching_gates.py tests/unit/test_matching_directions.py tests/unit/test_matching_explanation.py tests/unit/test_matching_policy.py tests/unit/test_matching_abo.py tests/contracts/test_matching_invariants.py tests/property/test_matching_properties.py",
+        "uv run --frozen python scripts/architecture_lint.py"
+      ],
+      "spec_criteria": [
+        "positive physical crossmatch hard-stops direct pathway",
+        "amount changes do not change ordering",
+        "rank explanation exactly reconstructs sort keys",
+        "ranking donors for a recipient and ranking recipients for a donor both run and agree on the mismatch vector for the same ordered pair",
+        "a donor with two HLA-B mismatches and zero DRB1 mismatch outranks a donor with zero HLA-B and one DRB1 mismatch",
+        "a partially typed locus yields a range and never a bare zero",
+        "deleting any locus typing from a candidate never improves its rank, including DRB3/4/5"
       ]
     },
     {

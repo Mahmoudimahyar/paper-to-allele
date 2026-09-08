@@ -717,6 +717,7 @@ def _donor_typing(counts: dict[str, int]) -> dict[str, tuple[str | None, str | N
     return stored
 
 
+@pytest.mark.invariant("MATCH-001", "losing information never improves a candidate's position")
 def test_deleting_a_typing_never_improves_a_sort_key_from_any_starting_point() -> None:
     """The same monotonicity through the whole ranking, exhaustively.
 

@@ -217,6 +217,7 @@ def test_an_abo_incompatibility_is_not_hidden_by_thin_typing() -> None:
     assert decision.bucket is Bucket.ABO_INCOMPATIBLE
 
 
+@pytest.mark.invariant("MATCH-001", "ABO/DSA/crossmatch gates precede HLA heuristic")
 def test_the_blocking_order_is_severity_not_display_order() -> None:
     """Peel the blocking conditions off one at a time and watch the order."""
     everything = pair(
@@ -557,6 +558,7 @@ def test_is_ranked_is_true_only_for_ranked_and_provisional_abo() -> None:
         pair(donor_group="B", recipient_group="A"),
     ],
 )
+@pytest.mark.invariant("MATCH-001", "a blocking bucket is never displayed as a low rank")
 def test_a_blocked_pair_never_lands_in_a_ranked_bucket(inputs: PairInputs) -> None:
     """A blocked pair is not a low-ranked pair, and must not appear at the
     bottom of a ranked list where someone could act on it."""

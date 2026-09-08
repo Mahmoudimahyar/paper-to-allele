@@ -264,6 +264,26 @@ Never put secret values in this file.
   path exists (M6), and the policy bump to `IR-KIDNEY-MATCH-2.0.0` (M7). The
   archive is one-field on 97% of values and carries no antibody, PRA or
   crossmatch data, so V2 is an antigen-level pre-screen whatever is decided.
+- **Superseding packet, added 2026-09-08:**
+  `docs/clinical/HLA_MATCHING_EVIDENCE_V2_2026-09-08.md` §10 replaces the M1-M7
+  list above with eleven decisions (M1-M11) drawn from 99 kidney papers and
+  1,134 effect sizes, each carrying the verbatim sentence it rests on.
+- **What is now built and waiting on this decision:** MATCH-001 v2.0.0 is
+  implemented and tested (`src/kidneymatch/matching/`, 760 tests, every
+  statement and branch covered, all ten spec invariants proved). Its acceptance
+  criteria are met with evidence, and `taskctl` reports zero completion
+  blockers. It is deliberately NOT marked COMPLETE, because the policy it ranks
+  under is `DESIGN_NOT_ADOPTED` and this entry is why. Every run prints that
+  status and the runner refuses to present its ordering as a clinical finding.
+- **What adoption would change:** the coefficients in
+  `config/matching_policy_ir_v2.json` become a project policy rather than a
+  proposal, `status` moves off `DESIGN_NOT_ADOPTED`, and MATCH-001 may be marked
+  COMPLETE. Nothing in the code changes.
+- **What the archive already decides for you:** no pair in it can reach
+  `RANKED`. The dominant letterhead disclaims the blood group (KI-014), so every
+  Gold ABO is patient-reported, and a patient-reported group may exclude a pair
+  but never clear one. Every otherwise-clear pair stops at `PROVISIONAL_ABO`
+  until laboratory blood groups exist, whatever is decided here.
 
 ### HA-001 — Local archive path (only when running real MVP-HIST ingestion)
 - **Needed by:** HIST-001 real-data smoke test

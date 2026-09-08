@@ -201,6 +201,7 @@ def test_the_worse_end_is_the_one_that_decides() -> None:
     assert str(result) == "0-1"
 
 
+@pytest.mark.invariant("MATCH-001", "one allele read is never treated as homozygous")
 def test_a_donor_read_twice_and_a_donor_read_once_are_not_the_same_answer() -> None:
     """The whole point of KI-015. Both donors show A*02 and the recipient has
     A*02, but only one of them has been shown to carry nothing else."""
@@ -236,6 +237,7 @@ def test_a_range_may_be_a_point_and_is_still_reported_as_a_range() -> None:
         (absent(), absent(), "donor"),
     ],
 )
+@pytest.mark.invariant("MATCH-001", "missing locus is UNKNOWN")
 def test_an_untyped_side_gives_unknown_and_no_number_at_all(
     donor: LocusValue, recipient: LocusValue, side: str
 ) -> None:

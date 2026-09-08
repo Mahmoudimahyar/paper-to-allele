@@ -233,6 +233,7 @@ def test_the_two_directions_disagree_about_the_same_two_genotypes() -> None:
 # --- who may be offered to whom -------------------------------------------
 
 
+@pytest.mark.invariant("MATCH-001", "a role-UNKNOWN profile appears in neither direction")
 def test_a_role_unknown_profile_appears_in_neither_direction() -> None:
     """2,026 profiles have no established role. Treating one as either party is
     an inference the matcher may not make; establishing a role is a review
@@ -634,3 +635,116 @@ def test_the_removed_symmetric_entry_point_refuses_rather_than_guesses() -> None
     assert "rank_donors_for" in str(raised.value)
     assert "rank_recipients_for" in str(raised.value)
     assert "not symmetric" in str(raised.value)
+
+
+# --- one ordered pair, asked about from either end ------------------------
+
+
+@pytest.mark.parametrize(
+    ("donor_a", "donor_b", "donor_drb1", "recipient_a", "recipient_b", "recipient_drb1"),
+    [
+        ("A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11", "A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11"),
+        ("A*02 A*24", "B*07 B*44", "DRB1*03 DRB1*13", "A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11"),
+        ("A*01 A*01", "B*08 B*15", "DRB1*04 DRB1*04", "A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11"),
+        ("A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11", "A*02 A*02", "B*07 B*07", "DRB1*03 DRB1*03"),
+        ("A*01", "B*08 B*15", "DRB1*04 DRB1*11", "A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11"),
+        (None, "B*08 B*15", "DRB1*04 DRB1*11", "A*01 A*03", "B*08 B*15", "DRB1*04 DRB1*11"),
+    ],
+    ids=[
+        "identical",
+        "wholly-different",
+        "homozygous-donor",
+        "homozygous-recipient",
+        "donor-read-once",
+        "donor-untyped-at-a",
+    ],
+)
+@pytest.mark.invariant(
+    "MATCH-001",
+    # Split across two adjacent literals only to fit the line limit. Python
+    # concatenates them at parse time, so the invariant checker still reads
+    # one string, and it must stay verbatim identical to the spec text.
+    "the mismatch count is host-versus-graft and is computed with the recipient "
+    "in the recipient argument in both directions",
+)
+def test_the_two_directions_agree_about_one_ordered_pair(
+    donor_a: str | None,
+    donor_b: str | None,
+    donor_drb1: str | None,
+    recipient_a: str | None,
+    recipient_b: str | None,
+    recipient_drb1: str | None,
+) -> None:
+    """MATCH-001 acceptance criterion 4, asserted directly.
+
+    `rank_donors_for(R, [D])` and `rank_recipients_for(D, [R])` are two
+    questions, but they are two questions about the SAME ordered pair: D gives,
+    R receives. So the mismatch vector, the KM level, the bucket and every
+    position of the sort key except the direction label must be identical. Only
+    the anchor differs.
+
+    This is the test that fails if someone serves the second direction by
+    transposing the mismatch arguments, which is the cheapest way to implement
+    it and produces a count that reads plausibly and is wrong. The fixtures
+    include the shapes where a transposition actually shows: a homozygous side
+    collapses to one distinct allele as the donor and offers no cover as the
+    recipient, and a locus read once must stay a range in both readings.
+    """
+    donor = make_profile("D-1", Role.DONOR, a=donor_a, b=donor_b, drb1=donor_drb1)
+    recipient = make_profile(
+        "R-1", Role.RECIPIENT, a=recipient_a, b=recipient_b, drb1=recipient_drb1
+    )
+
+    forwards = rank_donors_for(recipient, [donor])
+    backwards = rank_recipients_for(donor, [recipient])
+    assert len(forwards) == len(backwards) == 1
+    here, there = forwards[0], backwards[0]
+
+    assert (
+        (here.donor_id, here.recipient_id)
+        == (there.donor_id, there.recipient_id)
+        == (
+            "D-1",
+            "R-1",
+        )
+    )
+    for locus in ("A", "B", "C", "DRB1", "DQB1"):
+        mine, theirs = here.vector.per_locus[locus], there.vector.per_locus[locus]
+        assert mine.status is theirs.status, f"{locus} status differs between the directions"
+        assert (mine.lower, mine.upper, mine.count) == (theirs.lower, theirs.upper, theirs.count), (
+            f"{locus} counted {mine} one way round and {theirs} the other, for one ordered pair"
+        )
+    assert here.bucket is there.bucket
+    assert here.key.as_tuple()[:7] == there.key.as_tuple()[:7], (
+        "the same ordered pair sorted on two different keys depending on who was asking"
+    )
+
+    # Position 8 is the final tiebreak and is deliberately NOT shared. It is a
+    # hash of (anchor, candidate), because its job is to separate two candidates
+    # that are otherwise identical WITHIN one query, and the anchor is whoever
+    # asked. A hash shared across the directions would be a hash of the clinical
+    # pair, which is a different and weaker guarantee: it would leave two
+    # equally-matched candidates in one query separated by nothing.
+    assert here.key.stable_hash != there.key.stable_hash
+    assert here.explanation["direction"] != there.explanation["direction"], (
+        "the direction label is the one thing above the tiebreak that must differ"
+    )
+
+
+def test_the_agreement_is_not_an_artefact_of_symmetric_fixtures() -> None:
+    """The guard on the test above.
+
+    If every fixture there happened to be symmetric, a transposed implementation
+    would pass it. So at least one of them must be a pair whose two ORDERED
+    readings genuinely differ, and that difference is asserted here against
+    `build_vector` directly.
+    """
+    donor = make_profile("D-1", Role.DONOR, a="A*01 A*01")
+    recipient = make_profile("R-1", Role.RECIPIENT, a="A*02 A*03")
+    ordered = build_vector(donor, recipient).per_locus["A"]
+    transposed = build_vector(recipient, donor).per_locus["A"]
+    assert ordered.count == 1, "one distinct donor allele the recipient lacks"
+    assert transposed.count == 2, "two distinct alleles the other way round"
+    assert ordered.count != transposed.count, (
+        "the fixture is symmetric, so it could not catch a transposition"
+    )

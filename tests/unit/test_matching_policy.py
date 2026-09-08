@@ -24,6 +24,8 @@ import pytest
 
 from kidneymatch.matching.policy import load_policy
 
+pytestmark = pytest.mark.task("MATCH-001")
+
 REAL = Path("config/matching_policy_ir_v2.json")
 
 
@@ -81,6 +83,7 @@ def test_a_missing_key_is_refused_rather_than_defaulted(
     assert ".".join(path).split(".")[-1] in str(raised.value)
 
 
+@pytest.mark.invariant("MATCH-001", "DQ/DR priority is versioned policy")
 def test_a_gate_that_attenuates_a_matched_drb1_is_refused(tmp_path: Path) -> None:
     """Section 6.4: the halving applies only when DRB1 is MISmatched.
 
