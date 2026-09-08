@@ -53,8 +53,9 @@ Every candidate's existence was confirmed by retrieving its PubMed record; no
 paper was listed from memory.
 
 Ninety-two candidates were returned (69 rated core by the search agents) and
-merged with a seed list of 52 papers from the previous review, giving 100 papers
-after de-duplication and scope screening.
+merged with a seed list of 52 papers from the previous review, giving 104 papers
+for extraction after de-duplication; 99 survived the scope and retrievability
+checks described in §6.
 
 ## 4. Eligibility
 
@@ -115,8 +116,8 @@ verifiers were the first work killed when usage limits were reached, so coverage
 would have been partial and arbitrary. And the script is more complete: it
 checked every quote in every paper in under a second.
 
-**What it caught.** Of 573 quotes across 100 included papers, 550 were re-matched
-successfully, 20 could not be re-matched because no source text had been cached
+**What it caught.** Of 567 quotes across 99 included papers, 549 were re-matched
+successfully, 15 could not be re-matched because no source text had been cached
 for their paper (flagged as lower-confidence in the appendix), and 3 failed. All
 three failures came from a single paper for which PubMed Central returns an
 *empty* full text; the extracting agent had disclosed that it read the table
@@ -126,10 +127,11 @@ quantitative claim in the review, though the agent recorded an internal
 arithmetic check that they pass. This is recorded as a limitation of
 verifiability, not as a finding that the paper is wrong.
 
-Four further papers were excluded outright: three failed the kidney-only or
-HLA-exposure scope test, and one Iranian cohort could not be retrieved from
-PubMed or PubMed Central at all, so the extracting agent recorded it as
-`not_found` and refused to cite second-hand figures for it.
+Five further papers were excluded outright: four failed the kidney-only or
+HLA-exposure scope test (one of them a scoping review spanning several organ
+types), and one Iranian cohort could not be retrieved from PubMed or PubMed
+Central at all, so the extracting agent recorded it as `not_found` and refused
+to cite second-hand figures for it.
 
 The script does not check that a number was attributed to the right comparison.
 The numbers used in the review's main text were therefore also re-read from the

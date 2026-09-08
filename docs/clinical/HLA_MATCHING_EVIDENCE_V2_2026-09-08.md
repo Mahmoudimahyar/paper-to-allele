@@ -38,7 +38,7 @@ Three findings drive the revised model.
    and any mismatch is worth about 2.9 additional mismatches' worth of slope.
 
 3. **Per locus, the second mismatch costs about a third of the first.** Across
-   seven independent series at HLA-DR the ratio of the second mismatch's
+   eight independent series at HLA-DR the ratio of the second mismatch's
    log-effect to the first's has a median of 0.29 (range 0.23–0.49); at HLA-DQ
    the median is 0.33; at HLA-B, 0.50. Not one series is consistent with a
    constant weight.
@@ -54,9 +54,9 @@ most weight. The revised model is therefore not a linear score with a small
 bonus. It is a **full-match bonus that dominates, a shallow taper above it, and
 a DR gate on the remaining loci.**
 
-The review rests on **100 kidney-transplant papers and 1,151 extracted effect
-sizes**. Of 573 supporting quotes, 550 were re-matched verbatim against cached
-source text by a deterministic script; 20 more could not be re-matched because
+The review rests on **99 kidney-transplant papers and 1,134 extracted effect
+sizes**. Of 567 supporting quotes, 549 were re-matched verbatim against cached
+source text by a deterministic script; 15 more could not be re-matched because
 no source was cached and are flagged as lower-confidence; 3 failed and are
 withheld, together with the paper they came from (§9). Appendix A carries the
 per-paper record.
@@ -124,9 +124,9 @@ strands ran 238 PubMed queries across the dose-response shape, per-locus
 estimates, locus interactions, effect modifiers, molecular mismatch, allocation
 algorithms, Iranian and regional evidence, and statistical modelling. Ninety-two
 candidate papers were returned and merged with a seed list of 52, giving 104
-papers for extraction. Four were excluded after extraction — three failed the
+papers for extraction. Five were excluded after extraction — four failed the
 kidney-only or HLA-exposure test, and one Iranian cohort proved unretrievable —
-leaving **100 papers** and 1,151 effect sizes in the review.
+leaving **99 papers** and 1,134 effect sizes in the review.
 
 Eligibility was **kidney transplantation only** — pancreas-kidney, liver, heart
 and lung papers were excluded — reporting HLA mismatch as an exposure, or the
@@ -438,20 +438,32 @@ is what an additive score assumes.
 above 1.0 (§3.1, §3.2), which is a step plus concavity in log-hazard; and in the
 cleanest test the non-zero groups do not differ from each other at all (§3.5).
 
-Of the papers extracted, **21 characterised a shape** whose source text could be
-verified. At antigen level, the scale this archive uses:
+Of the 99 included papers, **33 characterised a shape**; one of those is
+excluded because its source could not be verified (§9), leaving 32. At antigen
+level — the scale this archive uses:
 
 | Shape reported at antigen level | n | Papers |
 |---|---|---|
-| Step or threshold: a zero-mismatch premium, then flat or shallow | 9 | Zhou 1993; Reisaeter 1998; Takemoto 2000; Doxiadis 2007; Lee 2022; Dasariraju 2023; Caldwell 2024; Lalji 2025; Wiebe 2019 |
-| Concave: monotone with diminishing increments | 4 | Leeaphorn 2018; Ali 2022 (abstracts); Charnaya 2024; Ali 2026 |
-| Straight in the hazard ratio with intercept above 1 (a step plus log-concavity) | 2 | Williams 2016; Williams 2017 |
-| Additive across loci and approximately linear in the total count | 1 | Opelz 1992 |
+| Step, threshold, or a zero-mismatch premium then flat or shallow | 13 | Zhou 1993; Reisaeter 1998; Takemoto 2000; Doxiadis 2007; Meier-Kriesche 2009; Willicombe 2012; Foster 2014; Wiebe 2019; Lee 2022; Dasariraju 2023; Caldwell 2024; Lalji 2025; Ali 2026 |
+| Concave: monotone with diminishing increments | 3 | Leeaphorn 2018; Ali 2022 (abstracts); Charnaya 2024 |
+| Straight in the hazard ratio with intercept above 1, i.e. a step plus log-concavity | 3 | Williams 2016; Williams 2017; Williams 2018 |
+| **Additive across loci and approximately linear in the total count** | **1** | **Opelz 1992** |
+| **Flat: no dose-response at all** | **1** | **Gritsch 2008** |
+| Direction stated qualitatively, no shape | 2 | Lim 2012; Hafeez 2023 |
 
-The molecular scale behaves differently, as §3.6 explains: linear through the
-middle of its range with no safe threshold (Senev 2020; Bezstarosti 2023 as a
-continuous hazard), clinically usable thresholds (Wiebe 2013; Lee 2022),
-graded categories (Wiebe 2019; Johnson 2023), and dampening at high load
+The two rows in bold are the counter-evidence, and both deserve their weight.
+Opelz 1992 is discussed under Question 1 above: its additivity claim is about
+*across* loci and it never reports an intermediate mismatch category, so it
+cannot speak to the within-locus shape. Gritsch 2008 found no dose-response
+whatever in paediatric recipients of young deceased donors — the DR series was
+non-monotonic and essentially flat at 71%, 69% and 71% — which is a genuine null
+in a population unlike this archive's.
+
+The molecular scale behaves differently, as §3.6 explains: linear in the
+log-hazard with no threshold (Senev 2020; Kamoun 2017, whose splines at 5, 10
+and 15 amino-acid mismatches produced no significant change in slope; Wiebe
+2017), clinically usable thresholds (Wiebe 2013; Lee 2022), graded categories
+(Davis 2020; Wiebe 2019; Johnson 2023; Lee 2025), and dampening at high load
 (Niemann 2025).
 
 Williams 2016 describes its own effect as "additive", with "each additional
@@ -538,6 +550,26 @@ three reasons: it is a deceased-donor cohort; the single significant exception
 ran in the expected direction (two DR mismatches, HR 1.57, versus two A
 mismatches, HR 1.27); and the contemporary analyses that model each locus
 separately do find DR and not A.
+
+A second null is more pointed, because it is the only paper found that reports a
+flat DR series and it says so plainly:
+
+> "Zero HLA-DR-mismatched kidneys had statistically comparable 5-year graft
+> survival (71%), to 1-DR-mismatched kidneys (69%) and 2-DR-mismatched kidneys
+> (71%)."
+>
+> "nor was there a 'dose effect' when more HLA antigens were mismatched between
+> the donor and recipient"
+> — Gritsch 2008, AJT
+
+Its population is paediatric recipients of deceased donors under 35, where donor
+age dominated (relative rate of failure 1.32 for donors 35 or older), and its
+practical conclusion was that such recipients "should not turn down such kidney
+offers to wait for a better HLA-DR-matched kidney". That is a real limit on how
+far DR priority should be pushed when it costs waiting time or donor quality —
+which is the trade-off a living-donor pre-screen does *not* face, since the
+donors are already identified. It does not transfer to this archive, but it is
+the strongest published statement that DR matching can be worth nothing.
 
 ### 4.2 HLA-DQB1 — rank 2, on a different endpoint
 
@@ -814,7 +846,7 @@ tuple position 11 instead.
 
 | Locus | First mismatch | Second mismatch | Second ÷ first | Evidence for the ratio |
 |---|---|---|---|---|
-| DRB1 | 6 | 2 | 0.33 | median *r* = 0.29 across seven series |
+| DRB1 | 6 | 2 | 0.33 | median *r* = 0.29 across eight series |
 | DQB1 | 4 | 1 | 0.25 | median *r* = 0.33, discounted for one-field unreliability |
 | B | 2 | 1 | 0.50 | median *r* = 0.50 |
 | A | 1 | 0 | — | one series, *r* = 0.12; no survival signal |
