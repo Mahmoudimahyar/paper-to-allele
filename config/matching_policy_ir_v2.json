@@ -125,6 +125,6 @@
     "Weights are a versioned project pre-screening policy, not a universal clinical standard.",
     "Every coefficient derives from non-Iranian registries; local calibration needs Iranian outcome data that does not exist yet.",
     "The archive holds no antibody, PRA or crossmatch data, so every pair is ANTIBODY_UNKNOWN.",
-    "Adoption requires HA-004: M1-M8 in the evidence review, extended to M1-M11 by section 11 of the policy document, and a policy version bump."
+    "Adoption requires HA-004 and a policy version bump. The evidence review section 10 and this policy section 10 number the decisions DIFFERENTLY and do not cover the same set: see the conflict table in the HA-004 entry of docs/agent-memory/HUMAN_ACTIONS.md. Do not cite an M-number without saying which document it comes from."
   ]
 }

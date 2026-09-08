@@ -264,16 +264,46 @@ Never put secret values in this file.
   path exists (M6), and the policy bump to `IR-KIDNEY-MATCH-2.0.0` (M7). The
   archive is one-field on 97% of values and carries no antibody, PRA or
   crossmatch data, so V2 is an antigen-level pre-screen whatever is decided.
-- **Superseding packet, added 2026-09-08:**
-  `docs/clinical/HLA_MATCHING_EVIDENCE_V2_2026-09-08.md` §10 replaces the M1-M7
-  list above with **M1-M8**, drawn from 99 kidney papers and 1,134 effect sizes,
-  each carrying the verbatim sentence it rests on.
-  `docs/clinical/MATCHING_POLICY_V2.md` §11 carries those eight forward and adds
-  **M9-M11**, which the design raises rather than the literature: whether the
-  worse end of a range is the right conservative default, whether the
-  tie-breaker magnitudes are acceptable as a versioned engineering policy, and
-  whether host-versus-graft counting over distinct donor alleles is the right
-  convention including for a homozygous donor. Eleven questions in total.
+- **CONFLICT, recorded 2026-09-08, not resolved. Read this before answering.**
+  Two documents number these decisions, they do not agree, and an answer given
+  as a bare "M4: yes" therefore means two different things depending on which
+  table the reader has open. Nobody may silently pick one (AGENTS.md
+  source-of-truth rule), so the numbering itself is now part of what HA-004 has
+  to settle.
+
+  A note added earlier on 2026-09-08 said the policy document "carries those
+  eight forward and adds M9-M11". **That was wrong**, and this entry replaces
+  it. The policy does not carry the evidence numbering forward: it renumbers
+  from M2, and it drops one question entirely.
+
+  | Question | Evidence review §10 | Policy §10 |
+  |---|---|---|
+  | DR ranked ahead of DQ at one field | M1 | M1 |
+  | Full-match bonus structure replacing linear weights | M2 | *(no row)* |
+  | Halving once DR is mismatched | M3 (**DQ charge only**) | M3 (**all other loci**) |
+  | HLA-C weighted only when typed | M4 | M5 |
+  | DRB3/4/5 null suffix | M5 | M6 |
+  | Which loci Iranian laboratories type | M6 | M7 |
+  | Two-field re-typing for shortlisted pairs | M7 | M8 |
+  | Policy version bump to `IR-KIDNEY-MATCH-2.0.0` | M8 | *(no row)* |
+  | Are the KM levels the right re-cut of the UK levels | *(no row)* | M2 |
+  | Is DQ binary at one field, or graded | *(no row)* | M4 |
+  | Worse end of a range as the conservative default | *(no row)* | M9 |
+  | Tie-breaker magnitudes as versioned engineering policy | *(no row)* | M10 |
+  | Host-versus-graft over distinct donor alleles | *(no row)* | M11 |
+
+  So it is **thirteen distinct questions, not eleven**, and the "halving" row is
+  a real disagreement about scope rather than a renumbering: the evidence review
+  asks only about the DQ charge, the policy applies the halving to every locus
+  other than DRB1, which is what the code does.
+
+  Note that §11 of the policy document is "Carried forward from V1, unchanged"
+  and holds no questions. Two places said §11; the table is in §10.
+
+- **Decision required on the numbering, before any packet is drafted:** which
+  table is canonical, and what happens to the two evidence-review rows the
+  policy has no row for. A clinician packet written against either numbering
+  today would mis-cite its own evidence for five of the questions.
 - **What is now built and waiting on this decision:** MATCH-001 v2.0.0 is
   implemented and tested (`src/kidneymatch/matching/`, 760 tests, every
   statement and branch covered, all ten spec invariants proved). Its acceptance

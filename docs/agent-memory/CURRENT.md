@@ -66,12 +66,13 @@ D13-a, D14-a, D15 (`CV_RESEARCH` s23); D10-a (HA-011 (a) codified) and D11
 ## Human actions open
 **HA-008 round five** (600 unseen pages, on 8767). **HA-024**, **HA-022**,
 **HA-014**. **HA-007** the blind golden corpus. **HA-011** (b)–(d). Then
-**HA-004** (blocks V1-MATCH adoption, not its code): the v2 review's §10
-(M1–M8), extended to M1–M11 by the policy doc's §11.
+**HA-004** (blocks V1-MATCH adoption, not its code). **Its two M-tables
+disagree: 13 distinct questions, not 11. Conflict table in the HA-004 entry;
+never cite an M-number without naming its document.**
 
 ## Matching (built 2026-09-08; NOT adopted)
 - **Gold:** no antibody, PRA or crossmatch data; 97% one-field, so V2 is
-  antigen-level (no eplet, no PIRCHE). Every pair is ANTIBODY_UNKNOWN.
+  antigen-level. Every pair is ANTIBODY_UNKNOWN.
 - **Evidence v2** (`HLA_MATCHING_EVIDENCE_V2_2026-09-08.md` + methods +
   appendix; 99 papers, 1,134 effect sizes, 549 of 567 quotes machine-verified):
   **the penalty is a STEP, not a line.** A point score is log-linear; the
@@ -84,8 +85,7 @@ D13-a, D14-a, D15 (`CV_RESEARCH` s23); D10-a (HA-011 (a) codified) and D11
   100% of statements and branches): UK levels re-cut so every DR-matched pair
   outranks every DR-mismatched one; an 8-field sort key; BOTH directions, each
   calling one mismatch function with the recipient in the recipient argument.
-  **The count is not symmetric** — MM(D→R) − MM(R→D) = |distinct(D)| −
-  |distinct(R)| — so a transposed count is a different question.
+  **Not symmetric** — MM(D→R) − MM(R→D) = |distinct(D)| − |distinct(R)|.
 - **Missing is charged at its WORST case** (not zero): the penalty sits at sort
   position 3 and the unknown count at position 5, so nothing later can offset an
   earlier position. Deleting a mismatched typing used to improve a rank.
@@ -93,7 +93,7 @@ D13-a, D14-a, D15 (`CV_RESEARCH` s23); D10-a (HA-011 (a) codified) and D11
   group (KI-014), so every Gold ABO is patient-reported, and a patient-reported
   group may exclude but never clear. All clear pairs stop at `PROVISIONAL_ABO`.
 - **An unreadable group is a MISSING one**: it fails the readability check
-  before provenance, so it lands in `INSUFFICIENT_ABO`, never a ranked bucket.
+  before provenance, so it lands in `INSUFFICIENT_ABO`, not a ranked bucket.
 
 ## Completed foundation
 P0 harness, P1 autonomy, P2 test depth (12-step gate). Derived stores and
@@ -113,8 +113,8 @@ P0 harness, P1 autonomy, P2 test depth (12-step gate). Derived stores and
    a high defect (`bw_backfill --undo` stops matching once another pass
    re-stamps `created_utc`) and a medium one (a tailed token records its epitope
    through a refused box). Then D2-a export.
-4. **Matching:** answer HA-004 (M1–M11). Nothing in the code changes on
-   adoption; only `status` in `config/matching_policy_ir_v2.json` and the task.
+4. **Matching:** settle the HA-004 M-numbering conflict, then the decisions.
+   Adoption changes only `status` in the policy config and the task.
 
 ## Last verified baseline
 `verify_repo.py` PASS — see the latest commit; this records a past result.
