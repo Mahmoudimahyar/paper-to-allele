@@ -402,3 +402,23 @@ any of the three could write one. Closing it means giving those three passes
 the page lattice they do not currently load, and measuring what each binds
 before and after — which is a change to three passes, not a comment, and is
 why it is recorded here rather than made in the same round that found it.
+
+## KI-030 — one order-dependent test failure, seen once and not reproduced
+`tests/unit/test_cell_ink_pass.py` failed once during the 2026-09-08 session
+under `pytest-randomly`'s shuffled order. It passed when run alone and passed
+with `-p no:randomly`, which is the signature of shared state leaking between
+tests rather than a defect in the assertion.
+
+It has not reproduced since. After the matching work landed, the full suite was
+run six more times: once under the default random order and once each under
+`--randomly-seed` 1 through 5. All 2,439 tests passed every time. The failing
+run's seed was not captured, so the specific order that broke it is unknown, and
+the matching changes touch nothing `cell_ink_pass` reads, so they are unlikely
+to be the reason it stopped.
+
+Treat this as open rather than fixed. An intermittent failure that cannot be
+reproduced on demand is not evidence of correctness; it is evidence that the
+suite has state a shuffle can expose and that a seed sweep of five is too small
+to find it. Closing it means sweeping seeds until it reappears, capturing that
+seed, and then finding the shared object — most likely a module-level cache or a
+fixture writing outside `tmp_path` — rather than reordering the tests to hide it.

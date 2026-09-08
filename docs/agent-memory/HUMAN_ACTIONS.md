@@ -266,8 +266,14 @@ Never put secret values in this file.
   crossmatch data, so V2 is an antigen-level pre-screen whatever is decided.
 - **Superseding packet, added 2026-09-08:**
   `docs/clinical/HLA_MATCHING_EVIDENCE_V2_2026-09-08.md` §10 replaces the M1-M7
-  list above with eleven decisions (M1-M11) drawn from 99 kidney papers and
-  1,134 effect sizes, each carrying the verbatim sentence it rests on.
+  list above with **M1-M8**, drawn from 99 kidney papers and 1,134 effect sizes,
+  each carrying the verbatim sentence it rests on.
+  `docs/clinical/MATCHING_POLICY_V2.md` §11 carries those eight forward and adds
+  **M9-M11**, which the design raises rather than the literature: whether the
+  worse end of a range is the right conservative default, whether the
+  tie-breaker magnitudes are acceptable as a versioned engineering policy, and
+  whether host-versus-graft counting over distinct donor alleles is the right
+  convention including for a homozygous donor. Eleven questions in total.
 - **What is now built and waiting on this decision:** MATCH-001 v2.0.0 is
   implemented and tested (`src/kidneymatch/matching/`, 760 tests, every
   statement and branch covered, all ten spec invariants proved). Its acceptance
