@@ -256,6 +256,14 @@ Never put secret values in this file.
   Gholhak, Razi) report serologic or molecular types.
 - **Secret?** No.
 - **Blocking now?** Blocks V1-MATCH spec freeze. Does not block MVP-HIST.
+- **Decision packet, added 2026-09-07:** `docs/clinical/HLA_MATCHING_EVIDENCE_2026-09-07.md`
+  §7 lists the seven matching decisions the literature cannot make (M1–M7):
+  DR-before-DQ at one-field resolution (M1), a zero-mismatch bonus at DR and DQ
+  (M2), HLA-C weight only when typed (M3), the DRB3/4/5 null suffix (M4, =
+  HA-011(b)), how Iranian labs report DQ (M5), whether a two-field re-typing
+  path exists (M6), and the policy bump to `IR-KIDNEY-MATCH-2.0.0` (M7). The
+  archive is one-field on 97% of values and carries no antibody, PRA or
+  crossmatch data, so V2 is an antigen-level pre-screen whatever is decided.
 
 ### HA-001 — Local archive path (only when running real MVP-HIST ingestion)
 - **Needed by:** HIST-001 real-data smoke test

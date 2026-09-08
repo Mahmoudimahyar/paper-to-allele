@@ -5,13 +5,10 @@
 **Active task:** OCR-GEOM-001 (`docs/exec-plans/active/OCR-GEOM-001-geometry-and-drbx-row.md`); MEDIA-001/DEDUPE-001 stay READY
 
 ## Goal now
-Finalize the database. **1,342 cells labelled over five rounds** (HA-008); the
-operator answered every decision on 2026-09-07 and re-checked the disputed
-pack (s23, s24). The loss is now charged to checkpoints and the work is ordered
-by it (`IMPLEMENTATION_PLAN_2026-09-07.md`): the DRB3/4/5 row first. Round five
-(`--n 600`, on 8767) measures the 3,685 cells from nine sources no person has
-checked; then D2-a exports tiers A/B/C, review and unknown separately. Check
-the instrument before the pipeline.
+The Gold database is built and deduplicated; the matching evidence review is
+done and waits on HA-004. Round five (`--n 600`, on 8767) still measures the
+~3,900 unlabelled-source cells; then D2-a exports tiers A/B/C, review and
+unknown separately. Check the instrument before the pipeline.
 
 ## Locked facts
 - **The archive** (local-only, gitignored, `data/raw/ChatExport_2026-08-31`):
@@ -28,13 +25,11 @@ the instrument before the pipeline.
   promotes on a LOW page. **Every binding pass must write `value_boxes`** or
   the reviewer sees a RESOLVED value with no crop (s14, twice).
 - **The DRB3/4/5 row prints gene names**; grammar v2 waits on HA-011.
-- **Accuracy (KI-012), 1,342 labels over five rounds, after the checkpoint
-  plan (s25). LEAD WITH RECALL.** HLA **691 correct, 2 wrong, 130 missed, 19
-  partial**; ROLE 94/1, ABO 48/0, RH 47/0. HLA **68,916** value cells, DRB3/4/5
-  **37,661**; review queue **34,278**. Loss by checkpoint
-  (`checkpoint_attribution.py`): DRB3/4/5 header 41 + row grammar 22, cell
-  rectangle 35, locus label 22, gate-1 withdrawals 18, recognition 13,
-  orientation/tilt **0**.
+- **Accuracy (KI-012), 1,342 labels, five rounds (s25). LEAD WITH RECALL.**
+  HLA **691 correct, 2 wrong, 130 missed, 19 partial**; ROLE 94/1, ABO 48/0,
+  RH 47/0. HLA **68,916** value cells, DRB3/4/5 **37,661**; review queue
+  **34,278**. Loss by checkpoint: DRB3/4/5 header 41 + grammar 22, cell
+  rectangle 35, locus label 22, gate-1 18, recognition 13, orientation **0**.
 - **THE RESIDUAL IS BINDING, NOT READING** (s25). Of the 151 remaining labelled
   failures, **113 have the value's digits readable in a store we already hold**
   and only 7 have nothing readable. Rules that assumed a reading problem (W4,
@@ -50,14 +45,12 @@ the instrument before the pipeline.
 - **~3,900 cells from twelve sources are UNMEASURED** (s22, s25): the nine of
   s22 (upright 801, column-bound 699, token-anchored-drbx 621, family-tie 550,
   below-rule 364, family-loo 258, family-prefix 204, column-named 108,
-  anchor-row 80) plus `token_anchored_drbx_unresolved` 116,
-  `second_allele_reread` 4 and the gate-2 re-promotions. Each has a source, a
-  stratum and a withdrawal handle. **Round five measures them.**
+  anchor-row 80), `token_anchored_drbx_unresolved` 116, `second_allele_reread`
+  4, gate-2 re-promotions. Each is withdrawable. **Round five measures them.**
 - **Every decision pass is dry-run by default, tagged in `source`, and undoes
-  itself in one statement** (`gate1_repromote`, `ink_drain`,
-  `sheet_abo_review`, all `--undo`). A pass that fills what another pass
-  withdrew is a silent reversal: `caption_pass` did it to 6 sheet rows within
-  the hour, and now honours a `sheet-review/v1` row (s23).
+  itself in one statement** (`--undo`). A pass that fills what another pass
+  withdrew is a silent reversal: `caption_pass` did it to 6 sheet rows and now
+  honours a `sheet-review/v1` row (s23).
 - **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC WE HAVE** — under `notes`,
   printed by `label_score.py` (s9).
 - **`A*24,02` is two alleles (HA-015, D9):** a COMMA between two numbers splits;
@@ -72,8 +65,7 @@ the instrument before the pipeline.
 - **A stratum reporting zero looks like a signal that does not occur** (3x).
   A gate naming a COUNT uses `MIN_DRAW`, not a weight share (s21).
 - **Review a write-rule adversarially BEFORE believing its yield** (s14/16/20,
-  s25): all four s20 builds were rejected; D11's own re-review found two
-  defects; and a test caught D9's `_PAIR` letting a `Bw4` tail pose as an allele.
+  s25): all four s20 builds were rejected; D11's re-review found two defects.
 - **The gate installs what the code imports** (HA-021, D13-a): `EXTRAS =
   (hist, hla, image, ocr)` in `verify_repo`, CI and bootstrap; the contract
   pins all four. `python` on PATH is NOT the project interpreter — use `.venv`.
@@ -90,13 +82,20 @@ workflow). **Open: HA-024** (caption groups on two-person pages), HA-022.
 ## Human actions open
 **HA-008 round five** (600 unseen pages, on 8767). **HA-024**, **HA-022**,
 **HA-014**. **HA-007** the blind golden corpus. **HA-011** (b)–(d). Then
-HA-004 (blocks V1-MATCH).
+HA-004 (blocks V1-MATCH) — its decision packet now exists:
+`docs/clinical/HLA_MATCHING_EVIDENCE_2026-09-07.md` §7 (M1–M7).
+
+## Matching (Gold DB built 2026-09-07; evidence review done)
+- **Gold:** 19,200 profiles, 14,864 with HLA (DONOR 8,226 / RECIPIENT 4,612 /
+  UNKNOWN 2,026); 9,817 carry A+B+DRB1; ABO on 8,792; **no antibody, PRA or
+  crossmatch data**; 97% one-field, so V2 is antigen-level (no eplet/PIRCHE).
+- **Evidence** (`HLA_MATCHING_EVIDENCE_2026-09-07.md`): DRB1 ≥ DQB1 > B > A >
+  C; proposal DRB1 4 / DQB1 4 / B 2 / A 1 / C 1 per mismatch + zero-mismatch
+  bonus DR 2, DQ 1; DR before DQ at one-field. **Not adopted** until HA-004.
 
 ## Completed foundation
-P0 harness, P1 autonomy, P2 test depth (12-step gate, coverage 65% / medical
-100%, PII scanner, bandit, gitleaks, osv-scanner, mutmut). Derived stores are
-gitignored (`ocr_pass`, `facts`, `source`, `geometry`, `data/review/`); the
-measurements the thresholds rest on are committed in `config/`.
+P0 harness, P1 autonomy, P2 test depth (12-step gate). Derived stores and
+`data/gold/` are gitignored; the measurements behind thresholds live in `config/`.
 
 ## Next actions
 1. **Human:** round five; HA-024 and HA-022. Score with `label_score.py`, the
@@ -113,7 +112,9 @@ measurements the thresholds rest on are committed in `config/`.
    high defect (`bw_backfill --undo` stops matching once another pass re-stamps
    `created_utc`) and a medium one (a tailed token records its epitope through
    a refused box). Then D2-a export.
+4. **Matching, after HA-004 answers M1–M7:** policy V2 doc + versioned JSON
+   from the evidence review, then the MATCH-001 core test-first.
 
 ## Last verified baseline
-`python scripts/verify_repo.py` — see the sixth-session commit message for the
-result; this file records a past result, not the current environment.
+`python scripts/verify_repo.py` — see the latest commit message; this file
+records a past result, not the current environment.
