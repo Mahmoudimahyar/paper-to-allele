@@ -27,13 +27,15 @@
       "docs/ingestion/ENGINE_BENCH_2026-09-05.md"
     ],
     "matching": [
+      "docs/clinical/MATCHING_POLICY_V2.md",
       "docs/clinical/MATCHING_POLICY_V1.md",
       "docs/clinical/HLA_EVIDENCE_METHODS_2026-09-08.md",
       "docs/clinical/HLA_MATCHING_EVIDENCE_V2_2026-09-08.md",
       "docs/clinical/HLA_EVIDENCE_APPENDIX_2026-09-08.md",
       "docs/clinical/HLA_MATCHING_EVIDENCE_2026-09-07.md",
       "docs/clinical/HLA_VALIDATION_SPEC.md",
-      "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md"
+      "docs/ingestion/MVP_PLAN_REVIEW_2026-09-01.md",
+      "docs/exec-plans/active/MATCH-001-bidirectional-ranking.md"
     ],
     "security": [
       "docs/security/SECURITY_TRUST_SAFETY.md"

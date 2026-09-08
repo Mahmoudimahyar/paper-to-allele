@@ -1,13 +1,16 @@
 {
   "id": "MATCH-001",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "status": "BACKLOG",
   "risk": "CRITICAL",
-  "goal": "Given a recipient snapshot, return reproducible top-N donor pre-screen matches with transparent gates, locus mismatches, uncertainty, and policy version.",
+  "goal": "Given a recipient snapshot, return reproducible ranked donor pre-screen candidates, and given a donor snapshot, return reproducible ranked recipient candidates, both with transparent gates, per-locus mismatches with explicit UNKNOWN and partial-typing ranges, and the policy and reference versions used.",
   "non_goals": [
     "transplant clearance",
     "compatibility percentage",
-    "compensation-based ranking"
+    "compensation-based ranking",
+    "allocation across a queue",
+    "matchability or waiting-time terms in the ranking",
+    "molecular mismatch scores from low-resolution typing"
   ],
   "actors": [
     "administrator",
@@ -15,18 +18,31 @@
   ],
   "preconditions": [
     "Gold donor data",
-    "recipient data"
+    "Gold recipient data",
+    "matching policy version IR_KIDNEY_SCREEN_2.0 adopted after HA-004"
   ],
   "invariants": [
     "ABO/DSA/crossmatch gates precede HLA heuristic",
     "missing locus is UNKNOWN",
     "DQ/DR priority is versioned policy",
     "matching core cannot read compensation",
-    "same input snapshot+policy gives same output"
+    "same input snapshot+policy gives same output",
+    "the mismatch count is host-versus-graft and is computed with the recipient in the recipient argument in both directions",
+    "a blocking bucket is never displayed as a low rank",
+    "losing information never improves a candidate's position",
+    "a role-UNKNOWN profile appears in neither direction",
+    "one allele read is never treated as homozygous"
   ],
   "acceptance": [
     "positive physical crossmatch hard-stops direct pathway",
     "amount changes do not change ordering",
-    "rank explanation exactly reconstructs sort keys"
-  ]
+    "rank explanation exactly reconstructs sort keys",
+    "ranking donors for a recipient and ranking recipients for a donor both run and agree on the mismatch vector for the same ordered pair",
+    "a donor with two HLA-B mismatches and zero DRB1 mismatch outranks a donor with zero HLA-B and one DRB1 mismatch",
+    "a partially typed locus yields a range and never a bare zero",
+    "deleting any locus typing from a candidate never improves its rank, including DRB3/4/5"
+  ],
+  "source_doc": "docs/clinical/MATCHING_POLICY_V2.md",
+  "config": "config/matching_policy_ir_v2.json",
+  "blocked_by": "HA-004"
 }

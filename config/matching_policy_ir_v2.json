@@ -1,0 +1,127 @@
+{
+  "policy_id": "IR_KIDNEY_SCREEN_2.0",
+  "supersedes": "IR-KIDNEY-MATCH-1.0.0",
+  "status": "DESIGN_NOT_ADOPTED",
+  "adoption_blocked_by": "HA-004",
+  "source_doc": "docs/clinical/MATCHING_POLICY_V2.md",
+  "evidence_doc": "docs/clinical/HLA_MATCHING_EVIDENCE_V2_2026-09-08.md",
+  "measured_utc": "2026-09-08T00:00:00+00:00",
+
+  "directions": [
+    "donors_for_recipient",
+    "recipients_for_donor"
+  ],
+  "direction_note": "Both directions call one mismatch function with the recipient always in the recipient argument. The count is host-versus-graft and is NOT symmetric: MM(D->R) - MM(R->D) = (distinct donor alleles) - (distinct recipient alleles). A transposed count is never used.",
+
+  "buckets_in_order": [
+    "RANKED",
+    "PROVISIONAL_ABO",
+    "INSUFFICIENT_HLA",
+    "INSUFFICIENT_ABO",
+    "ABO_INCOMPATIBLE",
+    "BLOCKED_DSA_OR_LAB_REVIEW",
+    "BLOCKED_POSITIVE_CROSSMATCH",
+    "EXCLUDED_NON_CLINICAL"
+  ],
+
+  "km_levels": {
+    "note": "UK Kidney Allocation Scheme mismatch levels, re-cut so that every DR-matched pair outranks every DR-mismatched pair. HLA-A distinguishes only KM-1 from KM-2.",
+    "1": {"DRB1": 0, "B": 0, "A": 0},
+    "2": {"DRB1": 0, "B_max": 1},
+    "3": {"DRB1": 0, "B": 2},
+    "4": {"DRB1": 1, "B_max": 1},
+    "5": {"DRB1": 1, "B": 2},
+    "6": {"DRB1": 2, "B_max": 1},
+    "7": {"DRB1": 2, "B": 2}
+  },
+
+  "sort_tuple": [
+    "bucket",
+    "km_level",
+    "dqb1_mismatch_binary",
+    "numeric_tiebreaker",
+    "evidence_quality_penalty",
+    "unknown_required_loci_count",
+    "partially_typed_loci_count",
+    "stable_identifier_hash"
+  ],
+
+  "tiebreaker": {
+    "units": "integer; gate is expressed in tenths so the halving stays exact",
+    "formula": "sum over loci of gate(locus) * (first[locus] * (mm >= 1) + second[locus] * (mm == 2)) // 10",
+    "gate": {
+      "DRB1": 10,
+      "other_when_DRB1_matched": 10,
+      "other_when_DRB1_mismatched": 5
+    },
+    "first_mismatch": {"DRB1": 60, "DQB1": 40, "B": 20, "A": 10, "C": 10, "DRB3_4_5_presence_conflict": 10},
+    "second_mismatch": {"DRB1": 20, "DQB1": 10, "B": 10, "A": 0, "C": 0},
+    "zero_weight": ["DQA1_alone", "DPA1", "DPB1"],
+    "second_over_first_evidence": {
+      "DRB1": {"ratio": 0.33, "evidence_median_r": 0.29, "series": 8},
+      "DQB1": {"ratio": 0.25, "evidence_median_r": 0.33, "note": "discounted for one-field unreliability"},
+      "B": {"ratio": 0.50, "evidence_median_r": 0.50, "series": 3},
+      "A": {"ratio": null, "evidence_median_r": 0.12, "series": 1, "note": "no independent survival signal"}
+    },
+    "unknown_locus_contributes": 0
+  },
+
+  "mismatch_function": {
+    "direction": "host_versus_graft",
+    "definition": "count of DONOR distinct alleles absent from the RECIPIENT allele set, at the compared field depth",
+    "homozygosity": "falls out of set semantics; a donor collapsing to one distinct value contributes at most 1",
+    "single_read_allele_is_not_homozygous": true,
+    "partial_typing_result": "RANGE (lower, upper); the worse end decides a level or a comparison",
+    "unknown_locus_result": "UNKNOWN; never 0, never contributes to a total, never improves a rank",
+    "resolution_rule": "compare at the depth actually stored; never expand; truncate to the coarser depth and record comparison_truncated",
+    "trust_value_not_flag": "derive the allele count from the value; a disagreement with second_allele raises REVIEW_REQUIRED"
+  },
+
+  "loci": {
+    "ranked": ["DRB1", "DQB1", "B", "A", "C"],
+    "presence_only": ["DRB3", "DRB4", "DRB5"],
+    "antibody_gate_only": ["DPA1", "DPB1", "DQA1"],
+    "dq_mode_default": "DQB1_ONLY",
+    "dq_heterodimer_requires": "two-field DQA1 and DQB1 on both sides with unambiguous phase",
+    "null_suffixed_drbx_feeds_matching": false
+  },
+
+  "abo": {
+    "implemented_in": "src/kidneymatch/matching/abo.py",
+    "unknown_is_never_compatible": true,
+    "patient_reported_may_exclude_but_never_clear": true
+  },
+
+  "equity": {
+    "matchability_term_in_ranking": false,
+    "rationale": "the platform ranks for a single query, it does not allocate across a queue; in donors-for-recipient the recipient's matchability is a constant, and in recipients-for-donor it would make one recipient's position depend on other recipients' records and break determinism",
+    "homozygosity_surfaced_as_structural_note": true,
+    "silent_truncation_allowed": false,
+    "blood_group_pool_size_shown": true
+  },
+
+  "reproducibility": {
+    "snapshot": "write-once; new evidence creates a new snapshot id",
+    "records": ["policy_version", "imgt_version", "pyard_version", "gold_build_id", "input_typing_resolution", "as_of"],
+    "imgt_version": "3620",
+    "pyard_version": "1.5.5",
+    "clock": "injected argument; never read inside ranking",
+    "final_tiebreak": "stable identifier hash; never price or anything correlated with it"
+  },
+
+  "prohibitions": [
+    "No user-facing compatibility percentage.",
+    "No high-resolution inference from low-resolution typing.",
+    "No eplet, PIRCHE-II, electrostatic or amino-acid score in clinical output.",
+    "The matching package may not import compensation; enforced by scripts/architecture_lint.py.",
+    "A blocked pair is never rendered as a low-ranked pair.",
+    "Recipient preference claims never alter the biological rank."
+  ],
+
+  "warnings": [
+    "Weights are a versioned project pre-screening policy, not a universal clinical standard.",
+    "Every coefficient derives from non-Iranian registries; local calibration needs Iranian outcome data that does not exist yet.",
+    "The archive holds no antibody, PRA or crossmatch data, so every pair is ANTIBODY_UNKNOWN.",
+    "Adoption requires HA-004 (M1-M10 in the policy document) and a policy version bump."
+  ]
+}
