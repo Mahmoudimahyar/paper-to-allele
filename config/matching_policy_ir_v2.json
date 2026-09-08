@@ -73,7 +73,7 @@
     "homozygosity": "falls out of set semantics; a donor collapsing to one distinct value contributes at most 1",
     "single_read_allele_is_not_homozygous": true,
     "partial_typing_result": "RANGE (lower, upper); the worse end decides a level or a comparison",
-    "unknown_locus_result": "UNKNOWN; never 0, never contributes to a total, never improves a rank",
+    "unknown_locus_result": "UNKNOWN; never 0 and never improves a rank. It carries no number (count, lower and upper are all absent) so it cannot be summed as a mismatch count, and it carries a charge (tiebreaker.unknown_locus_charged_as_mismatches) so that absence is never cheaper than a measured mismatch.",
     "resolution_rule": "compare at the depth actually stored; never expand; truncate to the coarser depth and record comparison_truncated",
     "trust_value_not_flag": "derive the allele count from the value; a disagreement with second_allele raises REVIEW_REQUIRED"
   },

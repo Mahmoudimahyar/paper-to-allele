@@ -190,10 +190,20 @@ than a two-field one and the reader must be able to see which happened.
 
 ### 3.5 UNKNOWN
 
-If either side lacks the locus, the result is `UNKNOWN`. `UNKNOWN` is never 0,
-never contributes to a total, and never improves a rank. A pair missing DRB1 or
-B on either side does not receive a level at all; it goes to the
-`INSUFFICIENT_HLA` bucket (section 5).
+If either side lacks the locus, the result is `UNKNOWN`. `UNKNOWN` is never 0
+and never improves a rank. A pair missing DRB1 or B on either side does not
+receive a level at all; it goes to the `INSUFFICIENT_HLA` bucket (section 5).
+
+An earlier draft of this paragraph also said `UNKNOWN` "never contributes to a
+total". That was true of the mismatch vector and false of the ranking, and the
+ambiguity mattered enough to be worth separating here. `UNKNOWN` carries no
+NUMBER: `count`, `lower` and `upper` are all absent, so it can never be summed
+as a mismatch count and `count or 0` cannot turn it into a match. But it does
+carry a CHARGE: section 6.4 prices it at its worst case in the tie-breaker,
+precisely so that absence is never cheaper than a measured mismatch. Those two
+statements are the same rule seen from two sides. A locus with no number that
+also cost nothing would make deleting a bad typing an improvement, which is the
+bug section 6.4 records.
 
 ### 3.6 The other loci
 
