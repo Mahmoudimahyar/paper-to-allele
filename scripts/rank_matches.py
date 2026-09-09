@@ -43,6 +43,30 @@ HLA_LOCI = ("A", "B", "C", "DRB1", "DQB1", "DQA1")
 PRESENCE = ("DRB3", "DRB4", "DRB5")
 
 
+#: Gold records where each blood group came from, and the extraction has ALREADY
+#: applied KI-014: a printed group on a page carrying the Yekta disclaimer is
+#: written `PATIENT_REPORTED_ON_FORM`, so `LABORATORY_PRINTED` means a printed
+#: group on a page that does NOT disclaim its own field.
+#:
+#: An earlier version of this script ignored the column and stamped every Gold
+#: group `PATIENT_REPORTED_ON_FORM`, on the reasoning that the dominant
+#: letterhead disclaims the field. That reasoning was already applied upstream,
+#: so applying it again discarded the 2,676 groups that may clear a pair and
+#: made it look as though no pair in the archive could ever reach `RANKED`.
+#: A source this map does not know is UNKNOWN, which cannot clear; the summary
+#: counts those rather than letting a schema change pass unnoticed.
+_ABO_PROVENANCE: dict[str, AboProvenance] = {
+    "LABORATORY_PRINTED": AboProvenance.LABORATORY_MEASURED,
+    "PATIENT_REPORTED_ON_FORM": AboProvenance.PATIENT_REPORTED_ON_FORM,
+    "CAPTION_CLAIM": AboProvenance.CAPTION_CLAIM,
+}
+
+
+def abo_provenance(source: str | None) -> AboProvenance:
+    """Map a Gold ABO `source` onto what matching may do with it."""
+    return _ABO_PROVENANCE.get((source or "").strip().upper(), AboProvenance.UNKNOWN)
+
+
 def load_profiles(path: Path) -> dict[str, Profile]:
     """Read every Gold profile into the frozen view ranking may see.
 
@@ -56,8 +80,10 @@ def load_profiles(path: Path) -> dict[str, Profile]:
     role: dict[str, str] = {}
     abo: dict[str, str] = {}
 
-    for pid, field, value, second, tier in con.execute(
-        "SELECT profile_id, field, value, second_allele, tier FROM gold_fact"
+    provenance: dict[str, AboProvenance] = {}
+
+    for pid, field, value, second, tier, source in con.execute(
+        "SELECT profile_id, field, value, second_allele, tier, source FROM gold_fact"
     ):
         if field in HLA_LOCI:
             hla.setdefault(pid, {})[field] = (value, second)
@@ -68,6 +94,7 @@ def load_profiles(path: Path) -> dict[str, Profile]:
             role[pid] = value or "UNKNOWN"
         elif field == "ABO":
             abo[pid] = value
+            provenance[pid] = abo_provenance(source)
 
     # Sorted, because set iteration order for strings varies between processes
     # (hash randomisation) and the sample below must not move run to run.
@@ -81,13 +108,10 @@ def load_profiles(path: Path) -> dict[str, Profile]:
             hla=hla.get(pid, {}),
             presence=presence.get(pid, {}),
             abo=abo.get(pid),
-            # The dominant letterhead disclaims the blood group (KI-014), so a
-            # Gold ABO is treated as patient-reported unless a later pass proves
-            # it was laboratory-measured. That keeps pairs in PROVISIONAL_ABO
-            # rather than clearing them on evidence that may not clear.
-            abo_provenance=(
-                AboProvenance.PATIENT_REPORTED_ON_FORM if pid in abo else AboProvenance.UNKNOWN
-            ),
+            # Read from Gold rather than assumed. KI-014 is applied at
+            # extraction, not here: a group printed on a disclaiming form is
+            # already stored as PATIENT_REPORTED_ON_FORM.
+            abo_provenance=provenance.get(pid, AboProvenance.UNKNOWN),
             tiers=tiers.get(pid, {}),
         )
     con.close()
