@@ -29,8 +29,8 @@ tiers A/B/C, review and unknown separately. Check the instrument first.
   Loss by checkpoint: DRB3/4/5 header 41 + grammar 22, cell rectangle 35, locus
   label 22, gate-1 18, recognition 13, orientation **0**.
 - **THE RESIDUAL IS BINDING, NOT READING** (s25). Of 151 labelled failures,
-  **113 have the digits readable in a store we hold**, 7 have nothing. W4, W7,
-  W2(b) assumed a reading problem, were measured and declined.
+  **113 have the digits readable in a store we hold**. W4, W7, W2(b) assumed a
+  reading problem, were measured and declined.
 - **A gate should test its hazard, not a proxy** (s25): gate-2 re-promotion
   tests the CELL's token, not its page's. Measured and shipped.
 - **Levelling is measured, not assumed** (`checkpoint_guards.py`): **1,513 of
@@ -41,17 +41,15 @@ tiers A/B/C, review and unknown separately. Check the instrument first.
 - **Every decision pass is dry-run by default, tagged in `source`, and undoes
   itself** (`--undo`). A pass that fills what another withdrew is a silent
   reversal: `caption_pass` did it to 6 sheet rows and now honours the review.
-- **THE REVIEWER'S NOTES ARE THE BEST DIAGNOSTIC** — `notes`, via `label_score`.
 - **`A*24,02` is two alleles (HA-015):** a COMMA between two numbers splits; a
   period, semicolon or slash still needs the second star. +1,144 cells.
-- **A pack rebuild pins labelled documents (`--keep-labelled`)**;
-  `--disagreements-only` packs only the disputed documents, pre-filled.
+- **A pack rebuild pins labelled documents (`--keep-labelled`)**; the storage
+  key is the PACK ID, so two packs on one port cannot collide.
 - **The chat is a source of record** (`caption_pass.py`): a request word vetoes
   a group only from inside the SAME CLAUSE (D1-b). **A locus can come from the
   allele's printed prefix** — three gated routes, in `AGENTS.md` (HA-017).
-- **A stratum reporting zero looks like a signal that does not occur** (3x).
-  **Review a write-rule adversarially BEFORE believing its yield** (s14/16/20,
-  s25): all four s20 builds were rejected; D11's re-review found two defects.
+- **Review a write-rule adversarially BEFORE believing its yield** (s14/16/20):
+  all four s20 builds were rejected; D11's re-review found two defects.
 - **The gate installs what the code imports** (HA-021, D13-a): `EXTRAS = (hist,
   hla, image, ocr)`. `python` on PATH is NOT the interpreter — use `.venv`.
 - **Two form facts:** DPA1/DPB1 printed but never filled (HA-009); the
@@ -71,33 +69,36 @@ disagree: 13 distinct questions, not 11. Conflict table in the HA-004 entry;
 never cite an M-number without naming its document.**
 
 ## Matching (built 2026-09-08; NOT adopted)
-- **Gold:** no antibody, PRA or crossmatch data; 97% one-field, so V2 is
-  antigen-level. Every pair is ANTIBODY_UNKNOWN.
-- **Evidence v2** (`HLA_MATCHING_EVIDENCE_V2_2026-09-08.md` + methods +
-  appendix; 99 papers, 1,134 effect sizes, 549 of 567 quotes machine-verified):
+- **Gold** holds no antibody, PRA or crossmatch data and is 97% one-field, so
+  V2 is antigen-level and every pair is ANTIBODY_UNKNOWN.
+- **Evidence v2** (`HLA_MATCHING_EVIDENCE_V2_2026-09-08.md` + methods; 99
+  papers, 1,134 effect sizes, 549 of 567 quotes machine-verified):
   **the penalty is a STEP, not a line.** A point score is log-linear; the
-  registry lines are linear in the HAZARD RATIO with intercept >1 (1.04
-  deceased, **1.47 living-unrelated** = ours). 2nd mismatch costs ~0.3 of the
-  1st (DR median 0.29, 8 series). Antigen 0-vs-nonzero separates (p=0.0003),
-  non-zero groups do not (p=0.48). DR **gates** class I (n=39,205). v1
-  superseded: its linear weights and its "43% of DQ pairs" were both wrong.
-- **Built** (`src/kidneymatch/matching/`, `scripts/rank_matches.py`, 760 tests,
+  registry lines are linear in the HAZARD RATIO, intercept >1 (1.04 deceased,
+  **1.47 living-unrelated** = ours). 2nd mismatch ~0.3 of the 1st. Antigen
+  0-vs-nonzero separates (p=0.0003), non-zero groups do not (p=0.48). DR
+  **gates** class I (n=39,205). v1's linear weights were wrong.
+- **Built** (`src/kidneymatch/matching/`, `scripts/rank_matches.py`, 774 tests,
   100% of statements and branches): UK levels re-cut so every DR-matched pair
-  outranks every DR-mismatched one; an 8-field sort key; BOTH directions, each
-  calling one mismatch function with the recipient in the recipient argument.
-  **Not symmetric** — MM(D→R) − MM(R→D) = |distinct(D)| − |distinct(R)|.
+  outranks every DR-mismatched one; 8-field sort key; BOTH directions, one
+  mismatch function, recipient always in the recipient argument. **Not
+  symmetric** — MM(D→R) − MM(R→D) = |distinct(D)| − |distinct(R)|.
 - **Missing is charged at its WORST case** (not zero): the penalty sits at sort
-  position 3 and the unknown count at position 5, so nothing later can offset an
-  earlier position. Deleting a mismatched typing used to improve a rank.
-- **NO ARCHIVE PAIR CAN REACH `RANKED`.** The letterhead disclaims the blood
-  group (KI-014), so every Gold ABO is patient-reported, and a patient-reported
-  group may exclude but never clear. All clear pairs stop at `PROVISIONAL_ABO`.
-- **An unreadable group is a MISSING one**: it fails the readability check
-  before provenance, so it lands in `INSUFFICIENT_ABO`, not a ranked bucket.
+  position 3 and the unknown count at 5, so nothing later offsets it.
+- **Blood group binds, not HLA.** Only 45.8% of profiles carry one; 72.6% of
+  pairs are `INSUFFICIENT_ABO`. Gold records provenance (5,498 caption, 2,676
+  laboratory printed, 618 patient reported) and **KI-014 is applied at
+  EXTRACTION**, so `LABORATORY_PRINTED` already means a non-disclaiming page.
+  **Never re-apply KI-014 downstream**: the runner did, hiding every clearable
+  pair (fixed fbfedde). The chat is the largest source, exhausted bar 12 docs.
+  An UNREADABLE group is a MISSING one: readability is checked before
+  provenance, so it lands in `INSUFFICIENT_ABO`, never a ranked bucket.
 
 ## Completed foundation
 P0 harness, P1 autonomy, P2 test depth (12-step gate). Derived stores and
-`data/gold/` gitignored; threshold measurements in `config/`.
+`data/gold/` gitignored; thresholds in `config/`. Round five is BUILT and
+CURRENT (`data/review/hla_pack_r5`, port 8767, pack_id 20260902-600-20260909);
+its 2026-09-07 build was stale and is kept as `hla_pack_r5_stale_20260907`.
 
 ## Next actions
 1. **Human:** round five; HA-024 and HA-022. Score with `label_score.py`, the
@@ -107,12 +108,11 @@ P0 harness, P1 autonomy, P2 test depth (12-step gate). Derived stores and
    `drbx_reread`, `reread_refused`, `page_ocr_bind`, `rerecognise_pass`,
    `prefix_bind`, `caption_pass`, then `gate1_repromote`, `ink_drain`,
    `sheet_abo_review`. Rebuild the pack with `--keep-labelled`.
-3. **Agent:** the plan's remaining live items only — W3(b) (`exceeds
-   max_values`, surgery on `anchors.resolve_in_row`, needs adversarial review)
-   and W6's Bw branch in `worktree-wf_e621faf4-df7-1`, which **must not merge**:
-   a high defect (`bw_backfill --undo` stops matching once another pass
-   re-stamps `created_utc`) and a medium one (a tailed token records its epitope
-   through a refused box). Then D2-a export.
+3. **Agent:** W3(b) is marked "deliberately not built" in the plan — CURRENT
+   and the plan disagree, ask before touching it. W6's Bw branch in
+   `worktree-wf_e621faf4-df7-1` **must not merge**: a high defect
+   (`bw_backfill --undo` stops matching once another pass re-stamps
+   `created_utc`) and a medium one. Then D2-a export.
 4. **Matching:** settle the HA-004 M-numbering conflict, then the decisions.
    Adoption changes only `status` in the policy config and the task.
 
