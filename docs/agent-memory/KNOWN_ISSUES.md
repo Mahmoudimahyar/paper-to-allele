@@ -422,3 +422,27 @@ suite has state a shuffle can expose and that a seed sweep of five is too small
 to find it. Closing it means sweeping seeds until it reappears, capturing that
 seed, and then finding the shared object — most likely a module-level cache or a
 fixture writing outside `tmp_path` — rather than reordering the tests to hide it.
+
+## KI-031 — review labels live in browser storage until someone exports them
+The review page (`tools/hla_review.html`) keeps answers in `localStorage`, keyed
+`hla_review:<pack id>:<annotator>`. There is no server and no autosave anywhere
+else. Clearing site data, labelling in a private window, or opening the pack in
+a different browser loses the work silently, and nothing in the repository can
+recover it.
+
+The exposure is real rather than theoretical: a labelling session is hours of
+expert judgement on medical documents, and by 2026-09-09 the archive held 1,408
+cells across 128 documents, every one of them created this way.
+
+Two mitigations are in place and neither removes the risk. The key includes the
+pack id, so two packs served on one port cannot overwrite each other's answers,
+which is why round two and round five sharing port 8767 is harmless. And
+`data/review/labels/` now holds verbatim copies of every export with a SHA-256
+per file in `MANIFEST.json`, so an export that has been made is durable and
+corruption is detectable.
+
+What is NOT protected is anything labelled and not yet exported. Closing that
+means either an export prompt on a cadence, or a small local endpoint the page
+can POST to, which is a change to the page and a new moving part in the one
+tool the project's measurement depends on. Until then: export often, and copy
+into `data/review/labels/` after each session.

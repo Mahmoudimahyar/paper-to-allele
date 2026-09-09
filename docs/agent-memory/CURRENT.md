@@ -24,30 +24,24 @@ tiers A/B/C, review and unknown separately. Check the instrument first.
   binding pass must write `value_boxes`** or the reviewer sees a RESOLVED value
   with no crop (s14, twice).
 - **The DRB3/4/5 row prints gene names**; grammar v2 waits on HA-011.
-- **Accuracy (KI-012), 1,342 labels, five rounds (s25). LEAD WITH RECALL.**
-  HLA **691 correct, 2 wrong, 130 missed, 19 partial**; ROLE 94/1, ABO 48/0.
-  Loss by checkpoint: DRB3/4/5 header 41 + grammar 22, cell rectangle 35, locus
-  label 22, gate-1 18, recognition 13, orientation **0**.
-- **THE RESIDUAL IS BINDING, NOT READING** (s25). Of 151 labelled failures,
-  **113 have the digits readable in a store we hold**. W4, W7, W2(b) assumed a
-  reading problem, were measured and declined.
-- **A gate should test its hazard, not a proxy** (s25): gate-2 re-promotion
-  tests the CELL's token, not its page's. Measured and shipped.
-- **Levelling is measured, not assumed** (`checkpoint_guards.py`): **1,513 of
-  1,591 re-measure under 0.5 deg, 78 do not**; 4,920 carry 0.5-1.5, never levelled.
-- **~3,900 cells from twelve sources are UNMEASURED** (s22, s25; the twelve and
-  their counts are in `IMPLEMENTATION_PLAN_2026-09-07.md`). Each is
-  withdrawable. **Round five measures them.**
+- **LEAD WITH RECALL** (KI-012). Loss by checkpoint: DRB3/4/5 header 41 +
+  grammar 22, cell rectangle 35, locus label 22, gate-1 18, recognition 13,
+  orientation **0**.
+- **THE RESIDUAL IS BINDING, NOT READING** (s25): of 151 labelled failures,
+  **113 have the digits readable in a store we hold**. W4, W7, W2(b) declined.
+- **A gate should test its hazard, not a proxy** (s25).
+- **Levelling is measured** (`checkpoint_guards.py`): 1,513 of 1,591 re-measure under 0.5 deg, 78 do not.
+- **~3,900 cells from twelve sources are UNMEASURED** (listed in
+  `IMPLEMENTATION_PLAN_2026-09-07.md`), each withdrawable. Round five measures them.
 - **Every decision pass is dry-run by default, tagged in `source`, and undoes
   itself** (`--undo`). A pass that fills what another withdrew is a silent
-  reversal: `caption_pass` did it to 6 sheet rows and now honours the review.
-- **`A*24,02` is two alleles (HA-015):** a COMMA between two numbers splits; a
-  period, semicolon or slash still needs the second star. +1,144 cells.
+  reversal.
+- **`A*24,02` is two alleles (HA-015):** a COMMA splits; other separators still need the second star.
 - **A pack rebuild pins labelled documents (`--keep-labelled`)**; the storage
   key is the PACK ID, so two packs on one port cannot collide.
 - **The chat is a source of record** (`caption_pass.py`): a request word vetoes
-  a group only from inside the SAME CLAUSE (D1-b). **A locus can come from the
-  allele's printed prefix** — three gated routes, in `AGENTS.md` (HA-017).
+  a group only from the SAME CLAUSE (D1-b). **A locus can come from the printed
+  prefix** — three gated routes, in `AGENTS.md` (HA-017).
 - **Review a write-rule adversarially BEFORE believing its yield** (s14/16/20):
   all four s20 builds were rejected; D11's re-review found two defects.
 - **The gate installs what the code imports** (HA-021, D13-a): `EXTRAS = (hist,
@@ -85,14 +79,21 @@ never cite an M-number without naming its document.**
   symmetric** — MM(D→R) − MM(R→D) = |distinct(D)| − |distinct(R)|.
 - **Missing is charged at its WORST case** (not zero): the penalty sits at sort
   position 3 and the unknown count at 5, so nothing later offsets it.
-- **Blood group binds, not HLA.** Only 45.8% of profiles carry one; 72.6% of
-  pairs are `INSUFFICIENT_ABO`. Gold records provenance (5,498 caption, 2,676
-  laboratory printed, 618 patient reported) and **KI-014 is applied at
-  EXTRACTION**, so `LABORATORY_PRINTED` already means a non-disclaiming page.
-  **Never re-apply KI-014 downstream**: the runner did, hiding every clearable
-  pair (fixed fbfedde). The chat is the largest source, exhausted bar 12 docs.
-  An UNREADABLE group is a MISSING one: readability is checked before
-  provenance, so it lands in `INSUFFICIENT_ABO`, never a ranked bucket.
+- **LABELS** 1,408 cells / 128 docs in `data/review/labels/`, SHA-256 each.
+  They live in the BROWSER until exported (KI-031) — export often.
+- **THE EXTRACTOR IS ACCURATE AND INCOMPLETE** (`LABEL_MEASUREMENT_2026-09-09`,
+  stratified for failure so NOT a corpus accuracy): HLA 83.3% correct, 3
+  contradicted; role 84%; **blood group never wrong, missed HALF the time**.
+  8,914 docs say "no blood-group label found" and a person reads one off the
+  page anyway — the largest measured lever on the matcher.
+- **Blood group binds, not HLA.** 45.8% of profiles carry one; 72.6% of pairs
+  are `INSUFFICIENT_ABO` — a fact about EXTRACTION, not about the archive. Gold
+  records provenance (5,498 caption, 2,676 lab printed, 618 patient reported)
+  and **KI-014 is applied at EXTRACTION**, so `LABORATORY_PRINTED` already means
+  a non-disclaiming page. **Never re-apply it downstream**: the runner did,
+  hiding every clearable pair (fixed fbfedde). Chat exhausted bar 12 docs. An
+  UNREADABLE group is MISSING: it lands in `INSUFFICIENT_ABO`, never a ranked
+  bucket.
 
 ## Completed foundation
 P0 harness, P1 autonomy, P2 test depth (12-step gate). Derived stores and
@@ -101,20 +102,19 @@ CURRENT (`data/review/hla_pack_r5`, port 8767, pack_id 20260902-600-20260909);
 its 2026-09-07 build was stale and is kept as `hla_pack_r5_stale_20260907`.
 
 ## Next actions
-1. **Human:** round five; HA-024 and HA-022. Score with `label_score.py`, the
-   page-field scorer, and `checkpoint_attribution.py`.
+1. **Human:** keep labelling round five, exporting often; then HA-024, HA-022
+   and the HA-004 numbering. Score with `label_score.py`.
 2. **Pass order after any refresh:** `decode_pass`, three `confirm_pass`
    targets, `promote_proposals`, `drbx_ink_pass`, `cell_ink_pass`,
    `drbx_reread`, `reread_refused`, `page_ocr_bind`, `rerecognise_pass`,
    `prefix_bind`, `caption_pass`, then `gate1_repromote`, `ink_drain`,
    `sheet_abo_review`. Rebuild the pack with `--keep-labelled`.
-3. **Agent:** W3(b) is marked "deliberately not built" in the plan — CURRENT
-   and the plan disagree, ask before touching it. W6's Bw branch in
-   `worktree-wf_e621faf4-df7-1` **must not merge**: a high defect
-   (`bw_backfill --undo` stops matching once another pass re-stamps
-   `created_utc`) and a medium one. Then D2-a export.
-4. **Matching:** settle the HA-004 M-numbering conflict, then the decisions.
-   Adoption changes only `status` in the policy config and the task.
+3. **Agent:** the blood-group LABEL DETECTOR — 8,914 documents, measured, the
+   biggest lever. W3(b): CURRENT and the plan disagree, ask first. W6's Bw
+   branch in `worktree-wf_e621faf4-df7-1` **must not merge** (a high defect and
+   a medium one). Then D2-a export.
+4. **Matching:** adoption changes only `status` in the policy config, after the
+   HA-004 numbering conflict and its decisions are settled.
 
 ## Last verified baseline
 `verify_repo.py` PASS — see the latest commit; this records a past result.

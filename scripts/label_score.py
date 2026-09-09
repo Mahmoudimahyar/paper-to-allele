@@ -64,6 +64,71 @@ def short_to_sha(con: sqlite3.Connection) -> dict[str, str]:
     }
 
 
+#: What the reviewer may enter in the document-level blood-group box. Only the
+#: four letters are a READING; every other value says "there is nothing on this
+#: page to read", which is a different claim and must never be scored as a
+#: disagreement. Scoring `NOT_PRINTED` against a group the CHAT supplied
+#: produced 13 false contradictions the first time this was measured by hand.
+ABO_LETTERS = frozenset({"A", "B", "AB", "O"})
+ROLE_VALUES = frozenset({"DONOR", "RECIPIENT"})
+
+
+def score_document_fields(exports: list[Path], facts: Path) -> dict[str, Counter]:
+    """Score ABO and ROLE, which sit on the document rather than on a cell.
+
+    The rest of this script scores the eleven HLA cells. The blood group and the
+    role are entered once per document, and they are the two fields the matcher
+    gates on BEFORE it reads a single allele: an unknown group sends a pair to
+    `INSUFFICIENT_ABO` and an unknown role removes it from both directions. So
+    leaving them unscored measured the cheap half of the pipeline and not the
+    half that decides whether a pair can be ranked at all.
+    """
+    entered: dict[str, dict[str, str]] = {}
+    for path in exports:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if payload.get("schema") != "golden-labels/v1":
+            continue
+        for short, record in (payload.get("documents") or {}).items():
+            entered.setdefault(short, {}).update({k: v for k, v in record.items() if v})
+
+    out: dict[str, Counter] = {"ABO": Counter(), "ROLE": Counter()}
+    con = sqlite3.connect(f"file:{facts.as_posix()}?mode=ro", uri=True)
+    full = short_to_sha(con)
+    held: dict[tuple[str, str], tuple[str, str | None]] = {}
+    for sha, field, status, value in con.execute(
+        "SELECT sha256, field, status, value FROM fact "
+        "WHERE extraction_version=? AND field IN ('ABO','ROLE')",
+        (EV,),
+    ):
+        held[(sha, field)] = (status, value)
+    con.close()
+
+    for short, record in entered.items():
+        sha = full.get(short)
+        if sha is None:
+            continue
+        for field, allowed in (("ABO", ABO_LETTERS), ("ROLE", ROLE_VALUES)):
+            read = record.get(field.lower())
+            if not read:
+                continue
+            status, value = held.get((sha, field), ("ABSENT", None))
+            if read not in allowed:
+                # The person says the page carries nothing. The pipeline may
+                # still hold a value read from the chat, and that is not a
+                # conflict: the two are answering different questions.
+                out[field]["person read nothing on the page"] += 1
+            elif status == "RESOLVED" and value == read:
+                out[field]["correct"] += 1
+            elif status == "RESOLVED":
+                out[field]["CONTRADICTED"] += 1
+            else:
+                out[field]["missed"] += 1
+    return out
+
+
 def score(labels: dict[str, object], facts: Path) -> tuple[Counter, dict, list[tuple]]:
     con = sqlite3.connect(f"file:{facts.as_posix()}?mode=ro", uri=True)
     lookup = short_to_sha(con)
@@ -136,6 +201,24 @@ def main() -> int:
         for outcome, locus, human, status, reason, source in wrong:
             trimmed = json.dumps(reason or "")[1:60]
             print(f"  {outcome:<13}{locus:<6}human={human:<13}{status:<16}{source or ''} {trimmed}")
+    fields = score_document_fields(args.exports, args.facts)
+    print("\nthe two fields the matcher gates on, entered once per document:")
+    for field, counts in fields.items():
+        judged = counts["correct"] + counts["missed"] + counts["CONTRADICTED"]
+        if not judged:
+            continue
+        recall = 100 * counts["correct"] / judged
+        print(
+            f"  {field:<5} read by a person on {judged:>4}: "
+            f"correct {counts['correct']:>4}, missed {counts['missed']:>4}, "
+            f"contradicted {counts['CONTRADICTED']:>3}   recall {recall:.0f}%"
+        )
+        nothing = counts["person read nothing on the page"]
+        if nothing:
+            print(
+                f"        plus {nothing} where the person read nothing on the "
+                "page; a value held from the chat is not a contradiction there"
+            )
     if notes:
         print(
             f"\n{len(notes)} notes in these exports; read them, they are the best "
