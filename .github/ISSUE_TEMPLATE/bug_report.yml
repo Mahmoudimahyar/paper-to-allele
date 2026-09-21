@@ -1,0 +1,56 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste real personal or medical data.** If your report needs a
+        document to make sense, describe it or use a synthetic example. If the
+        bug *is* exposed data, use the
+        [private security report](https://github.com/mahmoudimahyar/paper-to-allele/security/advisories/new)
+        instead of this form.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Exact commands, with synthetic inputs where inputs are needed.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - ingestion (chat export, media, dedupe)
+        - ocr (geometry, locus binding, recognition, gates)
+        - hla (validation, vocabulary, normalisation)
+        - matching (ABO gate, mismatch, ranking)
+        - review tools
+        - harness (verification gate, CI, scripts)
+        - documentation
+        - other
+    validations:
+      required: true
+  - type: checkboxes
+    id: clinical
+    attributes:
+      label: Clinical safety
+      options:
+        - label: This bug could cause a wrong or over-confident clinical value to be produced
+        - label: I have confirmed this report contains no real personal or medical data
+          required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `uv run --frozen python scripts/doctor.py --brief`, plus your OS.
+      render: shell

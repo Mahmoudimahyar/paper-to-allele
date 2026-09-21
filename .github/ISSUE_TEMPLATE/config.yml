@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security or privacy report
+    url: https://github.com/mahmoudimahyar/paper-to-allele/security/advisories/new
+    about: Report a vulnerability, or personal or medical data found in the repository. Never open a public issue for these.

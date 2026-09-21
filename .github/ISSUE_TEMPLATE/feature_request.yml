@@ -1,0 +1,42 @@
+name: Feature or change proposal
+description: Propose a change to behaviour, a new capability, or a measurement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project prefers to **measure before building**. Several proposed
+        features here were measured and then declined on the evidence, which is
+        a good outcome. A proposal that says how it would be evaluated is much
+        more likely to be accepted.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is wrong or missing today? Cite a measurement if one exists.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How would we know it worked
+      description: |
+        What would be measured, against what, and what result would make you
+        abandon the idea? A proposal that cannot fail cannot be evaluated.
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Clinical and privacy risk
+      description: |
+        Could this cause a value to be stated more confidently than the evidence
+        supports, or bring personal data closer to version control?
+    validations:
+      required: true
